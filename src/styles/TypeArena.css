@@ -1,0 +1,259 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+
+:root {
+  --background: hsl(240 15% 5%);
+  --foreground: hsl(0 0% 95%);
+  --card: hsl(240 12% 9% / 0.82);
+  --card-strong: hsl(240 12% 12% / 0.94);
+  --muted: hsl(240 10% 14%);
+  --muted-foreground: hsl(240 5% 64%);
+  --primary: hsl(145 80% 42%);
+  --primary-hover: hsl(145 75% 36%);
+  --accent: hsl(45 100% 55%);
+  --danger: hsl(0 78% 58%);
+  --success: hsl(145 65% 42%);
+  --border: hsl(240 10% 18%);
+  --ring: hsl(145 80% 42% / 0.35);
+  --radius: 16px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+  overflow-x: hidden;
+}
+
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+body::before {
+  width: 32rem;
+  height: 32rem;
+  top: -10rem;
+  left: -8rem;
+  background: hsl(145 80% 42% / 0.18);
+  animation: orbDrift 16s ease-in-out infinite;
+}
+
+body::after {
+  width: 28rem;
+  height: 28rem;
+  right: -8rem;
+  bottom: -12rem;
+  background: hsl(45 100% 55% / 0.16);
+  animation: orbDrift 20s ease-in-out infinite reverse;
+}
+
+@keyframes orbDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(16px, -28px, 0) scale(1.08);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.5s ease;
+}
+
+main {
+  flex: 1;
+  padding: 1.5rem 0;
+}
+
+.navbar {
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, hsl(240 15% 8% / 0.85), hsl(240 12% 11% / 0.85)) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 28px hsl(240 20% 2% / 0.35);
+}
+
+.navbar-brand {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.45rem;
+  color: var(--foreground) !important;
+  letter-spacing: 0.02em;
+}
+
+.navbar-nav .nav-link {
+  color: hsl(0 0% 88%) !important;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.5rem 0.95rem !important;
+  transition: transform 0.25s ease, color 0.25s ease, background-color 0.25s ease;
+}
+
+.navbar-nav .nav-link:hover {
+  color: var(--foreground) !important;
+  background: hsl(145 80% 42% / 0.14);
+  transform: translateY(-1px);
+}
+
+.btn {
+  font-weight: 700;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid transparent;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary), hsl(145 70% 34%));
+  border-color: hsl(145 70% 30%);
+  color: hsl(0 0% 100%);
+  box-shadow: 0 12px 28px hsl(145 80% 42% / 0.28);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--primary-hover), hsl(145 70% 30%));
+  box-shadow: 0 16px 36px hsl(145 80% 42% / 0.32);
+}
+
+.btn-outline-primary {
+  background: hsl(240 10% 14% / 0.6);
+  border-color: hsl(145 80% 42% / 0.45);
+  color: hsl(145 70% 70%);
+}
+
+.btn-outline-primary:hover {
+  background: hsl(145 80% 42% / 0.12);
+  border-color: hsl(145 80% 42% / 0.7);
+  color: var(--foreground);
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, hsl(240 10% 22%), hsl(240 10% 16%));
+  border-color: hsl(240 8% 30%);
+  color: var(--foreground);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, var(--danger), hsl(0 72% 46%));
+  border-color: hsl(0 70% 42%);
+  color: var(--foreground);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, var(--success), hsl(145 62% 34%));
+  border-color: hsl(145 62% 30%);
+  color: var(--foreground);
+}
+
+.btn:focus-visible,
+.nav-link:focus-visible,
+.navbar-toggler:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.56;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-lg {
+  padding: 0.75rem 1.8rem;
+  font-size: 1rem;
+}
+
+footer {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border);
+  background: hsl(240 14% 8% / 0.8);
+}
+
+footer p {
+  margin: 0.2rem 0;
+  color: var(--muted-foreground);
+}
+
+.loading,
+.empty-message {
+  text-align: center;
+  padding: 2rem;
+  color: var(--muted-foreground);
+}
+
+.container-fluid {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  main {
+    padding: 0.9rem 0;
+  }
+
+  .navbar-brand {
+    font-size: 1.2rem;
+  }
+
+  .btn-lg {
+    width: 100%;
+  }
+}

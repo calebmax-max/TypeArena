@@ -1,0 +1,124 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "SpeedDemon",
+      "email": "speed@example.com",
+      "password": "password123",
+      "phoneNumber": "0700000001",
+      "wpm": 145,
+      "accuracy": 98.5,
+      "totalRaces": 142,
+      "wins": 58,
+      "balance": 2650.0
+    },
+    {
+      "id": 2,
+      "username": "TypingNinja",
+      "email": "ninja@example.com",
+      "password": "password123",
+      "phoneNumber": "0700000002",
+      "wpm": 138,
+      "accuracy": 97.8,
+      "totalRaces": 189,
+      "wins": 76,
+      "balance": 4200
+    },
+    {
+      "id": 3,
+      "username": "QuickFinger",
+      "email": "quick@example.com",
+      "password": "password123",
+      "phoneNumber": "0700000003",
+      "wpm": 132,
+      "accuracy": 96.2,
+      "totalRaces": 156,
+      "wins": 64,
+      "balance": 1800
+    }
+  ],
+  "tournaments": [
+    {
+      "id": 1,
+      "name": "Speed Challenge 2026",
+      "description": "Race against 50+ typists for KES 10,000 prize pool",
+      "entryFee": 500,
+      "prizePool": 10000,
+      "participants": 47,
+      "maxParticipants": 100,
+      "status": "active",
+      "startTime": "2026-03-31T23:05:08.025971Z",
+      "duration": "60s",
+      "image": "??",
+      "joinedUserIds": []
+    },
+    {
+      "id": 2,
+      "name": "Accuracy Masters",
+      "description": "Compete on accuracy, not speed. Win big!",
+      "entryFee": 300,
+      "prizePool": 5000,
+      "participants": 32,
+      "maxParticipants": 50,
+      "status": "active",
+      "startTime": "2026-03-31T23:05:08.025989Z",
+      "duration": "120s",
+      "image": "??",
+      "joinedUserIds": []
+    },
+    {
+      "id": 3,
+      "name": "30 Second Sprint",
+      "description": "Ultra-fast 30-second races. Win or go home.",
+      "entryFee": 100,
+      "prizePool": 2500,
+      "participants": 89,
+      "maxParticipants": 150,
+      "status": "active",
+      "startTime": "2026-03-31T23:05:08.025996Z",
+      "duration": "30s",
+      "image": "??",
+      "joinedUserIds": []
+    },
+    {
+      "id": 4,
+      "name": "Champion Series",
+      "description": "Complete 5 races, highest avg WPM wins KES 50,000",
+      "entryFee": 2000,
+      "prizePool": 50000,
+      "participants": 12,
+      "maxParticipants": 20,
+      "status": "upcoming",
+      "startTime": "2026-03-31T23:05:08.026001Z",
+      "duration": "Multi-race",
+      "image": "??",
+      "joinedUserIds": []
+    }
+  ],
+  "race_history": [],
+  "last_user_id": 3,
+  "last_race_id": 0,
+  "mpesa_transactions": [
+    {
+      "id": "topup_1",
+      "userId": 1,
+      "phoneNumber": "254700000001",
+      "amount": 150.0,
+      "status": "completed",
+      "mode": "simulated",
+      "createdAt": "2026-03-31T23:10:05.825278Z"
+    }
+  ],
+  "prize_payouts": [
+    {
+      "id": "payout_1",
+      "userId": 1,
+      "tournamentId": 1,
+      "amount": 100.0,
+      "phoneNumber": "254700000001",
+      "status": "completed",
+      "mode": "simulated",
+      "createdAt": "2026-03-31T23:10:05.826858Z"
+    }
+  ]
+}

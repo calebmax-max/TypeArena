@@ -1,0 +1,287 @@
+.marketplace-shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+}
+
+.marketplace-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.8fr);
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.marketplace-hero__copy,
+.marketplace-hero__featured {
+  border: 1px solid hsl(32 38% 76% / 0.22);
+  border-radius: 28px;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at top left, hsl(24 100% 67% / 0.18), transparent 36%),
+    linear-gradient(145deg, hsl(18 36% 11% / 0.96), hsl(12 28% 8% / 0.98));
+  box-shadow: 0 24px 60px hsl(15 50% 4% / 0.28);
+}
+
+.marketplace-eyebrow,
+.marketplace-featured__label {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  background: hsl(34 100% 67% / 0.12);
+  color: hsl(35 100% 80%);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketplace-hero__copy h1,
+.marketplace-hero__featured h2 {
+  margin: 0.85rem 0 0.55rem;
+  color: hsl(36 100% 97%);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.marketplace-hero__copy h1 {
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 0.96;
+  max-width: 12ch;
+}
+
+.marketplace-hero__copy p,
+.marketplace-hero__featured p,
+.marketplace-toolbar p,
+.marketplace-card__body p {
+  margin: 0;
+  color: hsl(30 18% 75%);
+}
+
+.marketplace-hero__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 1.35rem;
+}
+
+.marketplace-stat {
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  background: hsl(25 34% 16% / 0.72);
+  border: 1px solid hsl(31 42% 73% / 0.12);
+}
+
+.marketplace-stat span {
+  display: block;
+  color: hsl(29 18% 67%);
+  font-size: 0.82rem;
+  margin-bottom: 0.35rem;
+}
+
+.marketplace-stat strong,
+.marketplace-hero__featured strong,
+.marketplace-card__footer strong {
+  color: hsl(42 100% 72%);
+  font-size: 1.18rem;
+}
+
+.marketplace-hero__featured {
+  display: grid;
+  align-content: start;
+  gap: 0.7rem;
+}
+
+.marketplace-notice {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid hsl(148 70% 58% / 0.3);
+  background: hsl(148 70% 58% / 0.12);
+  color: hsl(145 88% 84%);
+}
+
+.marketplace-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 1rem;
+  margin-bottom: 1.15rem;
+}
+
+.marketplace-toolbar h2 {
+  margin: 0 0 0.3rem;
+  color: hsl(33 100% 97%);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.marketplace-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.marketplace-filter {
+  border: 1px solid hsl(28 31% 74% / 0.18);
+  background: hsl(20 22% 12% / 0.85);
+  color: hsl(32 28% 83%);
+  border-radius: 999px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.88rem;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.marketplace-filter:hover,
+.marketplace-filter.is-active {
+  transform: translateY(-1px);
+  border-color: hsl(35 100% 67% / 0.48);
+  background: hsl(24 54% 18% / 0.96);
+}
+
+.marketplace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.marketplace-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid hsl(26 36% 76% / 0.12);
+  background:
+    radial-gradient(circle at top right, hsl(32 100% 67% / 0.12), transparent 28%),
+    linear-gradient(180deg, hsl(14 30% 11% / 0.96), hsl(18 24% 9% / 0.98));
+  box-shadow: 0 16px 34px hsl(15 42% 4% / 0.22);
+}
+
+.marketplace-card__top,
+.marketplace-card__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.marketplace-card__art {
+  min-height: 140px;
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(140deg, hsl(33 100% 65% / 0.26), hsl(9 72% 48% / 0.16)),
+    repeating-linear-gradient(
+      135deg,
+      hsl(0 0% 100% / 0.04) 0,
+      hsl(0 0% 100% / 0.04) 10px,
+      transparent 10px,
+      transparent 20px
+    );
+  border: 1px solid hsl(30 36% 74% / 0.14);
+}
+
+.marketplace-card__art span {
+  font-size: 3.4rem;
+  color: hsl(36 100% 95%);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.marketplace-card__body {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.marketplace-card__body h3 {
+  margin: 0;
+  color: hsl(36 100% 97%);
+}
+
+.marketplace-empty {
+  padding: 1.4rem;
+  border-radius: 24px;
+  border: 1px dashed hsl(28 31% 74% / 0.28);
+  background: hsl(18 24% 9% / 0.72);
+  color: hsl(32 28% 83%);
+}
+
+.marketplace-empty h3 {
+  margin: 0 0 0.45rem;
+  color: hsl(36 100% 97%);
+}
+
+.marketplace-tag,
+.marketplace-rarity {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.marketplace-tag {
+  background: hsl(33 100% 66% / 0.14);
+  color: hsl(37 100% 81%);
+}
+
+.marketplace-rarity {
+  border: 1px solid transparent;
+}
+
+.marketplace-rarity--common {
+  color: hsl(188 32% 82%);
+  background: hsl(198 40% 56% / 0.12);
+  border-color: hsl(198 40% 56% / 0.2);
+}
+
+.marketplace-rarity--rare {
+  color: hsl(154 87% 84%);
+  background: hsl(151 72% 43% / 0.12);
+  border-color: hsl(151 72% 43% / 0.2);
+}
+
+.marketplace-rarity--epic {
+  color: hsl(40 100% 83%);
+  background: hsl(34 100% 56% / 0.12);
+  border-color: hsl(34 100% 56% / 0.24);
+}
+
+.marketplace-rarity--legendary {
+  color: hsl(12 100% 85%);
+  background: hsl(8 100% 58% / 0.14);
+  border-color: hsl(8 100% 58% / 0.24);
+}
+
+@media (max-width: 900px) {
+  .marketplace-hero,
+  .marketplace-toolbar {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .marketplace-toolbar {
+    align-items: start;
+  }
+
+  .marketplace-filters {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .marketplace-shell {
+    padding: 1.2rem 0.9rem 2rem;
+  }
+
+  .marketplace-hero__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .marketplace-card__footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
