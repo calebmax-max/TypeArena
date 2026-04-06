@@ -67,7 +67,9 @@ export default function Tournaments() {
               Number(tournament.participants || 0) >=
               Number(tournament.matchSize || tournament.maxParticipants || 2);
             const cost = Number(tournament.cost ?? tournament.entryFee ?? 0);
+            const totalStake = cost * 2;
             const winnerPrize = Number(tournament.winnerPrize ?? cost * 2 * 0.75);
+            const adminShare = Math.max(0, totalStake - winnerPrize);
 
             return (
               <div key={tournament.id} className="tournament-card">
@@ -89,6 +91,9 @@ export default function Tournaments() {
 
                 <p className="tournament-winner-note">
                   Winner receives KES {winnerPrize.toLocaleString()}.
+                </p>
+                <p className="tournament-winner-note">
+                  Admin wallet receives KES {adminShare.toLocaleString()}.
                 </p>
 
                 <button

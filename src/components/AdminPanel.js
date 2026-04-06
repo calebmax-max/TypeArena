@@ -215,14 +215,19 @@ export default function AdminPanel() {
           <div className="admin-card">
             <h2>Existing Tournaments</h2>
             <div className="admin-list">
-              {tournaments.map((tournament) => (
-                <div key={tournament.id} className="admin-list-item">
-                  <strong>{tournament.name}</strong>
-                  <span>Price KES {Number(tournament.entryFee || 0).toLocaleString()}</span>
-                  <span>Winner gets KES {Number(tournament.winnerPrize || 0).toLocaleString()}</span>
-                  <span>{tournament.status}</span>
-                </div>
-              ))}
+              {tournaments.map((tournament) => {
+                const winnerPrize = Number(tournament.winnerPrize || 0);
+                const adminShare = Math.max(0, Number(tournament.entryFee || 0) * 2 - winnerPrize);
+                return (
+                  <div key={tournament.id} className="admin-list-item">
+                    <strong>{tournament.name}</strong>
+                    <span>Price KES {Number(tournament.entryFee || 0).toLocaleString()}</span>
+                    <span>Winner gets KES {winnerPrize.toLocaleString()}</span>
+                    <span>Admin gets KES {adminShare.toLocaleString()}</span>
+                    <span>{tournament.status}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>

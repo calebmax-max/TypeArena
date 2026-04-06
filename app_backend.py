@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import secrets
+import string
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -174,8 +175,8 @@ MARKETPLACE_ITEMS = [
 ]
 AI_PASSAGE_BANK = {
     'coding': [
-        'Refactor the module so each function has one clear responsibility, then ship a version that is easier to test and safer to maintain.',
-        'Write a clean query that filters transactions, groups players by room, and returns the winner with the fastest verified typing score.',
+        'Sprint review 01: refactor the payments module so each function owns 1 clear job, log every retry with code #A17, and ship a safer release before 18:30. The winning patch must validate input, escape symbols like {}[]()<>, and keep notes such as total=24, failed=3, passed=21 without losing rhythm or accuracy.',
+        'Debug report v2.4 says the room service should filter 128 sessions, group users by match_id, and return the fastest score in under 90 seconds. Type the snippet carefully: if score >= 87.5 and errors <= 2, mark status="verified"; otherwise push item #404 into retry_queue and notify ops@example.dev immediately.',
     ],
     'legal': [
         'This agreement confirms that each participant accepts the competition rules, payout schedule, and dispute process before joining any paid room.',
@@ -184,22 +185,30 @@ AI_PASSAGE_BANK = {
         'Clinical documentation requires precise terminology, steady pacing, and careful attention so patient records remain accurate and easy to review.',
     ],
     'business': [
-        'A premium growth dashboard should combine revenue, retention, conversion, and churn so founders can make confident operating decisions every week.',
+        'Quarterly operations memo: the arena processed 2,480 matches, KES 184,500 in entry volume, and 96 verified payouts during cycle 04. Leaders must compare retention at 62%, churn at 11%, and referral lift at +18% while checking symbols like %, +, /, and # in every line before approving the final dashboard update at 17:45.',
+        'Investor summary 2026-04: revenue reached KES 215,000, repeat purchases hit 37%, and premium upgrades moved from 84 to 129 accounts in just 30 days. Please review the notes, confirm item codes A-14, C-27, and Z-09, then publish the clean paragraph with commas, quotation marks, and figures like 7.5%, 12/20, and 3:1 intact.',
     ],
     'french': [
-        "Les meilleurs joueurs de frappe progressent avec de la discipline, une grande precision et des sessions d'entrainement regulieres.",
-        "Une bonne vitesse de frappe demande du rythme, de la concentration et moins de corrections pendant les manches importantes.",
+        "Rapport de tournoi 05: les meilleurs joueurs progressent avec discipline, precision et regularite, meme quand le tableau affiche 128 participants, 3 manches finales et un prize pool de KES 75,000. Merci de verifier les symboles %, /, # et les chiffres 14, 27 et 39 avant de valider la version finale a 18:20.",
+        "Note d'exploitation: pendant la session premium, l'equipe doit comparer 2 strategies, corriger 4 erreurs critiques et confirmer que le score moyen reste au-dessus de 91.5%. Tapez chaque phrase avec soin, gardez les signes () {} [] et recopiez exactement les references X-17, Q-08 et ticket #553.",
     ],
     'swahili': [
-        'Washindi wa mashindano ya kuchapa hupatikana kwa kasi, umakini, na nidhamu ya kufanya mazoezi kila siku bila kuchoka.',
+        'Ripoti ya mashindano 07 inaonyesha kuwa washindi wanahitaji kasi, umakini, na nidhamu kila siku, hasa wakati takwimu zinaonyesha mechi 240, ushindi 18, na bonasi ya KES 45,000. Hakikisha unaandika alama kama %, /, #, na namba 12, 48, 96 kwa usahihi kabla ya muda wa mwisho wa saa 17:30.',
+        'Kwenye duru ya mwisho, msimamizi alitaja kuwa wachezaji 2 walikamilisha maandishi ndani ya sekunde 95, makosa yakabaki chini ya 3, na kiwango cha usahihi kikafika 94.7%. Andika sentensi yote pamoja na alama za mabano (), nukuu "", na kumbukumbu za faili kama match-21 au room#8 bila kuruka herufi.',
     ],
     'exam': [
-        'Candidates should manage time carefully, read each instruction twice, and maintain accuracy throughout the full assessment period.',
+        'Assessment packet 03 instructs candidates to review section A, B, and C in order, complete 45 items in 30 minutes, and keep the error count below 2 per page. Read every symbol carefully, including %, :, ;, and (), then confirm that line 14 references code X9-33 while line 27 records a score of 88.4 out of 100.',
     ],
     'quote': [
-        'Consistency creates momentum long before the results are visible, which is why disciplined practice often looks ordinary until it wins.',
+        'Consistency creates momentum long before the results are visible, which is why disciplined practice can look ordinary at 06:00, 12:30, and 21:15 until it suddenly delivers a 103 WPM finish. Keep the punctuation, numbers, and symbols exactly as written: "focus > panic", ratio 3:2, and checkpoint #11 all matter in this round.',
     ],
 }
+
+PASSAGE_DECORATORS = [
+    'Final check: preserve every digit, symbol, and capital letter exactly as shown.',
+    'Reminder: copy punctuation carefully, especially %, #, /, :, ;, quotes, and brackets.',
+    'Match note: accuracy drops fast when players skip hyphens, decimals, or closing symbols.',
+]
 
 
 def _season_name() -> str:
@@ -372,12 +381,15 @@ def _generate_passage(mode: str, language: str) -> Dict[str, Any]:
         pool_key = normalized_mode if normalized_mode in AI_PASSAGE_BANK else 'business'
 
     passages = AI_PASSAGE_BANK.get(pool_key) or AI_PASSAGE_BANK['business']
-    passage = passages[int(datetime.utcnow().timestamp()) % len(passages)]
+    base_passage = passages[secrets.randbelow(len(passages))]
+    decorator = PASSAGE_DECORATORS[secrets.randbelow(len(PASSAGE_DECORATORS))]
+    checksum = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+    passage = f'{base_passage} {decorator} Match code: {checksum}.'
     return {
         'mode': normalized_mode,
         'language': normalized_language,
         'passage': passage,
-        'title': f'{pool_key.title()} Sprint',
+        'title': f'{pool_key.title()} Marathon Paragraph',
         'antiCheatHint': 'Freshly generated content reduces memorization and replay abuse.',
         'provider': 'local',
         'model': 'template-bank',
@@ -416,7 +428,8 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
                     'content': (
                         'Generate one fresh typing race passage. '
                         f'Mode: {normalized_mode}. Language: {normalized_language}. '
-                        'Passage must be between 35 and 80 words, natural, competitive, and hard to memorize. '
+                        'Passage must be a large single paragraph between 110 and 170 words, natural, competitive, and hard to memorize. '
+                        'It must include numbers and symbols such as %, #, /, :, ;, brackets, or quotes. '
                         'Include a short anti-cheat hint.'
                     ),
                 },
@@ -1053,6 +1066,23 @@ def _debit_user_balance(cur, *, user_id: int, amount: float) -> Dict[str, Any]:
     cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (amount, user_id))
     cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
     return cur.fetchone()
+
+
+def _credit_admin_tournament_share(cur, *, tournament: Dict[str, Any]) -> float:
+    if not ADMIN_EMAIL:
+        return 0.0
+
+    admin_share = round(float(tournament.get('entry_fee') or 0) * TOURNAMENT_MATCH_SIZE * (1 - WINNER_PRIZE_SHARE), 2)
+    if admin_share <= 0:
+        return 0.0
+
+    cur.execute('SELECT * FROM users WHERE LOWER(email)=LOWER(%s)', (ADMIN_EMAIL,))
+    admin_user = cur.fetchone()
+    if not admin_user:
+        return 0.0
+
+    cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (admin_share, admin_user['id']))
+    return admin_share
 
 
 def _apply_user_performance_update(
@@ -1989,6 +2019,7 @@ def payout_prize_to_winner():
                     return jsonify({'message': 'Tournament not found.'}), 404
 
             payout_code = f'payout_{int(datetime.utcnow().timestamp() * 1000)}'
+            admin_share = 0.0
             if tournament:
                 amount_value = round(float(tournament.get('entry_fee') or 0) * TOURNAMENT_MATCH_SIZE * WINNER_PRIZE_SHARE, 2)
             else:
@@ -2017,6 +2048,8 @@ def payout_prize_to_winner():
                 ),
             )
             cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, user_id_int))
+            if tournament:
+                admin_share = _credit_admin_tournament_share(cur, tournament=tournament)
             cur.execute('SELECT * FROM users WHERE id = %s', (user_id_int,))
             updated_user = cur.fetchone()
             conn.commit()
@@ -2024,6 +2057,7 @@ def payout_prize_to_winner():
                 {
                     'message': 'Winner prize sent automatically to the wallet.',
                     'amount': amount_value,
+                    'adminShare': admin_share,
                     'user': _safe_user(updated_user),
                 }
             )
