@@ -67,7 +67,7 @@ export default function Tournaments() {
             const joinedPlayers = Number(tournament.participants || 0) + Number(tournament.waitingPlayers || 0);
             const isFull = joinedPlayers >= requiredPlayers;
             const cost = Number(tournament.cost ?? tournament.entryFee ?? 0);
-            const winnerShare = Number(tournament.winnerShare ?? (requiredPlayers === 2 ? 0.75 : 0.6));
+            const winnerShare = Number(tournament.winnerShare ?? 0.6);
             const winnerPrize = Number(tournament.winnerPrize ?? cost * requiredPlayers * winnerShare);
 
             return (

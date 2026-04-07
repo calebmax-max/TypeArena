@@ -65,7 +65,6 @@ ADMIN_TOKENS: set[str] = set()
 TOURNAMENT_MATCH_SIZE = 2
 TOURNAMENT_START_DELAY_SECONDS = 30
 WINNER_PRIZE_SHARE = 0.60
-HEAD_TO_HEAD_WINNER_PRIZE_SHARE = 0.75
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 LIVE_RACE_TEXTS = {
@@ -961,7 +960,7 @@ def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
     prize_pool = float(row.get('prize_pool') or 0)
     match_size = int(row.get('match_size') or row.get('max_participants') or TOURNAMENT_MATCH_SIZE)
     total_player_stake = round(entry_fee * match_size, 2)
-    winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
+    winner_share = WINNER_PRIZE_SHARE
     status = _computed_tournament_status(row)
     start_time = row.get('start_time')
     end_time = start_time + timedelta(seconds=_duration_to_seconds(row.get('duration'))) if start_time else None
@@ -1075,7 +1074,7 @@ def _credit_admin_tournament_share(cur, *, tournament: Dict[str, Any]) -> float:
         return 0.0
 
     match_size = int(tournament.get('match_size') or tournament.get('max_participants') or TOURNAMENT_MATCH_SIZE)
-    winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
+    winner_share = WINNER_PRIZE_SHARE
     admin_share = round(float(tournament.get('entry_fee') or 0) * match_size * (1 - winner_share), 2)
     if admin_share <= 0:
         return 0.0
@@ -2083,7 +2082,7 @@ def payout_prize_to_winner():
             admin_share = 0.0
             if tournament:
                 match_size = int(tournament.get('max_participants') or TOURNAMENT_MATCH_SIZE)
-                winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
+                winner_share = WINNER_PRIZE_SHARE
                 amount_value = round(float(tournament.get('entry_fee') or 0) * match_size * winner_share, 2)
             else:
                 try:

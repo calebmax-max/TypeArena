@@ -133,7 +133,7 @@ export default function AdminPanel() {
   const entryFee = Number(formData.entryFee || 0);
   const maxParticipants = Math.max(2, Number(formData.maxParticipants || 2));
   const totalStake = entryFee * maxParticipants;
-  const winnerShare = maxParticipants === 2 ? 0.75 : 0.6;
+  const winnerShare = 0.6;
   const winnerAmount = totalStake * winnerShare;
 
   return (
