@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   adminCreateTournament,
+  adminDeleteAllTournaments,
+  adminDeleteTournament,
   adminLogout,
   fetchAdminAnalytics,
   fetchAdminAiSettings,
@@ -16,6 +18,7 @@ export default function AdminPanel() {
   const [formData, setFormData] = useState({
     name: '',
     entryFee: '',
+    maxParticipants: '2',
     status: 'upcoming',
     image: '??',
   });
@@ -23,6 +26,8 @@ export default function AdminPanel() {
   const [analytics, setAnalytics] = useState(null);
   const [tournaments, setTournaments] = useState([]);
   const [aiSettings, setAiSettings] = useState({ provider: 'auto', model: 'gpt-5.2', hasApiKey: false });
+  const [deletingTournamentId, setDeletingTournamentId] = useState(null);
+  const [clearingTournaments, setClearingTournaments] = useState(false);
 
   const loadAdminData = async () => {
     const [analyticsData, tournamentData, aiSettingsData] = await Promise.all([
@@ -45,12 +50,13 @@ export default function AdminPanel() {
     event.preventDefault();
     try {
       const entryFee = Number(formData.entryFee || 0);
+      const maxParticipants = Math.max(2, Number(formData.maxParticipants || 2));
       const payload = {
         ...formData,
         description: '',
         entryFee,
-        prizePool: entryFee * 2,
-        maxParticipants: 2,
+        prizePool: entryFee * maxParticipants,
+        maxParticipants,
         duration: '5d',
       };
       const result = await adminCreateTournament(payload);
@@ -58,6 +64,7 @@ export default function AdminPanel() {
       setFormData({
         name: '',
         entryFee: '',
+        maxParticipants: '2',
         status: 'upcoming',
         image: '??',
       });
@@ -87,14 +94,53 @@ export default function AdminPanel() {
     }
   };
 
+  const handleDeleteTournament = async (tournament) => {
+    const confirmed = window.confirm(`Delete "${tournament.name}"? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingTournamentId(tournament.id);
+    try {
+      const result = await adminDeleteTournament(tournament.id);
+      setTournaments((prev) => prev.filter((item) => item.id !== tournament.id));
+      setNotice(result.message || 'Tournament deleted.');
+    } catch (error) {
+      setNotice(error.message || 'Could not delete tournament.');
+    } finally {
+      setDeletingTournamentId(null);
+    }
+  };
+
+  const handleClearAllTournaments = async () => {
+    const confirmed = window.confirm('Clear all tournaments? This cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
+
+    setClearingTournaments(true);
+    try {
+      const result = await adminDeleteAllTournaments();
+      setTournaments([]);
+      setNotice(result.message || 'All tournaments cleared.');
+    } catch (error) {
+      setNotice(error.message || 'Could not clear tournaments.');
+    } finally {
+      setClearingTournaments(false);
+    }
+  };
+
   const entryFee = Number(formData.entryFee || 0);
-  const winnerAmount = entryFee * 2 * 0.75;
+  const maxParticipants = Math.max(2, Number(formData.maxParticipants || 2));
+  const totalStake = entryFee * maxParticipants;
+  const winnerShare = maxParticipants === 2 ? 0.75 : 0.6;
+  const winnerAmount = totalStake * winnerShare;
 
   return (
     <div className="admin-container">
       <div className="admin-header">
         <h1>Premium Admin Control</h1>
-        <p>Track revenue, payouts, live player health, and tournament creation.</p>
+        <p>Track revenue, payouts, live player health, and create multi-player tournaments.</p>
       </div>
 
       {notice && <div className="admin-notice">{notice}</div>}
@@ -109,6 +155,13 @@ export default function AdminPanel() {
         <>
           <div className="admin-actions">
             <button className="btn btn-outline-primary" onClick={handleSignOut}>Sign Out Admin</button>
+            <button
+              className="btn btn-outline-danger"
+              onClick={handleClearAllTournaments}
+              disabled={clearingTournaments || tournaments.length === 0}
+            >
+              {clearingTournaments ? 'Clearing Tournaments...' : 'Clear All Tournaments'}
+            </button>
           </div>
 
           {analytics && (
@@ -127,7 +180,6 @@ export default function AdminPanel() {
                 <div className="admin-card metric-card"><span>Avg Tournament Size</span><strong>{Number(analytics.averageTournamentSize || 0).toFixed(1)}</strong></div>
                 <div className="admin-card metric-card"><span>ARPU</span><strong>KES {Number(analytics.arpu || 0).toLocaleString()}</strong></div>
                 <div className="admin-card metric-card"><span>Payout Ratio</span><strong>{Math.round(Number(analytics.payoutRatio || 0) * 100)}%</strong></div>
-                <div className="admin-card metric-card"><span>Referral Conversion</span><strong>{Math.round(Number(analytics.referralConversion || 0) * 100)}%</strong></div>
                 <div className="admin-card metric-card"><span>Churn</span><strong>{Math.round(Number(analytics.churn || 0) * 100)}%</strong></div>
                 <div className="admin-card metric-card"><span>CAC</span><strong>KES {Number(analytics.cac || 0).toLocaleString()}</strong></div>
               </div>
@@ -136,7 +188,9 @@ export default function AdminPanel() {
 
           <form className="admin-card admin-form" onSubmit={handleCreateTournament}>
             <h2>Create Tournament</h2>
-            <p className="admin-form-note">Winner receives KES {winnerAmount.toLocaleString()}.</p>
+            <p className="admin-form-note">
+              Winner receives {Math.round(winnerShare * 100)}% of the total pot: KES {winnerAmount.toLocaleString()}.
+            </p>
             <input
               type="text"
               placeholder="Tournament Name"
@@ -151,6 +205,14 @@ export default function AdminPanel() {
                 placeholder="Price Per Player"
                 value={formData.entryFee}
                 onChange={(event) => setFormData((prev) => ({ ...prev, entryFee: event.target.value }))}
+                required
+              />
+              <input
+                type="number"
+                min="2"
+                placeholder="Players Required"
+                value={formData.maxParticipants}
+                onChange={(event) => setFormData((prev) => ({ ...prev, maxParticipants: event.target.value }))}
                 required
               />
               <input
@@ -170,7 +232,8 @@ export default function AdminPanel() {
             </div>
 
             <div className="admin-summary">
-              <span>Two-player stake: KES {(entryFee * 2).toLocaleString()}</span>
+              <span>Total player pot: KES {totalStake.toLocaleString()}</span>
+              <span>Players required: {maxParticipants}</span>
               <span>Winner wallet credit: KES {winnerAmount.toLocaleString()}</span>
             </div>
             <button type="submit" className="btn btn-primary">Create Tournament</button>
@@ -217,14 +280,25 @@ export default function AdminPanel() {
             <div className="admin-list">
               {tournaments.map((tournament) => {
                 const winnerPrize = Number(tournament.winnerPrize || 0);
-                const adminShare = Math.max(0, Number(tournament.entryFee || 0) * 2 - winnerPrize);
+                const totalPot = Number(tournament.totalPlayerStake || 0);
                 return (
                   <div key={tournament.id} className="admin-list-item">
                     <strong>{tournament.name}</strong>
                     <span>Price KES {Number(tournament.entryFee || 0).toLocaleString()}</span>
+                    <span>Players required: {Number(tournament.matchSize || tournament.maxParticipants || 2)}</span>
+                    <span>Total pot KES {totalPot.toLocaleString()}</span>
                     <span>Winner gets KES {winnerPrize.toLocaleString()}</span>
-                    <span>Admin gets KES {adminShare.toLocaleString()}</span>
                     <span>{tournament.status}</span>
+                    <div className="admin-list-actions">
+                      <button
+                        type="button"
+                        className="btn btn-outline-danger"
+                        onClick={() => handleDeleteTournament(tournament)}
+                        disabled={deletingTournamentId === tournament.id}
+                      >
+                        {deletingTournamentId === tournament.id ? 'Deleting...' : 'Delete Tournament'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

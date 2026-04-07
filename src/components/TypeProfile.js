@@ -295,7 +295,6 @@ export default function TypeProfile() {
             {currentUser.premium ? 'Premium member active.' : 'Upgrade-ready competitor.'}
           </p>
           <p className="email">{currentUser.email}</p>
-          <p className="email">Referral code: {currentUser.referralCode}</p>
 
           <div className="stats-grid">
             <div className="stat-box"><label>WPM</label><span className="stat-value">{currentUser.wpm}</span></div>
@@ -303,7 +302,6 @@ export default function TypeProfile() {
             <div className="stat-box"><label>Season</label><span className="stat-value">{currentUser.seasonPoints}</span></div>
             <div className="stat-box"><label>Wins</label><span className="stat-value">{currentUser.wins}</span></div>
             <div className="stat-box"><label>Balance</label><span className="stat-value earnings">KES {Number(currentUser.balance || 0).toLocaleString()}</span></div>
-            <div className="stat-box"><label>Referral Bonus</label><span className="stat-value">KES {currentUser.referralBonus}</span></div>
           </div>
 
           <div className="coach-card">
@@ -325,11 +323,6 @@ export default function TypeProfile() {
 
           <form className="wallet-topup" onSubmit={handleAddFunds}>
             <h3>Wallet Top-Up</h3>
-            <p className="wallet-help">
-              {walletConfig.topUpMethods?.length
-                ? 'Use one of the configured live payment methods below to add funds securely.'
-                : 'No live top-up methods are configured yet. Add production wallet credentials in the backend first.'}
-            </p>
             <div className="wallet-row">
               <select value={topUpMethod} onChange={(e) => setTopUpMethod(e.target.value)} disabled={!walletConfig.topUpMethods?.length}>
                 {walletConfig.topUpMethods.map((method) => (
@@ -344,11 +337,6 @@ export default function TypeProfile() {
 
           <form className="wallet-topup" onSubmit={handleWithdraw}>
             <h3>Withdraw Winnings</h3>
-            <p className="wallet-help">
-              {walletConfig.withdrawMethods?.length
-                ? 'Withdraw winnings through the configured live payout methods below. A KES 50 fee applies.'
-                : 'No live withdrawal methods are configured yet. Add payout credentials in the backend first.'}
-            </p>
             <div className="wallet-row">
               <select value={withdrawMethod} onChange={(e) => setWithdrawMethod(e.target.value)} disabled={!walletConfig.withdrawMethods?.length}>
                 {walletConfig.withdrawMethods.map((method) => (

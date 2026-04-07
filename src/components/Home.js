@@ -11,9 +11,9 @@ export default function Home() {
           <h1>⚡ The Ultimate Typing Arena</h1>
           <p className="hero-subtitle">Enter paid typing tournaments, compete against the fastest typists, and win real cash prizes.</p>
           <p className="hero-stats">
-            <span>1,200+ Active Players</span> • 
-            <span>50+ Daily Tournaments</span> • 
-            <span>KES 500K+ Prizes Awarded</span>
+            <span></span> • 
+            <span></span> • 
+            <span></span>
           </p>
           <div className="hero-buttons">
             <Link to="/play" className="btn btn-primary btn-lg">Start Typing</Link>

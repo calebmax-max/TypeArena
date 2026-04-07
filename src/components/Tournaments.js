@@ -51,7 +51,7 @@ export default function Tournaments() {
     <div className="tournaments-container">
       <div className="tournaments-header">
         <h1>Premium Match Tournaments</h1>
-        <p>Fast 1v1 entry rooms with instant winner payouts.</p>
+        <p>Join multi-player paid tournaments. When the lobby fills, the tournament starts after a 30 second countdown.</p>
       </div>
 
       {joinNotice && (
@@ -63,13 +63,12 @@ export default function Tournaments() {
       ) : (
         <div className="tournaments-grid">
           {tournaments.map((tournament) => {
-            const isFull =
-              Number(tournament.participants || 0) >=
-              Number(tournament.matchSize || tournament.maxParticipants || 2);
+            const requiredPlayers = Number(tournament.matchSize || tournament.maxParticipants || 2);
+            const joinedPlayers = Number(tournament.participants || 0) + Number(tournament.waitingPlayers || 0);
+            const isFull = joinedPlayers >= requiredPlayers;
             const cost = Number(tournament.cost ?? tournament.entryFee ?? 0);
-            const totalStake = cost * 2;
-            const winnerPrize = Number(tournament.winnerPrize ?? cost * 2 * 0.75);
-            const adminShare = Math.max(0, totalStake - winnerPrize);
+            const winnerShare = Number(tournament.winnerShare ?? (requiredPlayers === 2 ? 0.75 : 0.6));
+            const winnerPrize = Number(tournament.winnerPrize ?? cost * requiredPlayers * winnerShare);
 
             return (
               <div key={tournament.id} className="tournament-card">
@@ -90,10 +89,10 @@ export default function Tournaments() {
                 </div>
 
                 <p className="tournament-winner-note">
-                  Winner receives KES {winnerPrize.toLocaleString()}.
+                  Players: {joinedPlayers}/{requiredPlayers}
                 </p>
                 <p className="tournament-winner-note">
-                  Admin wallet receives KES {adminShare.toLocaleString()}.
+                  Winner receives KES {winnerPrize.toLocaleString()} ({Math.round(winnerShare * 100)}% of the pot).
                 </p>
 
                 <button
@@ -102,7 +101,7 @@ export default function Tournaments() {
                   disabled={processingId === tournament.id || isFull}
                 >
                   {processingId === tournament.id
-                    ? 'Matching Opponent...'
+                    ? 'Joining Tournament...'
                     : isFull
                     ? 'Tournament Full'
                     : `Join - KES ${cost.toLocaleString()}`}

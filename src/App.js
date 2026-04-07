@@ -75,6 +75,17 @@ function AppLayout() {
         </div>
       </header>
 
+      <div className="site-marquee" aria-label="Announcements">
+        <div className="site-marquee__track">
+          <span>Product Update</span>
+          <span>Paid private rooms will be available soon.</span>
+          <span>Paid tournaments will be available soon.</span>
+          <span>Product Update</span>
+          <span>Paid private rooms will be available soon.</span>
+          <span>Paid tournaments will be available soon.</span>
+        </div>
+      </div>
+
       <main>
         <Routes>
           <Route path="/" element={<Home />} />

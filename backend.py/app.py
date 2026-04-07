@@ -63,7 +63,9 @@ ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
 ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
 ADMIN_TOKENS: set[str] = set()
 TOURNAMENT_MATCH_SIZE = 2
-WINNER_PRIZE_SHARE = 0.75
+TOURNAMENT_START_DELAY_SECONDS = 30
+WINNER_PRIZE_SHARE = 0.60
+HEAD_TO_HEAD_WINNER_PRIZE_SHARE = 0.75
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 LIVE_RACE_TEXTS = {
@@ -941,8 +943,6 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
         'season': _season_name(),
         'seasonPoints': _season_points_for_user(user),
         'premium': wins >= 10 or float(user.get('balance') or 0) >= 5000,
-        'referralCode': _referral_code_for_user(user),
-        'referralBonus': 20,
         'aiCoachTip': _coach_tip_for_user(user),
         'ownedStoreItems': owned_items,
         'equippedItems': {
@@ -959,7 +959,9 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
 def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
     entry_fee = float(row.get('entry_fee') or 0)
     prize_pool = float(row.get('prize_pool') or 0)
-    total_player_stake = round(entry_fee * TOURNAMENT_MATCH_SIZE, 2)
+    match_size = int(row.get('match_size') or row.get('max_participants') or TOURNAMENT_MATCH_SIZE)
+    total_player_stake = round(entry_fee * match_size, 2)
+    winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
     status = _computed_tournament_status(row)
     start_time = row.get('start_time')
     end_time = start_time + timedelta(seconds=_duration_to_seconds(row.get('duration'))) if start_time else None
@@ -971,10 +973,11 @@ def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
         'cost': entry_fee,
         'prizePool': prize_pool,
         'totalPlayerStake': total_player_stake,
-        'winnerPrize': round(total_player_stake * WINNER_PRIZE_SHARE, 2),
+        'winnerPrize': round(total_player_stake * winner_share, 2),
+        'winnerShare': winner_share,
         'participants': int(row.get('participants') or 0),
         'maxParticipants': int(row.get('max_participants') or 0),
-        'matchSize': int(row.get('match_size') or TOURNAMENT_MATCH_SIZE),
+        'matchSize': match_size,
         'waitingPlayers': int(row.get('waiting_players') or 0),
         'status': status,
         'startTime': start_time.isoformat() + 'Z' if start_time else None,
@@ -988,7 +991,7 @@ def _fetch_tournament_with_counts(cur, tournament_id: int, lock: bool = False) -
     query = '''
         SELECT
             t.*,
-            LEAST(t.max_participants, %s) AS match_size,
+            t.max_participants AS match_size,
             (
                 SELECT COUNT(*)
                 FROM tournament_joins tj
@@ -1004,7 +1007,7 @@ def _fetch_tournament_with_counts(cur, tournament_id: int, lock: bool = False) -
     '''
     if lock:
         query += ' FOR UPDATE'
-    cur.execute(query, (TOURNAMENT_MATCH_SIZE, tournament_id))
+    cur.execute(query, (tournament_id,))
     return cur.fetchone()
 
 
@@ -1013,7 +1016,7 @@ def _fetch_all_tournaments(cur) -> list[Dict[str, Any]]:
         '''
         SELECT
             t.*,
-            LEAST(t.max_participants, %s) AS match_size,
+            t.max_participants AS match_size,
             (
                 SELECT COUNT(*)
                 FROM tournament_joins tj
@@ -1027,7 +1030,6 @@ def _fetch_all_tournaments(cur) -> list[Dict[str, Any]]:
         FROM tournaments t
         ORDER BY t.id DESC
         ''',
-        (TOURNAMENT_MATCH_SIZE,),
     )
     return cur.fetchall()
 
@@ -1072,7 +1074,9 @@ def _credit_admin_tournament_share(cur, *, tournament: Dict[str, Any]) -> float:
     if not ADMIN_EMAIL:
         return 0.0
 
-    admin_share = round(float(tournament.get('entry_fee') or 0) * TOURNAMENT_MATCH_SIZE * (1 - WINNER_PRIZE_SHARE), 2)
+    match_size = int(tournament.get('match_size') or tournament.get('max_participants') or TOURNAMENT_MATCH_SIZE)
+    winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
+    admin_share = round(float(tournament.get('entry_fee') or 0) * match_size * (1 - winner_share), 2)
     if admin_share <= 0:
         return 0.0
 

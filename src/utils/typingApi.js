@@ -371,6 +371,32 @@ export const adminCreateTournament = async (payload) => {
   }
 };
 
+export const adminDeleteTournament = async (tournamentId) => {
+  try {
+    const response = await fetch(buildApiUrl(`/api/admin/tournaments/${tournamentId}`), {
+      method: 'DELETE',
+      headers: buildAdminHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Admin delete tournament error:', error);
+    throw error;
+  }
+};
+
+export const adminDeleteAllTournaments = async () => {
+  try {
+    const response = await fetch(buildApiUrl('/api/admin/tournaments'), {
+      method: 'DELETE',
+      headers: buildAdminHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Admin clear tournaments error:', error);
+    throw error;
+  }
+};
+
 export const fetchAdminAnalytics = async () => {
   try {
     const response = await fetch(buildApiUrl('/api/admin/analytics'), {

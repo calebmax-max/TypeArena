@@ -78,7 +78,7 @@ export default function Leaderboard() {
                 <div className="player-name">
                   {player.username} {player.premium ? 'VIP' : ''}
                 </div>
-                <span className="rank-number">{player.referralCode || player.season}</span>
+                <span className="rank-number">{player.season}</span>
               </div>
               <span className="col-wpm">
                 <span className="stat-badge">{Number(player.wpm || 0).toFixed(1)}</span>

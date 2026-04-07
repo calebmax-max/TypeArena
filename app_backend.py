@@ -63,7 +63,9 @@ ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
 ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
 ADMIN_TOKENS: set[str] = set()
 TOURNAMENT_MATCH_SIZE = 2
-WINNER_PRIZE_SHARE = 0.75
+TOURNAMENT_START_DELAY_SECONDS = 30
+WINNER_PRIZE_SHARE = 0.60
+HEAD_TO_HEAD_WINNER_PRIZE_SHARE = 0.75
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 LIVE_RACE_TEXTS = {
@@ -941,8 +943,6 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
         'season': _season_name(),
         'seasonPoints': _season_points_for_user(user),
         'premium': wins >= 10 or float(user.get('balance') or 0) >= 5000,
-        'referralCode': _referral_code_for_user(user),
-        'referralBonus': 20,
         'aiCoachTip': _coach_tip_for_user(user),
         'ownedStoreItems': owned_items,
         'equippedItems': {
@@ -959,7 +959,9 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
 def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
     entry_fee = float(row.get('entry_fee') or 0)
     prize_pool = float(row.get('prize_pool') or 0)
-    total_player_stake = round(entry_fee * TOURNAMENT_MATCH_SIZE, 2)
+    match_size = int(row.get('match_size') or row.get('max_participants') or TOURNAMENT_MATCH_SIZE)
+    total_player_stake = round(entry_fee * match_size, 2)
+    winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
     status = _computed_tournament_status(row)
     start_time = row.get('start_time')
     end_time = start_time + timedelta(seconds=_duration_to_seconds(row.get('duration'))) if start_time else None
@@ -971,10 +973,11 @@ def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
         'cost': entry_fee,
         'prizePool': prize_pool,
         'totalPlayerStake': total_player_stake,
-        'winnerPrize': round(total_player_stake * WINNER_PRIZE_SHARE, 2),
+        'winnerPrize': round(total_player_stake * winner_share, 2),
+        'winnerShare': winner_share,
         'participants': int(row.get('participants') or 0),
         'maxParticipants': int(row.get('max_participants') or 0),
-        'matchSize': int(row.get('match_size') or TOURNAMENT_MATCH_SIZE),
+        'matchSize': match_size,
         'waitingPlayers': int(row.get('waiting_players') or 0),
         'status': status,
         'startTime': start_time.isoformat() + 'Z' if start_time else None,
@@ -988,7 +991,7 @@ def _fetch_tournament_with_counts(cur, tournament_id: int, lock: bool = False) -
     query = '''
         SELECT
             t.*,
-            LEAST(t.max_participants, %s) AS match_size,
+            t.max_participants AS match_size,
             (
                 SELECT COUNT(*)
                 FROM tournament_joins tj
@@ -1004,7 +1007,7 @@ def _fetch_tournament_with_counts(cur, tournament_id: int, lock: bool = False) -
     '''
     if lock:
         query += ' FOR UPDATE'
-    cur.execute(query, (TOURNAMENT_MATCH_SIZE, tournament_id))
+    cur.execute(query, (tournament_id,))
     return cur.fetchone()
 
 
@@ -1013,7 +1016,7 @@ def _fetch_all_tournaments(cur) -> list[Dict[str, Any]]:
         '''
         SELECT
             t.*,
-            LEAST(t.max_participants, %s) AS match_size,
+            t.max_participants AS match_size,
             (
                 SELECT COUNT(*)
                 FROM tournament_joins tj
@@ -1027,7 +1030,6 @@ def _fetch_all_tournaments(cur) -> list[Dict[str, Any]]:
         FROM tournaments t
         ORDER BY t.id DESC
         ''',
-        (TOURNAMENT_MATCH_SIZE,),
     )
     return cur.fetchall()
 
@@ -1072,7 +1074,9 @@ def _credit_admin_tournament_share(cur, *, tournament: Dict[str, Any]) -> float:
     if not ADMIN_EMAIL:
         return 0.0
 
-    admin_share = round(float(tournament.get('entry_fee') or 0) * TOURNAMENT_MATCH_SIZE * (1 - WINNER_PRIZE_SHARE), 2)
+    match_size = int(tournament.get('match_size') or tournament.get('max_participants') or TOURNAMENT_MATCH_SIZE)
+    winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
+    admin_share = round(float(tournament.get('entry_fee') or 0) * match_size * (1 - winner_share), 2)
     if admin_share <= 0:
         return 0.0
 
@@ -1384,6 +1388,63 @@ def admin_create_tournament():
             tournament = _fetch_tournament_with_counts(cur, tournament_id)
         conn.commit()
         return jsonify({'message': 'Tournament created successfully.', 'tournament': _serialize_tournament(tournament)}), 201
+    finally:
+        conn.close()
+
+
+@app.delete('/api/admin/tournaments/<int:tournament_id>')
+def admin_delete_tournament(tournament_id: int):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            tournament = _fetch_tournament_with_counts(cur, tournament_id, lock=True)
+            if not tournament:
+                return jsonify({'message': 'Tournament not found.'}), 404
+
+            participants = int(tournament.get('participants') or 0)
+            if participants > 0:
+                return jsonify({'message': 'This tournament already has paid participants and cannot be deleted.'}), 400
+
+            cur.execute('DELETE FROM tournaments WHERE id = %s', (tournament_id,))
+        conn.commit()
+        return jsonify({'message': 'Tournament deleted successfully.'})
+    finally:
+        conn.close()
+
+
+@app.delete('/api/admin/tournaments')
+def admin_delete_all_tournaments():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT t.id
+                FROM tournaments t
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM tournament_joins tj
+                    WHERE tj.tournament_id = t.id AND tj.paid_amount > 0
+                )
+                LIMIT 1
+                '''
+            )
+            protected_tournament = cur.fetchone()
+            if protected_tournament:
+                return jsonify({'message': 'Some tournaments already have paid participants and cannot be cleared in bulk.'}), 400
+
+            cur.execute('SELECT COUNT(*) AS total FROM tournaments')
+            total_row = cur.fetchone() or {}
+            total_deleted = int(total_row.get('total') or 0)
+            cur.execute('DELETE FROM tournaments')
+        conn.commit()
+        return jsonify({'message': f'Cleared {total_deleted} tournament{"s" if total_deleted != 1 else ""}.', 'deletedCount': total_deleted})
     finally:
         conn.close()
 
@@ -2021,7 +2082,9 @@ def payout_prize_to_winner():
             payout_code = f'payout_{int(datetime.utcnow().timestamp() * 1000)}'
             admin_share = 0.0
             if tournament:
-                amount_value = round(float(tournament.get('entry_fee') or 0) * TOURNAMENT_MATCH_SIZE * WINNER_PRIZE_SHARE, 2)
+                match_size = int(tournament.get('max_participants') or TOURNAMENT_MATCH_SIZE)
+                winner_share = HEAD_TO_HEAD_WINNER_PRIZE_SHARE if match_size == TOURNAMENT_MATCH_SIZE else WINNER_PRIZE_SHARE
+                amount_value = round(float(tournament.get('entry_fee') or 0) * match_size * winner_share, 2)
             else:
                 try:
                     amount_value = float(payload.get('amount'))
@@ -2103,11 +2166,9 @@ def queue_live_race():
             is_private = bool(payload.get('isPrivate'))
             invite_code = str(payload.get('inviteCode') or '').strip().upper()
             room_password = str(payload.get('password') or '').strip()
-            winner_takes_all = bool(payload.get('winnerTakesAll'))
-            stake_amount = float(payload.get('stakeAmount') or 0)
             winner_prize = float(payload.get('winnerPrize') or 0)
-            if stake_amount > 0:
-                winner_prize = round(stake_amount * TOURNAMENT_MATCH_SIZE, 2) if winner_takes_all else winner_prize
+            stake_amount = 0.0
+            winner_takes_all = False
 
             text = _generate_passage(mode, language).get('passage') or LIVE_RACE_TEXTS.get(mode, LIVE_RACE_TEXTS['standard'])
             player_snapshot = {'userId': user['id'], 'username': user['username'], 'progress': 0, 'currentWpm': 0}
@@ -2121,16 +2182,6 @@ def queue_live_race():
                 if all(existing['userId'] != user['id'] for existing in room['players']) and len(room['players']) >= TOURNAMENT_MATCH_SIZE:
                     return jsonify({'message': 'This private room is already full.'}), 400
                 if all(existing['userId'] != user['id'] for existing in room['players']):
-                    if float(room.get('stakeAmount') or 0) > 0:
-                        try:
-                            _debit_user_balance(cur, user_id=user['id'], amount=float(room['stakeAmount']))
-                        except ValueError as exc:
-                            conn.rollback()
-                            return jsonify({'message': str(exc)}), 400
-                        room.setdefault('escrow', {})[user['id']] = float(room['stakeAmount'])
-                        room['totalEscrow'] = float(room.get('totalEscrow') or 0) + float(room['stakeAmount'])
-                        cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
-                        user = cur.fetchone()
                     room['players'].append(player_snapshot)
                 room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
                 room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
@@ -2140,7 +2191,7 @@ def queue_live_race():
                         'room': _serialize_live_room(room, viewer_user_id=user['id']),
                         'matched': room['status'] == 'countdown',
                         'user': _safe_user(user),
-                        'message': 'Stake locked in escrow for this friend battle.' if float(room.get('stakeAmount') or 0) > 0 else 'Joined friend battle.',
+                        'message': 'Joined private room.',
                     }
                 )
 
@@ -2184,8 +2235,8 @@ def queue_live_race():
                 'isPrivate': is_private,
                 'winnerTakesAll': winner_takes_all,
                 'stakeAmount': stake_amount,
-                'escrow': {user['id']: stake_amount} if is_private and stake_amount > 0 else {},
-                'totalEscrow': stake_amount if is_private and stake_amount > 0 else 0,
+                'escrow': {},
+                'totalEscrow': 0,
                 'players': [player_snapshot],
                 'results': {},
                 'winnerPrize': winner_prize,
@@ -2203,7 +2254,7 @@ def queue_live_race():
                     'room': _serialize_live_room(room, viewer_user_id=user['id']),
                     'matched': False,
                     'user': _safe_user(user),
-                    'message': 'Private room created and your stake is locked in escrow.' if is_private and stake_amount > 0 else 'Live room created.',
+                    'message': 'Private room created.' if is_private else 'Live room created.',
                 }
             ), 201
     finally:
@@ -2267,7 +2318,7 @@ def cancel_live_race(room_id: str):
         current_user = next((item for item in refunded_users if item['id'] == user['id']), _safe_user(user))
         return jsonify(
             {
-                'message': 'Private room canceled and escrow refunded to joined players.',
+                'message': 'Private room canceled.',
                 'refundedUsers': refunded_users,
                 'user': current_user,
             }
@@ -2451,13 +2502,10 @@ def join_tournament(tournament_id: int):
             if tournament_status == 'completed':
                 return jsonify({'message': 'This tournament has already ended.'}), 400
 
-            participants = int(tournament.get('participants') or 0)
-            match_size = int(tournament.get('match_size') or TOURNAMENT_MATCH_SIZE)
-            if participants >= match_size:
-                return jsonify({'message': 'This tournament is already full.'}), 400
-
             entry_fee = float(tournament.get('entry_fee') or 0)
             user_balance = float(user.get('balance') or 0)
+            if user_balance < entry_fee:
+                return jsonify({'message': f'Insufficient funds. You need KES {entry_fee:.2f} to join this tournament.'}), 400
 
             cur.execute(
                 'SELECT * FROM tournament_joins WHERE tournament_id=%s AND user_id=%s FOR UPDATE',
@@ -2471,109 +2519,116 @@ def join_tournament(tournament_id: int):
                         {
                             'success': True,
                             'matched': True,
-                            'message': 'You are already connected to this tournament match.',
+                            'message': 'Tournament starts in the next 30 seconds. Your entry has already been confirmed.',
                             'tournament': _serialize_tournament(refreshed_tournament),
                             'user': _safe_user(user),
                         }
                     )
+                remaining_players = max(
+                    0,
+                    int(refreshed_tournament.get('match_size') or match_size)
+                    - int(refreshed_tournament.get('participants') or 0)
+                    - int(refreshed_tournament.get('waiting_players') or 0),
+                )
                 return jsonify(
                     {
                         'success': True,
                         'matched': False,
-                        'message': 'No opponent online right now. Try another tournament or wait for another player.',
+                        'message': (
+                            f'You are already queued. Waiting for {remaining_players} more '
+                            f'player{"s" if remaining_players != 1 else ""}.'
+                        ),
                         'tournament': _serialize_tournament(refreshed_tournament),
                         'user': _safe_user(user),
                     }
                 )
 
+            paid_participants = int(tournament.get('participants') or 0)
+            waiting_players = int(tournament.get('waiting_players') or 0)
+            joined_players = paid_participants + waiting_players
+            match_size = int(tournament.get('match_size') or tournament.get('max_participants') or TOURNAMENT_MATCH_SIZE)
+            if joined_players >= match_size:
+                return jsonify({'message': 'This tournament is already full.'}), 400
+
+            cur.execute(
+                'INSERT INTO tournament_joins (tournament_id, user_id, paid_amount) VALUES (%s, %s, %s)',
+                (tournament_id, user['id'], 0),
+            )
             cur.execute(
                 '''
                 SELECT *
                 FROM tournament_joins
-                WHERE tournament_id=%s AND user_id <> %s AND paid_amount = 0
-                ORDER BY joined_at ASC
-                LIMIT 1
+                WHERE tournament_id=%s
+                ORDER BY joined_at ASC, id ASC
                 FOR UPDATE
                 ''',
-                (tournament_id, user['id']),
+                (tournament_id,),
             )
-            waiting_join = cur.fetchone()
+            tournament_joins = cur.fetchall()
+            queued_players = len(tournament_joins)
 
-            if not waiting_join:
-                cur.execute(
-                    'INSERT INTO tournament_joins (tournament_id, user_id, paid_amount) VALUES (%s, %s, %s)',
-                    (tournament_id, user['id'], 0),
-                )
+            if queued_players < match_size:
                 refreshed_tournament = _fetch_tournament_with_counts(cur, tournament_id)
+                remaining_players = max(0, match_size - queued_players)
                 conn.commit()
                 return jsonify(
                     {
                         'success': True,
                         'matched': False,
-                        'message': 'No opponent online right now. Try another tournament or wait for another player.',
+                        'message': (
+                            f'You joined the tournament. Waiting for {remaining_players} more '
+                            f'player{"s" if remaining_players != 1 else ""}.'
+                        ),
                         'tournament': _serialize_tournament(refreshed_tournament),
                         'user': _safe_user(user),
                     }
                 )
 
-            cur.execute('SELECT * FROM users WHERE id = %s FOR UPDATE', (waiting_join['user_id'],))
-            opponent = cur.fetchone()
-            if not opponent:
-                cur.execute('DELETE FROM tournament_joins WHERE id = %s', (waiting_join['id'],))
+            if queued_players > match_size:
+                return jsonify({'message': 'This tournament is already full.'}), 400
+
+            joined_user_ids = [int(join_row['user_id']) for join_row in tournament_joins]
+            joined_users: dict[int, Dict[str, Any]] = {}
+            insufficient_user_ids: list[int] = []
+            for joined_user_id in joined_user_ids:
+                cur.execute('SELECT * FROM users WHERE id = %s FOR UPDATE', (joined_user_id,))
+                joined_user = cur.fetchone()
+                if not joined_user:
+                    insufficient_user_ids.append(joined_user_id)
+                    continue
+                joined_users[joined_user_id] = joined_user
+                if float(joined_user.get('balance') or 0) < entry_fee:
+                    insufficient_user_ids.append(joined_user_id)
+
+            if insufficient_user_ids:
+                placeholders = ', '.join(['%s'] * len(insufficient_user_ids))
                 cur.execute(
-                    'INSERT INTO tournament_joins (tournament_id, user_id, paid_amount) VALUES (%s, %s, %s)',
-                    (tournament_id, user['id'], 0),
+                    f'DELETE FROM tournament_joins WHERE tournament_id = %s AND user_id IN ({placeholders})',
+                    (tournament_id, *insufficient_user_ids),
                 )
                 refreshed_tournament = _fetch_tournament_with_counts(cur, tournament_id)
                 conn.commit()
                 return jsonify(
                     {
-                        'success': True,
+                        'success': False,
                         'matched': False,
-                        'message': 'No opponent online right now. Try another tournament or wait for another player.',
+                        'message': 'Some queued players no longer had enough funds and were removed. Join again when the lobby fills up.',
                         'tournament': _serialize_tournament(refreshed_tournament),
                         'user': _safe_user(user),
                     }
                 )
 
-            if user_balance < entry_fee:
-                return jsonify({'message': f'Insufficient funds. You need KES {entry_fee:.2f} to join this tournament.'}), 400
+            for joined_user_id in joined_user_ids:
+                cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (entry_fee, joined_user_id))
 
-            opponent_balance = float(opponent.get('balance') or 0)
-            if opponent_balance < entry_fee:
-                cur.execute('DELETE FROM tournament_joins WHERE id = %s', (waiting_join['id'],))
-                cur.execute(
-                    'INSERT INTO tournament_joins (tournament_id, user_id, paid_amount) VALUES (%s, %s, %s)',
-                    (tournament_id, user['id'], 0),
-                )
-                refreshed_tournament = _fetch_tournament_with_counts(cur, tournament_id)
-                conn.commit()
-                return jsonify(
-                    {
-                        'success': True,
-                        'matched': False,
-                        'message': 'A player was found, but they no longer have enough funds. No opponent is available right now.',
-                        'tournament': _serialize_tournament(refreshed_tournament),
-                        'user': _safe_user(user),
-                    }
-                )
-
-            cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (entry_fee, user['id']))
-            cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (entry_fee, opponent['id']))
             cur.execute(
-                'UPDATE tournament_joins SET paid_amount=%s WHERE id=%s',
-                (entry_fee, waiting_join['id']),
+                'UPDATE tournament_joins SET paid_amount=%s WHERE tournament_id=%s AND paid_amount=0',
+                (entry_fee, tournament_id),
             )
             cur.execute(
-                'INSERT INTO tournament_joins (tournament_id, user_id, paid_amount) VALUES (%s, %s, %s)',
-                (tournament_id, user['id'], entry_fee),
+                'UPDATE tournaments SET participants=%s, status=%s, start_time=%s WHERE id=%s',
+                (match_size, 'upcoming', datetime.utcnow() + timedelta(seconds=TOURNAMENT_START_DELAY_SECONDS), tournament_id),
             )
-
-            if match_size == TOURNAMENT_MATCH_SIZE:
-                cur.execute(
-                    'UPDATE tournaments SET participants=%s, status=%s, start_time=%s WHERE id=%s',
-                    (match_size, 'active', datetime.utcnow(), tournament_id),
-                )
 
             cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
             updated_user = cur.fetchone()
@@ -2581,7 +2636,10 @@ def join_tournament(tournament_id: int):
 
         conn.commit()
 
-        message = 'Opponent found. You have both been connected and the tournament fee was deducted automatically from both wallets.'
+        message = (
+            f'All {match_size} players have joined. Tournament starts in the next '
+            f'{TOURNAMENT_START_DELAY_SECONDS} seconds. Entry fees have been deducted.'
+        )
         return jsonify(
             {
                 'success': True,
@@ -2589,7 +2647,6 @@ def join_tournament(tournament_id: int):
                 'message': message,
                 'tournament': _serialize_tournament(updated_tournament),
                 'user': _safe_user(updated_user),
-                'opponent': _safe_user(opponent),
             }
         )
     finally:

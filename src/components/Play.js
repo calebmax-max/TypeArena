@@ -48,8 +48,6 @@ export default function Play() {
   const [friendBattle, setFriendBattle] = useState({
     inviteCode: '',
     password: '',
-    stakeAmount: '100',
-    winnerTakesAll: true,
   });
   const inputRef = useRef(null);
   const timerRef = useRef(null);
@@ -237,11 +235,6 @@ export default function Play() {
         duration,
         isPrivate: true,
         password: friendBattle.password,
-        stakeAmount: Number(friendBattle.stakeAmount || 0),
-        winnerTakesAll: friendBattle.winnerTakesAll,
-        winnerPrize: friendBattle.winnerTakesAll
-          ? Number(friendBattle.stakeAmount || 0) * 2
-          : Math.round((duration / 60) * 150),
       });
       setLiveRoom(response.room);
       setTypingText('');
@@ -305,7 +298,7 @@ export default function Play() {
         setNotice('Please sign in first. We are taking you to your profile, then back to this room.');
         navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}`);
       } else if (/insufficient funds|need kes/i.test(message)) {
-        setNotice('You need to top up your wallet before joining this paid room. We are taking you to your profile.');
+        setNotice('You need to top up your wallet before joining this room. We are taking you to your profile.');
         navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}&topup=1`);
       } else {
         setNotice(message);
@@ -462,26 +455,7 @@ export default function Play() {
                 }
                 placeholder="Private room password"
               />
-              <input
-                type="number"
-                min="0"
-                value={friendBattle.stakeAmount}
-                onChange={(event) =>
-                  setFriendBattle((prev) => ({ ...prev, stakeAmount: event.target.value }))
-                }
-                placeholder="Custom stake amount"
-              />
             </div>
-            <label className="friend-battle-toggle">
-              <input
-                type="checkbox"
-                checked={friendBattle.winnerTakesAll}
-                onChange={(event) =>
-                  setFriendBattle((prev) => ({ ...prev, winnerTakesAll: event.target.checked }))
-                }
-              />
-              Winner-takes-all room
-            </label>
             <div className="results-actions">
               <button className="btn btn-primary" onClick={createFriendBattle} disabled={loadingLive}>
                 Create Private Room
@@ -494,10 +468,7 @@ export default function Play() {
               </button>
             </div>
             <p className="results-challenge">
-              Invite code, private password, custom stake, and winner-takes-all all work here.
-            </p>
-            <p className="results-challenge">
-              If you set a stake, the money is deducted from each player wallet and held in escrow until the winner is paid automatically.
+              Invite code and private password work here for free private matches.
             </p>
           </div>
 
@@ -538,7 +509,7 @@ export default function Play() {
               </button>
               {liveRoom?.isPrivate && (
                 <button className="btn btn-outline-danger" onClick={cancelPrivateRoom} disabled={loadingLive}>
-                  {loadingLive ? 'Canceling Room...' : 'Cancel Room + Refund'}
+                  {loadingLive ? 'Canceling Room...' : 'Cancel Room'}
                 </button>
               )}
               <button className="btn btn-secondary" onClick={() => setPhase('lobby')}>

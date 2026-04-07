@@ -48,6 +48,49 @@ html {
   color: #61dafb;
 }
 
+.site-marquee {
+  overflow: hidden;
+  white-space: nowrap;
+  background: linear-gradient(90deg, #f7f3eb 0%, #ffffff 50%, #f7f3eb 100%);
+  color: #1f2430;
+  border-bottom: 1px solid rgba(31, 36, 48, 0.1);
+}
+
+.site-marquee__track {
+  display: inline-flex;
+  align-items: center;
+  gap: 2rem;
+  min-width: max-content;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  animation: siteMarqueeScroll 24s linear infinite;
+}
+
+.site-marquee__track span {
+  position: relative;
+}
+
+.site-marquee__track span:first-child,
+.site-marquee__track span:nth-child(4) {
+  color: #8a5a09;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.site-marquee__track span::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 2rem;
+  border-radius: 999px;
+  background: #c58a22;
+  vertical-align: middle;
+}
+
 .site-header {
   position: sticky;
   top: 0;
@@ -330,6 +373,15 @@ html {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes siteMarqueeScroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
   }
 }
 
