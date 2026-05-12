@@ -244,15 +244,26 @@ export const updateUserProfile = async (userId, updates) => {
 
 export const addFundsToWallet = async (amount, accountIdentifier, paymentMethod = 'stripe_checkout', currency = 'USD') => {
   try {
-    const response = await fetch(buildApiUrl('/api/wallet/topup'), {
+    const endpoint = paymentMethod === 'mpesa' ? '/api/mpesa_payment' : '/api/wallet/topup';
+    const body =
+      paymentMethod === 'mpesa'
+        ? {
+            amount: Number(amount),
+            phone: accountIdentifier,
+            phoneNumber: accountIdentifier,
+            accountReference: 'account',
+            transactionDesc: 'account',
+          }
+        : {
+            amount: Number(amount),
+            accountIdentifier,
+            paymentMethod,
+            currency,
+          };
+    const response = await fetch(buildApiUrl(endpoint), {
       method: 'POST',
       headers: buildHeaders(),
-      body: JSON.stringify({
-        amount: Number(amount),
-        accountIdentifier,
-        paymentMethod,
-        currency,
-      }),
+      body: JSON.stringify(body),
     });
     const data = await parseResponse(response);
     if (data?.user) {

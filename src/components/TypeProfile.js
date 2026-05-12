@@ -51,8 +51,15 @@ export default function TypeProfile() {
   const [authNotice, setAuthNotice] = useState('');
   const simulatedPaymentsEnabled = Boolean(walletConfig.simulatedPaymentsEnabled);
 
+  const loadWalletConfig = async () => {
+    const walletConfigData = await fetchWalletConfig();
+    const normalizedConfig = walletConfigData || { topUpMethods: [], withdrawMethods: [] };
+    setWalletConfig(normalizedConfig);
+    return normalizedConfig;
+  };
+
   const loadProfile = async () => {
-    const [user, walletConfigData] = await Promise.all([fetchCurrentUser(), fetchWalletConfig()]);
+    const [user, walletConfigData] = await Promise.all([fetchCurrentUser(), loadWalletConfig()]);
     setWalletConfig(walletConfigData || { topUpMethods: [], withdrawMethods: [] });
     setCurrentUser(user);
     if (user?.id) {
@@ -194,11 +201,22 @@ export default function TypeProfile() {
   const handleWithdraw = async (event) => {
     event.preventDefault();
     try {
+      const latestWalletConfig = await loadWalletConfig();
+      if (!latestWalletConfig.withdrawMethods?.length) {
+        setWalletNotice('Withdrawal is not enabled yet. Restart the backend so it reloads the latest M-Pesa withdrawal settings, then try again.');
+        return;
+      }
+
+      const activeWithdrawMethod = latestWalletConfig.withdrawMethods.includes(withdrawMethod)
+        ? withdrawMethod
+        : latestWalletConfig.withdrawMethods[0];
+      setWithdrawMethod(activeWithdrawMethod);
+
       const result = await withdrawFundsToWallet(
         withdrawAmount,
         withdrawAccount,
-        withdrawMethod,
-        withdrawMethod === 'mpesa' ? 'KES' : 'USD'
+        activeWithdrawMethod,
+        activeWithdrawMethod === 'mpesa' ? 'KES' : 'USD'
       );
       setWalletNotice(result.message || 'Withdrawal completed.');
       setWithdrawAmount('');
@@ -376,10 +394,15 @@ export default function TypeProfile() {
                 <span>Amount</span>
                 <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="KES amount" type="number" min="1" required />
               </label>
-              <button type="submit" className="btn btn-outline-primary" disabled={!walletConfig.withdrawMethods?.length}>
+              <button type="submit" className="btn btn-outline-primary">
                 {simulatedPaymentsEnabled ? 'Run Simulated Withdrawal' : 'Withdraw'}
               </button>
             </div>
+            {!walletConfig.withdrawMethods?.length && (
+              <p className="wallet-notice">
+                Withdrawal methods have not loaded yet. Press Withdraw to retry the wallet settings check.
+              </p>
+            )}
             {walletNotice && <p className="wallet-notice">{walletNotice}</p>}
           </form>
         </div>

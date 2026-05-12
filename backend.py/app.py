@@ -887,7 +887,13 @@ def _mpesa_access_token() -> str:
         raise ValueError(f'Could not get M-Pesa access token: {body or exc}') from exc
 
 
-def _mpesa_stk_push(phone_number: str, amount: float, account_reference: str, description: str) -> Dict[str, Any]:
+def _mpesa_stk_push(
+    phone_number: str,
+    amount: float,
+    account_reference: str,
+    description: str,
+    callback_url: str | None = None,
+) -> Dict[str, Any]:
     token = _mpesa_access_token()
     timestamp = _mpesa_timestamp()
 
@@ -900,7 +906,7 @@ def _mpesa_stk_push(phone_number: str, amount: float, account_reference: str, de
         'PartyA': phone_number,
         'PartyB': MPESA_SHORTCODE,
         'PhoneNumber': phone_number,
-        'CallBackURL': MPESA_CALLBACK_URL,
+        'CallBackURL': str(callback_url or MPESA_CALLBACK_URL).strip() or MPESA_CALLBACK_URL,
         'AccountReference': account_reference,
         'TransactionDesc': description,
     }
@@ -926,6 +932,35 @@ def _mpesa_b2c_payout(phone_number: str, amount: float, remarks: str, occasion: 
 
     url = f'{MPESA_BASE_URL}/mpesa/b2c/v1/paymentrequest'
     return _http_json('POST', url, payload=payload, headers={'Authorization': f'Bearer {token}'})
+
+
+def _withdrawal_fee_for_method(amount: float, payout_method: str) -> float:
+    normalized_method = str(payout_method or '').strip().lower()
+    if normalized_method != 'mpesa':
+        return float(WITHDRAWAL_FEE)
+
+    mpesa_fee_bands = [
+        (1, 49, 0.0),
+        (50, 100, 11.0),
+        (101, 1500, 34.0),
+        (1501, 2500, 38.0),
+        (2501, 3500, 61.0),
+        (3501, 5000, 78.0),
+        (5001, 7500, 98.0),
+        (7501, 10000, 126.0),
+        (10001, 15000, 151.0),
+        (15001, 20000, 185.0),
+        (20001, 35000, 197.0),
+        (35001, 50000, 278.0),
+        (50001, 250000, 309.0),
+    ]
+
+    rounded_amount = int(round(amount))
+    for lower, upper, fee in mpesa_fee_bands:
+        if lower <= rounded_amount <= upper:
+            return fee
+
+    return 309.0
 
 
 def _wallet_capabilities() -> Dict[str, Any]:
@@ -1741,10 +1776,11 @@ def wallet_withdraw():
         if not payout_destination:
             return jsonify({'message': 'A valid payout destination is required.'}), 400
 
-        total_debit = amount_value + WITHDRAWAL_FEE
+        withdrawal_fee = _withdrawal_fee_for_method(amount_value, payout_method)
+        total_debit = amount_value + withdrawal_fee
         current_balance = float(user.get('balance') or 0)
         if current_balance < total_debit:
-            return jsonify({'message': f'Insufficient balance. You need KES {total_debit:.2f} including the KES {WITHDRAWAL_FEE:.2f} fee.'}), 400
+            return jsonify({'message': f'Insufficient balance. You need KES {total_debit:.2f} including the KES {withdrawal_fee:.2f} fee.'}), 400
 
         payout_status = 'pending'
         payout_mode = 'live'
@@ -1787,8 +1823,8 @@ def wallet_withdraw():
         conn.commit()
         return jsonify(
             {
-                'message': f'Withdrawal sent via {payout_method.replace("_", " ").title()}. KES {WITHDRAWAL_FEE:.0f} fee deducted.',
-                'fee': WITHDRAWAL_FEE,
+                'message': f'Withdrawal sent via {payout_method.replace("_", " ").title()}. KES {withdrawal_fee:.0f} fee deducted.',
+                'fee': withdrawal_fee,
                 'amount': amount_value,
                 'currency': currency,
                 'payoutMethod': payout_method,
@@ -1912,6 +1948,134 @@ def wallet_topup():
             {
                 'message': 'M-Pesa prompt sent. Complete payment on your phone to finish top-up.',
                 'status': 'pending',
+                'mpesa': stk_response,
+            }
+        )
+    finally:
+        conn.close()
+
+
+@app.post('/api/mpesa_payment')
+def mpesa_payment():
+    payload = request.get_json(silent=True) or request.form.to_dict() or {}
+
+    try:
+        amount_value = float(payload.get('amount'))
+    except (TypeError, ValueError):
+        return jsonify({'message': 'A valid amount is required.'}), 400
+
+    if amount_value <= 0:
+        return jsonify({'message': 'Amount must be greater than zero.'}), 400
+
+    phone_number = _normalize_mpesa_phone(payload.get('phone') or payload.get('phoneNumber') or '')
+    if not phone_number:
+        return jsonify({'message': 'A valid M-Pesa phone number is required.'}), 400
+
+    account_reference = str(payload.get('accountReference') or 'account').strip() or 'account'
+    description = str(payload.get('transactionDesc') or 'account').strip() or 'account'
+    callback_url = str(payload.get('callbackUrl') or '').strip() or None
+    tx_code = f'mpesa_{int(datetime.utcnow().timestamp() * 1000)}'
+    conn = get_connection()
+
+    try:
+        user = _get_user_from_header(conn)
+
+        if MPESA_SIMULATE:
+            simulated_checkout_id = f'SIM-{tx_code}'
+            simulated_merchant_id = f'SIM-MERCHANT-{phone_number}'
+            updated_user = None
+
+            if user:
+                with conn.cursor() as cur:
+                    cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, user['id']))
+                    cur.execute(
+                        '''
+                        INSERT INTO mpesa_transactions
+                        (tx_code, user_id, phone_number, amount, status, mode, checkout_request_id, merchant_request_id, created_at, completed_at, result_desc)
+                        VALUES (%s, %s, %s, %s, 'completed', 'simulated', %s, %s, %s, %s, %s)
+                        ''',
+                        (
+                            tx_code,
+                            user['id'],
+                            phone_number,
+                            amount_value,
+                            simulated_checkout_id,
+                            simulated_merchant_id,
+                            _now_db(),
+                            _now_db(),
+                            description,
+                        ),
+                    )
+                    cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                    updated_user = cur.fetchone()
+                conn.commit()
+
+            return jsonify(
+                {
+                    'message': 'Please Complete Payment in Your Phone and we will deliver in minutes',
+                    'status': 'completed' if user else 'pending',
+                    'mode': 'simulated',
+                    'paymentMethod': 'mpesa',
+                    'user': _safe_user(updated_user, conn) if updated_user else None,
+                    'mpesa': {
+                        'ResponseCode': '0',
+                        'ResponseDescription': 'Simulated STK push accepted for testing.',
+                        'CustomerMessage': 'Simulated M-Pesa prompt sent.',
+                        'CheckoutRequestID': simulated_checkout_id,
+                        'MerchantRequestID': simulated_merchant_id,
+                        'PhoneNumber': phone_number,
+                        'Amount': int(round(amount_value)),
+                    },
+                }
+            )
+
+        try:
+            stk_response = _mpesa_stk_push(
+                phone_number=phone_number,
+                amount=amount_value,
+                account_reference=account_reference,
+                description=description,
+                callback_url=callback_url,
+            )
+        except ValueError as exc:
+            return jsonify({'message': str(exc)}), 400
+
+        if stk_response.get('ResponseCode') != '0':
+            return jsonify(
+                {
+                    'message': stk_response.get('errorMessage')
+                    or stk_response.get('ResponseDescription')
+                    or 'M-Pesa payment request failed.',
+                    'mpesa': stk_response,
+                }
+            ), 400
+
+        if user:
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''
+                    INSERT INTO mpesa_transactions
+                    (tx_code, user_id, phone_number, amount, status, mode, checkout_request_id, merchant_request_id, created_at)
+                    VALUES (%s, %s, %s, %s, 'pending', 'live', %s, %s, %s)
+                    ''',
+                    (
+                        tx_code,
+                        user['id'],
+                        phone_number,
+                        amount_value,
+                        stk_response.get('CheckoutRequestID'),
+                        stk_response.get('MerchantRequestID'),
+                        _now_db(),
+                    ),
+                )
+            conn.commit()
+
+        return jsonify(
+            {
+                'message': 'Please Complete Payment in Your Phone and we will deliver in minutes',
+                'status': 'pending',
+                'mode': 'live',
+                'paymentMethod': 'mpesa',
                 'mpesa': stk_response,
             }
         )
