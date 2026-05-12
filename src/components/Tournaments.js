@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { fetchTournaments, joinTournament } from '../utils/typingApi';
+import { fetchCurrentUser, fetchTournaments, joinTournament } from '../utils/typingApi';
 import '../styles/Tournaments.css';
 
 export default function Tournaments() {
   const [tournaments, setTournaments] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [joinNotice, setJoinNotice] = useState(null);
@@ -11,7 +12,8 @@ export default function Tournaments() {
   useEffect(() => {
     const loadTournaments = async () => {
       setLoading(true);
-      const data = await fetchTournaments();
+      const [user, data] = await Promise.all([fetchCurrentUser(), fetchTournaments()]);
+      setCurrentUser(user);
       setTournaments(data);
       setLoading(false);
     };
@@ -67,8 +69,10 @@ export default function Tournaments() {
             const joinedPlayers = Number(tournament.participants || 0) + Number(tournament.waitingPlayers || 0);
             const isFull = joinedPlayers >= requiredPlayers;
             const cost = Number(tournament.cost ?? tournament.entryFee ?? 0);
+            const baseCost = Number(tournament.baseCost ?? tournament.entryFee ?? cost);
+            const savings = Number(tournament.savings || 0);
             const winnerShare = Number(tournament.winnerShare ?? 0.6);
-            const winnerPrize = Number(tournament.winnerPrize ?? cost * requiredPlayers * winnerShare);
+            const winnerPrize = Number(tournament.winnerPrize ?? baseCost * requiredPlayers * winnerShare);
 
             return (
               <div key={tournament.id} className="tournament-card">
@@ -87,6 +91,11 @@ export default function Tournaments() {
                   <span className="label">Price</span>
                   <span className="value">KES {cost.toLocaleString()}</span>
                 </div>
+                {savings > 0 && currentUser?.id && (
+                  <p className="tournament-winner-note">
+                    Cashback pass active: KES {savings.toLocaleString()} returns to your wallet after entry confirmation.
+                  </p>
+                )}
 
                 <p className="tournament-winner-note">
                   Players: {joinedPlayers}/{requiredPlayers}
@@ -104,6 +113,8 @@ export default function Tournaments() {
                     ? 'Joining Tournament...'
                     : isFull
                     ? 'Tournament Full'
+                    : savings > 0
+                    ? `Join - KES ${cost.toLocaleString()} net`
                     : `Join - KES ${cost.toLocaleString()}`}
                 </button>
               </div>

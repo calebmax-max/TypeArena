@@ -393,23 +393,58 @@
 .wallet-row {
   display: flex;
   gap: 0.6rem;
-  align-items: center;
+  align-items: end;
+  flex-wrap: wrap;
 }
 
-.wallet-row input {
-  flex: 1;
+.wallet-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 140px;
+  flex: 1 1 150px;
+}
+
+.wallet-field--wide {
+  flex: 2 1 240px;
+}
+
+.wallet-field--amount {
+  flex: 0.9 1 140px;
+}
+
+.wallet-field span {
+  color: #cfd9e4;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.wallet-row input,
+.wallet-row select {
+  width: 100%;
   min-width: 0;
   padding: 0.7rem 0.8rem;
   border: 1px solid rgba(100, 150, 200, 0.3);
   border-radius: 0.5rem;
   background: linear-gradient(135deg, rgba(30, 40, 50, 0.7) 0%, rgba(20, 30, 40, 0.8) 100%);
   color: #e0e0e0;
+  min-height: 46px;
 }
 
-.wallet-row input:focus {
+.wallet-row input::placeholder {
+  color: #aab7c4;
+}
+
+.wallet-row input:focus,
+.wallet-row select:focus {
   outline: none;
   border-color: #ff6b35;
   box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+}
+
+.wallet-row button {
+  min-height: 46px;
 }
 
 .wallet-notice {
@@ -615,5 +650,12 @@
   .wallet-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .wallet-field,
+  .wallet-field--wide,
+  .wallet-field--amount {
+    width: 100%;
+    flex: 1 1 auto;
   }
 }

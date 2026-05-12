@@ -1,5 +1,5 @@
 import './App.css';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import Home from './components/Home';
 import Play from './components/Play';
@@ -13,8 +13,21 @@ import Notfound from './components/Notfound';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
 
+const USER_STORAGE_KEY = 'typearena_user';
+const USER_CHANGE_EVENT = 'typearena-user-changed';
+
+const readStoredUser = () => {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+};
+
 function AppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
@@ -27,17 +40,25 @@ function AppLayout() {
   }, [location.key]);
 
   useEffect(() => {
-    // Mock user loading - in production, fetch from API
-    const user = localStorage.getItem('typearena_user');
-    if (user) {
-      setCurrentUser(JSON.parse(user));
-    }
+    const syncUser = () => {
+      setCurrentUser(readStoredUser());
+    };
+
+    syncUser();
+    window.addEventListener('storage', syncUser);
+    window.addEventListener(USER_CHANGE_EVENT, syncUser);
+
+    return () => {
+      window.removeEventListener('storage', syncUser);
+      window.removeEventListener(USER_CHANGE_EVENT, syncUser);
+    };
   }, []);
 
   const handleSignOut = () => {
-    localStorage.removeItem('typearena_user');
+    localStorage.removeItem(USER_STORAGE_KEY);
+    window.dispatchEvent(new Event(USER_CHANGE_EVENT));
     setCurrentUser(null);
-    window.location.href = '/';
+    navigate('/');
   };
 
   return (
@@ -45,7 +66,7 @@ function AppLayout() {
       <header className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
         <div className="container-fluid">
           <Link to="/" className="navbar-brand fw-bold">
-            ⚡ TypeArena
+            TypeArena
           </Link>
           <button
             className={`navbar-toggler ${menuOpen ? '' : 'collapsed'}`}
@@ -78,11 +99,11 @@ function AppLayout() {
       <div className="site-marquee" aria-label="Announcements">
         <div className="site-marquee__track">
           <span>Product Update</span>
-          <span>Paid private rooms will be available soon.</span>
-          <span>Paid tournaments will be available soon.</span>
+          <span>Private friend battles are live now.</span>
+          <span>Wallet top-up, tournaments, and marketplace are active.</span>
           <span>Product Update</span>
-          <span>Paid private rooms will be available soon.</span>
-          <span>Paid tournaments will be available soon.</span>
+          <span>Private friend battles are live now.</span>
+          <span>Wallet top-up, tournaments, and marketplace are active.</span>
         </div>
       </div>
 

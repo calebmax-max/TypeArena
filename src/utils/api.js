@@ -6,11 +6,15 @@ const envApiBase = (
   ''
 ).trim();
 const normalizedEnvApiBase = envApiBase.replace(/\/+$/, '');
-const ALWAYS_DATA_SITE = 'https://faithmutheu1.alwaysdata.net';
+const isBrowser = typeof window !== 'undefined';
+const browserHostname = isBrowser ? window.location.hostname : '';
+const browserProtocol = isBrowser ? window.location.protocol : 'http:';
+const isLocalBrowser = browserHostname === 'localhost' || browserHostname === '127.0.0.1';
+const localApiBase = isLocalBrowser ? `${browserProtocol}//${browserHostname}:3001` : '';
 
 export const API_BASE =
   normalizedEnvApiBase ||
-  (process.env.NODE_ENV === 'production' ? '' : ALWAYS_DATA_SITE);
+  (process.env.NODE_ENV === 'production' ? '' : localApiBase);
 
 export const buildApiUrl = (path) => {
   if (!path) {

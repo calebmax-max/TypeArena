@@ -1,50 +1,37 @@
 import { render, screen } from '@testing-library/react';
 
-jest.mock('axios', () => ({
-  get: jest.fn(() => Promise.resolve({
-    data: {
-      user: null,
-      expires_in: 28800,
-    },
-  })),
-}), { virtual: true });
-
 jest.mock('react-router-dom', () => ({
   BrowserRouter: ({ children }) => children,
   Routes: ({ children }) => <div>{children}</div>,
   Route: ({ element }) => element,
-  Navigate: () => <div>Redirect</div>,
   Link: ({ children, to, ...props }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
-  NavLink: ({ children, to, ...props }) => (
     <a href={to} {...props}>
       {children}
     </a>
   ),
   useLocation: () => ({
     pathname: '/',
-    hash: '',
     key: 'test',
   }),
+  useNavigate: () => jest.fn(),
 }), { virtual: true });
 
-jest.mock('./components/Home', () => () => <div>Home Page</div>);
-jest.mock('./components/Signup', () => () => <div>Signup Page</div>);
+jest.mock('./components/Play', () => () => <div>Play Page</div>);
+jest.mock('./components/Tournaments', () => () => <div>Tournaments Page</div>);
+jest.mock('./components/Leaderboard', () => () => <div>Leaderboard Page</div>);
+jest.mock('./components/TypeProfile', () => () => <div>Profile Page</div>);
+jest.mock('./components/AdminPanel', () => () => <div>Admin Page</div>);
+jest.mock('./components/Marketplace', () => () => <div>Marketplace Page</div>);
+jest.mock('./components/Results', () => () => <div>Results Page</div>);
 jest.mock('./components/Notfound', () => () => <div>Not Found</div>);
-jest.mock('./components/Makepayment', () => () => <div>Payment Page</div>);
-jest.mock('./components/Rooms', () => () => <div>Rooms Page</div>);
-jest.mock('./components/RoomDetails', () => () => <div>Room Details</div>);
-jest.mock('./components/Dining', () => () => <div>Dining Page</div>);
-jest.mock('./components/Bookings', () => () => <div>Bookings Page</div>);
-jest.mock('./components/Contactus', () => () => <div>Contact Us Page</div>);
-jest.mock('./components/EventInquiry', () => () => <div>Event Inquiry</div>);
 
 import App from './App';
 
-test('renders the hotel brand', () => {
+test('renders the current TypeArena navigation and home content', () => {
   render(<App />);
-  expect(screen.getAllByText(/elitehotels/i).length).toBeGreaterThan(0);
+
+  expect(screen.getAllByText(/typearena/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/start typing/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/private friend battles are live now/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/sign in/i)).toBeInTheDocument();
 });

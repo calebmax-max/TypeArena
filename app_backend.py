@@ -78,100 +78,237 @@ LIVE_RACE_TEXTS = {
 }
 MARKETPLACE_ITEMS = [
     {
-        'id': 'skin_neon_grid',
-        'name': 'Neon Grid Keyboard Skin',
+        'id': 'skin_velocity_black',
+        'name': 'Velocity Black Keys',
         'category': 'keyboardSkins',
-        'price': 120,
+        'price': 140,
         'rarity': 'rare',
-        'description': 'A luminous grid overlay that gives your keyboard HUD a clean cyber-racing feel.',
+        'collection': 'Ranked Circuit',
+        'displayMark': 'VB',
+        'description': 'A stripped-back tournament keyboard skin with sharp legends, dark carbon keys, and high-contrast focus lines.',
     },
     {
-        'id': 'skin_obsidian_pro',
-        'name': 'Obsidian Pro Keyboard Skin',
+        'id': 'skin_molten_copper',
+        'name': 'Molten Copper Deck',
         'category': 'keyboardSkins',
-        'price': 160,
+        'price': 185,
         'rarity': 'epic',
-        'description': 'Dark glass keys with amber highlights built for late-night ranked sessions.',
+        'collection': 'Founders Forge',
+        'displayMark': 'MC',
+        'description': 'Burnished copper highlights and ember edge-lighting for players who want their race setup to feel expensive.',
     },
     {
-        'id': 'theme_sunset',
-        'name': 'Sunset Velocity Theme',
-        'category': 'typingThemes',
-        'price': 180,
-        'rarity': 'epic',
-        'description': 'Warm orange gradients and bold contrast that re-style the full race arena.',
+        'id': 'skin_frostline_pro',
+        'name': 'Frostline Pro Keys',
+        'category': 'keyboardSkins',
+        'price': 225,
+        'rarity': 'legendary',
+        'collection': 'Winter Major',
+        'displayMark': 'FP',
+        'description': 'Ice-glass keycaps and elite tournament trim that give the whole typing deck a colder championship presence.',
     },
     {
-        'id': 'theme_arctic_flux',
-        'name': 'Arctic Flux Theme',
+        'id': 'theme_nairobi_night',
+        'name': 'Nairobi Night Theme',
         'category': 'typingThemes',
         'price': 210,
-        'rarity': 'rare',
-        'description': 'Cool electric blues for players who want a sharper competitive dashboard.',
+        'rarity': 'epic',
+        'collection': 'City After Dark',
+        'displayMark': 'NN',
+        'description': 'A deep city-light interface with crisp neon lanes, warm dashboard glow, and premium leaderboard contrast.',
     },
     {
-        'id': 'avatar_lion',
-        'name': 'Lion Avatar',
-        'category': 'avatars',
-        'price': 90,
-        'rarity': 'common',
-        'description': 'A bold profile icon that gives your leaderboard card instant presence.',
-    },
-    {
-        'id': 'avatar_phantom',
-        'name': 'Phantom Avatar',
-        'category': 'avatars',
-        'price': 130,
-        'rarity': 'rare',
-        'description': 'A stealth-inspired avatar for players who prefer a colder, cleaner identity.',
-    },
-    {
-        'id': 'badge_vip',
-        'name': 'VIP Founder Badge',
-        'category': 'premiumBadges',
-        'price': 240,
-        'rarity': 'legendary',
-        'description': 'A high-visibility founder badge reserved for players building premium status.',
-    },
-    {
-        'id': 'badge_streak_master',
-        'name': 'Streak Master Badge',
-        'category': 'premiumBadges',
+        'id': 'theme_savanna_gold',
+        'name': 'Savanna Gold Theme',
+        'category': 'typingThemes',
         'price': 195,
-        'rarity': 'epic',
-        'description': 'A premium profile badge for consistent race-day performers and grinders.',
-    },
-    {
-        'id': 'effect_comet',
-        'name': 'Comet Trail Effect',
-        'category': 'animatedEffects',
-        'price': 150,
         'rarity': 'rare',
-        'description': 'Adds a fast-moving trail effect to highlight clutch finishes and personal bests.',
+        'collection': 'Sunline Series',
+        'displayMark': 'SG',
+        'description': 'Golden dusk accents, clean sand-toned surfaces, and a warmer arena mood that still feels competitive.',
     },
     {
-        'id': 'effect_pulse_ring',
-        'name': 'Pulse Ring Effect',
-        'category': 'animatedEffects',
-        'price': 175,
-        'rarity': 'epic',
-        'description': 'A premium win pulse that makes your results card feel more alive after victories.',
-    },
-    {
-        'id': 'frame_gold',
-        'name': 'Gold Profile Frame',
-        'category': 'profileFrames',
-        'price': 110,
-        'rarity': 'common',
-        'description': 'A polished metallic frame for your public player profile and challenge card.',
-    },
-    {
-        'id': 'frame_crown',
-        'name': 'Crown Profile Frame',
-        'category': 'profileFrames',
+        'id': 'theme_stealth_hq',
+        'name': 'Stealth HQ Theme',
+        'category': 'typingThemes',
         'price': 260,
         'rarity': 'legendary',
-        'description': 'A top-tier prestige frame for players who want their card to look unmistakably elite.',
+        'collection': 'Blacksite Pack',
+        'displayMark': 'SH',
+        'description': 'Minimal graphite panels, stealth indicators, and a disciplined esports look built for serious ranked players.',
+    },
+    {
+        'id': 'avatar_apex_panther',
+        'name': 'Apex Panther Avatar',
+        'category': 'avatars',
+        'price': 150,
+        'rarity': 'rare',
+        'collection': 'Night Hunt',
+        'displayMark': 'AP',
+        'description': 'A sleek predatory profile icon for players who want a colder, sharper identity on the leaderboard.',
+    },
+    {
+        'id': 'avatar_signal_ghost',
+        'name': 'Signal Ghost Avatar',
+        'category': 'avatars',
+        'price': 135,
+        'rarity': 'epic',
+        'collection': 'Blacksite Pack',
+        'displayMark': 'SG',
+        'description': 'A masked signal-style avatar that feels built for private rooms, stealth wins, and silent climb sessions.',
+    },
+    {
+        'id': 'avatar_crown_hawk',
+        'name': 'Crown Hawk Avatar',
+        'category': 'avatars',
+        'price': 240,
+        'rarity': 'legendary',
+        'collection': 'Skyline Prestige',
+        'displayMark': 'CH',
+        'description': 'A premium emblem-avatar hybrid that gives your public card a champion-level silhouette.',
+    },
+    {
+        'id': 'badge_founders_mark',
+        'name': 'Founder Mark Badge',
+        'category': 'premiumBadges',
+        'price': 220,
+        'rarity': 'legendary',
+        'collection': 'Legacy Drop',
+        'displayMark': 'FM',
+        'description': 'A high-status founder badge for players who want instant credibility the moment their profile loads.',
+    },
+    {
+        'id': 'badge_clutch_streak',
+        'name': 'Clutch Streak Badge',
+        'category': 'premiumBadges',
+        'price': 175,
+        'rarity': 'epic',
+        'collection': 'Ranked Circuit',
+        'displayMark': 'CS',
+        'description': 'A sharper badge for players who win close races, hold streaks, and make pressure look routine.',
+    },
+    {
+        'id': 'badge_elite_verified',
+        'name': 'Elite Verified Badge',
+        'category': 'premiumBadges',
+        'price': 125,
+        'rarity': 'rare',
+        'collection': 'Pro Access',
+        'displayMark': 'EV',
+        'description': 'A clean verified-style marker that makes your profile feel trusted, established, and worth clicking into.',
+    },
+    {
+        'id': 'effect_reactor_sparks',
+        'name': 'Reactor Sparks Effect',
+        'category': 'animatedEffects',
+        'price': 165,
+        'rarity': 'rare',
+        'collection': 'Energy Lab',
+        'displayMark': 'RS',
+        'description': 'Fast electric sparks that punch through your result card and make personal-best finishes feel explosive.',
+    },
+    {
+        'id': 'effect_afterburn_wave',
+        'name': 'Afterburn Wave Effect',
+        'category': 'animatedEffects',
+        'price': 205,
+        'rarity': 'epic',
+        'collection': 'Velocity Series',
+        'displayMark': 'AW',
+        'description': 'A wider, brighter win effect that gives your results panel the feeling of a premium finisher animation.',
+    },
+    {
+        'id': 'effect_royal_echo',
+        'name': 'Royal Echo Effect',
+        'category': 'animatedEffects',
+        'price': 275,
+        'rarity': 'legendary',
+        'collection': 'Crown Edition',
+        'displayMark': 'RE',
+        'description': 'A top-tier prestige pulse reserved for players who want their wins to land with a richer, more elite finish.',
+    },
+    {
+        'id': 'frame_titan_brass',
+        'name': 'Titan Brass Frame',
+        'category': 'profileFrames',
+        'price': 145,
+        'rarity': 'rare',
+        'collection': 'Forge Line',
+        'displayMark': 'TB',
+        'description': 'A weighty metallic frame that makes challenge cards look more premium without feeling loud.',
+    },
+    {
+        'id': 'frame_carbonglass',
+        'name': 'Carbon Glass Frame',
+        'category': 'profileFrames',
+        'price': 190,
+        'rarity': 'epic',
+        'collection': 'Stealth Grid',
+        'displayMark': 'CG',
+        'description': 'Layered carbon and glass styling that sharpens your player card into something sleek and competitive.',
+    },
+    {
+        'id': 'frame_imperial_crown',
+        'name': 'Imperial Crown Frame',
+        'category': 'profileFrames',
+        'price': 290,
+        'rarity': 'legendary',
+        'collection': 'Crown Edition',
+        'displayMark': 'IC',
+        'description': 'A flagship prestige frame with ceremonial trim and unmistakable top-tier presence on your public profile.',
+    },
+    {
+        'id': 'perk_tournament_cashback',
+        'name': 'Tournament Cashback Pass',
+        'category': 'utilityPasses',
+        'price': 320,
+        'rarity': 'legendary',
+        'collection': 'Arena Advantage',
+        'displayMark': 'TC',
+        'benefit': 'Get 10% of every tournament entry returned to your wallet automatically after confirmation.',
+        'description': 'A permanent tournament perk that refunds part of every confirmed entry straight back into your wallet.',
+    },
+    {
+        'id': 'perk_season_booster',
+        'name': 'Season Points Booster',
+        'category': 'utilityPasses',
+        'price': 240,
+        'rarity': 'epic',
+        'collection': 'Ladder Edge',
+        'displayMark': 'SP',
+        'benefit': 'Earn 20% more season points across your profile and leaderboard progression.',
+        'description': 'A progression-focused perk for players who care about climbing the ladder faster and looking stronger on the leaderboard.',
+    },
+    {
+        'id': 'perk_signature_invites',
+        'name': 'Signature Invite Pass',
+        'category': 'utilityPasses',
+        'price': 180,
+        'rarity': 'rare',
+        'collection': 'Private Rooms Pro',
+        'displayMark': 'SI',
+        'benefit': 'Create private rooms with your own custom invite code instead of using a random one.',
+        'description': 'A creator-friendly upgrade that lets you brand private room invites with a cleaner custom code.',
+    },
+]
+STORE_BUNDLES = [
+    {
+        'id': 'bundle_ranked_identity',
+        'name': 'Ranked Identity Pack',
+        'item_ids': ['avatar_crown_hawk', 'frame_carbonglass', 'badge_elite_verified'],
+        'discount_rate': 0.15,
+    },
+    {
+        'id': 'bundle_arena_luxe',
+        'name': 'Arena Luxe Pack',
+        'item_ids': ['theme_nairobi_night', 'skin_frostline_pro', 'effect_afterburn_wave'],
+        'discount_rate': 0.18,
+    },
+    {
+        'id': 'bundle_creator_room',
+        'name': 'Creator Room Pack',
+        'item_ids': ['perk_signature_invites', 'avatar_signal_ghost', 'frame_imperial_crown'],
+        'discount_rate': 0.12,
     },
 ]
 AI_PASSAGE_BANK = {
@@ -228,8 +365,21 @@ def _tier_for_user(user: Dict[str, Any]) -> str:
     return 'Bronze'
 
 
-def _season_points_for_user(user: Dict[str, Any]) -> int:
-    return int(round((float(user.get('wpm') or 0) * 2) + (float(user.get('accuracy') or 0)) + (int(user.get('wins') or 0) * 15)))
+def _store_perks_from_owned_items(owned_items: list[str] | set[str] | tuple[str, ...]) -> Dict[str, Any]:
+    owned = set(owned_items or [])
+    season_multiplier = 1.2 if 'perk_season_booster' in owned else 1.0
+    tournament_cashback_rate = 0.1 if 'perk_tournament_cashback' in owned else 0.0
+    return {
+        'seasonPointsMultiplier': season_multiplier,
+        'tournamentCashbackRate': tournament_cashback_rate,
+        'customInviteCodes': 'perk_signature_invites' in owned,
+    }
+
+
+def _season_points_for_user(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> int:
+    base_points = (float(user.get('wpm') or 0) * 2) + (float(user.get('accuracy') or 0)) + (int(user.get('wins') or 0) * 15)
+    perks = _store_perks_from_owned_items(owned_items or [])
+    return int(round(base_points * float(perks.get('seasonPointsMultiplier') or 1.0)))
 
 
 def _referral_code_for_user(user: Dict[str, Any]) -> str:
@@ -312,6 +462,52 @@ def _ensure_store_purchase_table(cur) -> None:
             purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uniq_store_purchase (user_id, item_id),
             CONSTRAINT fk_sp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+    )
+
+
+def _ensure_marketplace_revenue_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS marketplace_revenue (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            purchase_id INT NULL,
+            buyer_user_id INT NOT NULL,
+            admin_user_id INT NULL,
+            item_id VARCHAR(80) NOT NULL,
+            item_name VARCHAR(150) NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            revenue_destination VARCHAR(40) NOT NULL DEFAULT 'platform_hold',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_marketplace_revenue_buyer (buyer_user_id),
+            KEY idx_marketplace_revenue_admin (admin_user_id),
+            CONSTRAINT fk_marketplace_revenue_buyer FOREIGN KEY (buyer_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            CONSTRAINT fk_marketplace_revenue_admin FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE SET NULL,
+            CONSTRAINT fk_marketplace_revenue_purchase FOREIGN KEY (purchase_id) REFERENCES store_purchases(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+    )
+
+
+def _ensure_admin_wallet_transactions_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_wallet_transactions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            admin_user_id INT NOT NULL,
+            transaction_code VARCHAR(100) NOT NULL,
+            transaction_type VARCHAR(40) NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            direction VARCHAR(10) NOT NULL,
+            source VARCHAR(40) NOT NULL,
+            note VARCHAR(255) NULL,
+            related_purchase_id INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_admin_wallet_tx (transaction_code),
+            KEY idx_admin_wallet_user (admin_user_id),
+            CONSTRAINT fk_admin_wallet_user FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            CONSTRAINT fk_admin_wallet_purchase FOREIGN KEY (related_purchase_id) REFERENCES store_purchases(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
     )
@@ -886,19 +1082,25 @@ def _mpesa_b2c_payout(phone_number: str, amount: float, remarks: str, occasion: 
 
 def _wallet_capabilities() -> Dict[str, Any]:
     stripe_ready = bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)
+    simulated_payments_enabled = bool(MPESA_SIMULATE)
     mpesa_topup_ready = bool(
-        not MPESA_SIMULATE
-        and MPESA_CONSUMER_KEY
-        and MPESA_CONSUMER_SECRET
-        and MPESA_PASSKEY
-        and MPESA_CALLBACK_URL
+        simulated_payments_enabled
+        or (
+            MPESA_CONSUMER_KEY
+            and MPESA_CONSUMER_SECRET
+            and MPESA_PASSKEY
+            and MPESA_CALLBACK_URL
+        )
     )
     mpesa_withdraw_ready = bool(
-        mpesa_topup_ready
-        and MPESA_B2C_INITIATOR_NAME
-        and MPESA_B2C_SECURITY_CREDENTIAL
-        and MPESA_B2C_RESULT_URL
-        and MPESA_B2C_TIMEOUT_URL
+        simulated_payments_enabled
+        or (
+            mpesa_topup_ready
+            and MPESA_B2C_INITIATOR_NAME
+            and MPESA_B2C_SECURITY_CREDENTIAL
+            and MPESA_B2C_RESULT_URL
+            and MPESA_B2C_TIMEOUT_URL
+        )
     )
     paypal_ready = bool(PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)
 
@@ -920,7 +1122,7 @@ def _wallet_capabilities() -> Dict[str, Any]:
         'mpesaTopupReady': mpesa_topup_ready,
         'mpesaWithdrawReady': mpesa_withdraw_ready,
         'paypalReady': paypal_ready,
-        'simulatedPaymentsEnabled': False,
+        'simulatedPaymentsEnabled': simulated_payments_enabled,
     }
 
 
@@ -928,6 +1130,7 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
     total_races = int(user.get('total_races') or 0)
     wins = int(user.get('wins') or 0)
     owned_items = _owned_store_items_for_user(conn, int(user.get('id') or 0)) if conn else []
+    perks = _store_perks_from_owned_items(owned_items)
     return {
         'id': user['id'],
         'username': user['username'],
@@ -940,10 +1143,11 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
         'balance': float(user.get('balance') or 0),
         'tier': _tier_for_user(user),
         'season': _season_name(),
-        'seasonPoints': _season_points_for_user(user),
+        'seasonPoints': _season_points_for_user(user, owned_items),
         'premium': wins >= 10 or float(user.get('balance') or 0) >= 5000,
         'aiCoachTip': _coach_tip_for_user(user),
         'ownedStoreItems': owned_items,
+        'storePerks': perks,
         'equippedItems': {
             'avatar': user.get('equipped_avatar') or '',
             'theme': user.get('equipped_theme') or '',
@@ -955,7 +1159,7 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
     }
 
 
-def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize_tournament(row: Dict[str, Any], user_owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> Dict[str, Any]:
     entry_fee = float(row.get('entry_fee') or 0)
     prize_pool = float(row.get('prize_pool') or 0)
     match_size = int(row.get('match_size') or row.get('max_participants') or TOURNAMENT_MATCH_SIZE)
@@ -964,12 +1168,18 @@ def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
     status = _computed_tournament_status(row)
     start_time = row.get('start_time')
     end_time = start_time + timedelta(seconds=_duration_to_seconds(row.get('duration'))) if start_time else None
+    perks = _store_perks_from_owned_items(user_owned_items or [])
+    cashback_rate = float(perks.get('tournamentCashbackRate') or 0)
+    savings = round(entry_fee * cashback_rate, 2)
+    effective_cost = round(max(0.0, entry_fee - savings), 2)
     return {
         'id': int(row['id']),
         'name': row['name'],
         'description': row.get('description') or '',
         'entryFee': entry_fee,
-        'cost': entry_fee,
+        'cost': effective_cost,
+        'baseCost': entry_fee,
+        'savings': savings,
         'prizePool': prize_pool,
         'totalPlayerStake': total_player_stake,
         'winnerPrize': round(total_player_stake * winner_share, 2),
@@ -983,6 +1193,7 @@ def _serialize_tournament(row: Dict[str, Any]) -> Dict[str, Any]:
         'endTime': end_time.isoformat() + 'Z' if end_time else None,
         'duration': row.get('duration') or '60s',
         'image': row.get('image') or '??',
+        'cashbackRate': cashback_rate,
     }
 
 
@@ -1079,13 +1290,137 @@ def _credit_admin_tournament_share(cur, *, tournament: Dict[str, Any]) -> float:
     if admin_share <= 0:
         return 0.0
 
-    cur.execute('SELECT * FROM users WHERE LOWER(email)=LOWER(%s)', (ADMIN_EMAIL,))
-    admin_user = cur.fetchone()
+    admin_user = _get_admin_user(cur)
     if not admin_user:
         return 0.0
 
     cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (admin_share, admin_user['id']))
+    _record_admin_wallet_transaction(
+        cur,
+        admin_user_id=int(admin_user['id']),
+        transaction_type='tournament_profit',
+        amount=admin_share,
+        direction='in',
+        source='tournament',
+        note=f'Admin profit from tournament {str(tournament.get("name") or tournament.get("id") or "").strip()}',
+    )
     return admin_share
+
+
+def _record_admin_wallet_transaction(
+    cur,
+    *,
+    admin_user_id: int,
+    transaction_type: str,
+    amount: float,
+    direction: str,
+    source: str,
+    note: str = '',
+    related_purchase_id: int | None = None,
+) -> Dict[str, Any]:
+    _ensure_admin_wallet_transactions_table(cur)
+    tx_code = f'adminwallet_{transaction_type}_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(3)}'
+    cur.execute(
+        '''
+        INSERT INTO admin_wallet_transactions
+        (admin_user_id, transaction_code, transaction_type, amount, direction, source, note, related_purchase_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ''',
+        (admin_user_id, tx_code, transaction_type, amount, direction, source, note[:255] if note else None, related_purchase_id),
+    )
+    cur.execute('SELECT * FROM users WHERE id = %s', (admin_user_id,))
+    updated_admin = cur.fetchone()
+    return {
+        'code': tx_code,
+        'adminUserId': admin_user_id,
+        'transactionType': transaction_type,
+        'amount': amount,
+        'direction': direction,
+        'source': source,
+        'note': note,
+        'adminUser': updated_admin,
+    }
+
+
+def _get_admin_wallet_history(cur, admin_user_id: int) -> Dict[str, Any]:
+    _ensure_admin_wallet_transactions_table(cur)
+    cur.execute(
+        '''
+        SELECT transaction_code, transaction_type, amount, direction, source, note, created_at
+        FROM admin_wallet_transactions
+        WHERE admin_user_id = %s
+        ORDER BY created_at DESC
+        LIMIT 30
+        ''',
+        (admin_user_id,),
+    )
+    rows = cur.fetchall()
+    return {
+        'items': [
+            {
+                'code': str(row.get('transaction_code') or ''),
+                'type': str(row.get('transaction_type') or ''),
+                'amount': float(row.get('amount') or 0),
+                'direction': str(row.get('direction') or ''),
+                'source': str(row.get('source') or ''),
+                'note': str(row.get('note') or ''),
+                'createdAt': row['created_at'].isoformat() + 'Z' if row.get('created_at') else None,
+            }
+            for row in rows
+        ]
+    }
+
+
+def _record_marketplace_revenue(
+    cur,
+    *,
+    buyer_user_id: int,
+    purchase_id: int | None,
+    item: Dict[str, Any],
+    amount: float,
+) -> Dict[str, Any]:
+    _ensure_marketplace_revenue_table(cur)
+    admin_user_id = None
+    destination = 'platform_hold'
+
+    if ADMIN_EMAIL:
+        admin_user = _get_admin_user(cur)
+        if admin_user:
+            admin_user_id = int(admin_user['id'])
+            cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount, admin_user_id))
+            _record_admin_wallet_transaction(
+                cur,
+                admin_user_id=admin_user_id,
+                transaction_type='marketplace_sale',
+                amount=amount,
+                direction='in',
+                source='marketplace',
+                note=f'Automatic marketplace revenue from {str(item.get("name") or "").strip()}',
+                related_purchase_id=purchase_id,
+            )
+            destination = 'admin_wallet'
+
+    cur.execute(
+        '''
+        INSERT INTO marketplace_revenue
+        (purchase_id, buyer_user_id, admin_user_id, item_id, item_name, amount, revenue_destination)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''',
+        (
+            purchase_id,
+            buyer_user_id,
+            admin_user_id,
+            str(item.get('id') or ''),
+            str(item.get('name') or ''),
+            amount,
+            destination,
+        ),
+    )
+    return {
+        'adminUserId': admin_user_id,
+        'destination': destination,
+        'amount': amount,
+    }
 
 
 def _apply_user_performance_update(
@@ -1316,6 +1651,39 @@ def _is_admin_request() -> bool:
     return token in ADMIN_TOKENS
 
 
+def _get_admin_user(cur) -> Optional[Dict[str, Any]]:
+    if not ADMIN_EMAIL:
+        return None
+    cur.execute('SELECT * FROM users WHERE LOWER(email)=LOWER(%s)', (ADMIN_EMAIL,))
+    admin_user = cur.fetchone()
+    if admin_user:
+        stored_password = str(admin_user.get('password') or '')
+        if ADMIN_PASSWORD and (not stored_password or not _is_password_hashed(stored_password)):
+            cur.execute(
+                'UPDATE users SET password=%s WHERE id=%s',
+                (generate_password_hash(ADMIN_PASSWORD), admin_user['id']),
+            )
+            cur.execute('SELECT * FROM users WHERE id = %s', (admin_user['id'],))
+            admin_user = cur.fetchone()
+        return admin_user
+
+    if not ADMIN_PASSWORD:
+        return None
+
+    admin_username = ADMIN_EMAIL.split('@')[0].strip() or 'admin'
+    cur.execute(
+        '''
+        INSERT INTO users
+        (username, email, password, phone_number, wpm, accuracy, total_races, wins, balance)
+        VALUES (%s, %s, %s, %s, 0, 0, 0, 0, 0)
+        ''',
+        (admin_username, ADMIN_EMAIL.lower(), generate_password_hash(ADMIN_PASSWORD), ''),
+    )
+    admin_user_id = cur.lastrowid
+    cur.execute('SELECT * FROM users WHERE id = %s', (admin_user_id,))
+    return cur.fetchone()
+
+
 @app.get('/api/health')
 def health():
     return jsonify({'ok': True, 'service': 'typearena-backend', 'storage': 'mysql'})
@@ -1332,6 +1700,14 @@ def admin_login():
 
     if email != ADMIN_EMAIL.lower() or password != ADMIN_PASSWORD:
         return jsonify({'message': 'Invalid admin credentials'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _get_admin_user(cur)
+        conn.commit()
+    finally:
+        conn.close()
 
     token = secrets.token_urlsafe(24)
     ADMIN_TOKENS.add(token)
@@ -1448,6 +1824,149 @@ def admin_delete_all_tournaments():
         conn.close()
 
 
+@app.get('/api/admin/wallet')
+def admin_wallet_summary():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            admin_user = _get_admin_user(cur)
+            if not admin_user:
+                return jsonify({'message': 'Admin wallet user was not found. Make sure the admin email also exists in users.'}), 404
+            _ensure_marketplace_revenue_table(cur)
+            _ensure_admin_wallet_transactions_table(cur)
+            cur.execute(
+                '''
+                SELECT COALESCE(SUM(amount), 0) AS total_marketplace_revenue
+                FROM marketplace_revenue
+                WHERE admin_user_id = %s
+                ''',
+                (admin_user['id'],),
+            )
+            revenue_row = cur.fetchone() or {}
+            history = _get_admin_wallet_history(cur, int(admin_user['id']))
+        return jsonify(
+            {
+                'adminEmail': admin_user.get('email') or ADMIN_EMAIL,
+                'adminUsername': admin_user.get('username') or 'Admin',
+                'balance': float(admin_user.get('balance') or 0),
+                'marketplaceRevenueTotal': float(revenue_row.get('total_marketplace_revenue') or 0),
+                'history': history,
+            }
+        )
+    finally:
+        conn.close()
+
+
+@app.post('/api/admin/wallet/topup')
+def admin_wallet_topup():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        amount_value = float(payload.get('amount') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'message': 'Invalid amount'}), 400
+
+    if amount_value <= 0:
+        return jsonify({'message': 'Amount must be greater than zero'}), 400
+
+    note = str(payload.get('note') or 'Manual admin wallet top-up').strip()
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            admin_user = _get_admin_user(cur)
+            if not admin_user:
+                return jsonify({'message': 'Admin wallet user was not found. Make sure the admin email also exists in users.'}), 404
+            cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, admin_user['id']))
+            tx_info = _record_admin_wallet_transaction(
+                cur,
+                admin_user_id=int(admin_user['id']),
+                transaction_type='manual_topup',
+                amount=amount_value,
+                direction='in',
+                source='admin_panel',
+                note=note,
+            )
+        conn.commit()
+        return jsonify(
+            {
+                'message': f'Added KES {amount_value:.2f} to the admin wallet.',
+                'wallet': {
+                    'balance': float(tx_info['adminUser'].get('balance') or 0),
+                },
+                'transaction': {
+                    'code': tx_info['code'],
+                    'type': tx_info['transactionType'],
+                    'amount': tx_info['amount'],
+                    'direction': tx_info['direction'],
+                    'source': tx_info['source'],
+                    'note': tx_info['note'],
+                },
+            }
+        )
+    finally:
+        conn.close()
+
+
+@app.post('/api/admin/wallet/withdraw')
+def admin_wallet_withdraw():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        amount_value = float(payload.get('amount') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'message': 'Invalid amount'}), 400
+
+    if amount_value <= 0:
+        return jsonify({'message': 'Amount must be greater than zero'}), 400
+
+    note = str(payload.get('note') or 'Manual admin wallet withdrawal').strip()
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            admin_user = _get_admin_user(cur)
+            if not admin_user:
+                return jsonify({'message': 'Admin wallet user was not found. Make sure the admin email also exists in users.'}), 404
+            admin_balance = float(admin_user.get('balance') or 0)
+            if admin_balance < amount_value:
+                return jsonify({'message': f'Insufficient admin wallet balance. Available balance is KES {admin_balance:.2f}.'}), 400
+            cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (amount_value, admin_user['id']))
+            tx_info = _record_admin_wallet_transaction(
+                cur,
+                admin_user_id=int(admin_user['id']),
+                transaction_type='manual_withdrawal',
+                amount=amount_value,
+                direction='out',
+                source='admin_panel',
+                note=note,
+            )
+        conn.commit()
+        return jsonify(
+            {
+                'message': f'Withdrew KES {amount_value:.2f} from the admin wallet.',
+                'wallet': {
+                    'balance': float(tx_info['adminUser'].get('balance') or 0),
+                },
+                'transaction': {
+                    'code': tx_info['code'],
+                    'type': tx_info['transactionType'],
+                    'amount': tx_info['amount'],
+                    'direction': tx_info['direction'],
+                    'source': tx_info['source'],
+                    'note': tx_info['note'],
+                },
+            }
+        )
+    finally:
+        conn.close()
+
+
 @app.get('/api/admin/analytics')
 def admin_analytics():
     if not _is_admin_request():
@@ -1457,6 +1976,8 @@ def admin_analytics():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            admin_user = _get_admin_user(cur)
+            _ensure_marketplace_revenue_table(cur)
             cur.execute(
                 '''
                 SELECT COALESCE(SUM(paid_amount), 0) AS revenue_today, COUNT(*) AS entries_today
@@ -1517,6 +2038,14 @@ def admin_analytics():
             )
             avg_tournament = cur.fetchone() or {}
 
+            cur.execute(
+                '''
+                SELECT COALESCE(SUM(amount), 0) AS marketplace_total
+                FROM marketplace_revenue
+                '''
+            )
+            marketplace_revenue = cur.fetchone() or {}
+
         total_users = max(1, int(user_totals.get('total_users') or 1))
         revenue_today = float(revenue.get('revenue_today') or 0)
         payouts_total = float(payouts.get('payouts_total') or 0)
@@ -1545,6 +2074,8 @@ def admin_analytics():
                 'churn': round(churn, 3),
                 'cac': round(cac, 2),
                 'walletFloat': float(user_totals.get('wallet_float') or 0),
+                'adminWalletBalance': float(admin_user.get('balance') or 0) if admin_user else 0,
+                'marketplaceRevenueTotal': float(marketplace_revenue.get('marketplace_total') or 0),
                 'topPlayers': [
                     {
                         'username': row['username'],
@@ -1731,20 +2262,24 @@ def wallet_withdraw():
 
         payout_status = 'pending'
         payout_mode = 'live'
-        try:
-            if payout_method == 'paypal':
-                _paypal_payout(payout_destination, amount_value, currency)
-            elif payout_method == 'mpesa':
-                _mpesa_b2c_payout(
-                    phone_number=_normalize_mpesa_phone(payout_destination),
-                    amount=amount_value,
-                    remarks='TypeArena withdrawal',
-                    occasion='TypeArena payout',
-                )
-            else:
-                return jsonify({'message': 'Unsupported withdrawal method.'}), 400
-        except ValueError as exc:
-            return jsonify({'message': str(exc)}), 400
+        if capabilities.get('simulatedPaymentsEnabled'):
+            payout_status = 'completed'
+            payout_mode = 'simulated'
+        else:
+            try:
+                if payout_method == 'paypal':
+                    _paypal_payout(payout_destination, amount_value, currency)
+                elif payout_method == 'mpesa':
+                    _mpesa_b2c_payout(
+                        phone_number=_normalize_mpesa_phone(payout_destination),
+                        amount=amount_value,
+                        remarks='TypeArena withdrawal',
+                        occasion='TypeArena payout',
+                    )
+                else:
+                    return jsonify({'message': 'Unsupported withdrawal method.'}), 400
+            except ValueError as exc:
+                return jsonify({'message': str(exc)}), 400
 
         with conn.cursor() as cur:
             cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (total_debit, user['id']))
@@ -1762,15 +2297,32 @@ def wallet_withdraw():
                     payout_status,
                     payout_mode,
                     _now_db(),
-                    None,
+                    _now_db() if payout_status == 'completed' else None,
                 ),
             )
             cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
             updated_user = cur.fetchone()
+            admin_user = _get_admin_user(cur)
+            if admin_user and WITHDRAWAL_FEE > 0:
+                cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (WITHDRAWAL_FEE, admin_user['id']))
+                _record_admin_wallet_transaction(
+                    cur,
+                    admin_user_id=int(admin_user['id']),
+                    transaction_type='withdrawal_fee_profit',
+                    amount=float(WITHDRAWAL_FEE),
+                    direction='in',
+                    source='wallet_fee',
+                    note=f'Withdrawal fee collected from user {user["id"]}',
+                )
         conn.commit()
         return jsonify(
             {
-                'message': f'Withdrawal sent via {payout_method.replace("_", " ").title()}. KES {WITHDRAWAL_FEE:.0f} fee deducted.',
+                'message': (
+                    f'Simulated withdrawal completed via {payout_method.replace("_", " ").title()}. '
+                    f'KES {WITHDRAWAL_FEE:.0f} fee deducted.'
+                    if payout_mode == 'simulated'
+                    else f'Withdrawal sent via {payout_method.replace("_", " ").title()}. KES {WITHDRAWAL_FEE:.0f} fee deducted.'
+                ),
                 'fee': WITHDRAWAL_FEE,
                 'amount': amount_value,
                 'currency': currency,
@@ -1814,6 +2366,44 @@ def wallet_topup():
             return jsonify({'message': 'A valid payment account is required.'}), 400
 
         tx_code = f'topup_{int(datetime.utcnow().timestamp() * 1000)}'
+
+        if capabilities.get('simulatedPaymentsEnabled') and payment_method == 'mpesa':
+            phone_number = _normalize_mpesa_phone(account_identifier)
+            if not phone_number:
+                return jsonify({'message': 'A valid M-Pesa phone number is required.'}), 400
+
+            with conn.cursor() as cur:
+                cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, user['id']))
+                cur.execute(
+                    '''
+                    INSERT INTO mpesa_transactions
+                    (tx_code, user_id, phone_number, amount, status, mode, checkout_request_id, merchant_request_id, created_at, completed_at, result_desc)
+                    VALUES (%s, %s, %s, %s, 'completed', 'simulated', %s, %s, %s, %s, %s)
+                    ''',
+                    (
+                        tx_code,
+                        user['id'],
+                        phone_number,
+                        amount_value,
+                        f'SIM-{tx_code}',
+                        f'SIM-MERCHANT-{user["id"]}',
+                        _now_db(),
+                        _now_db(),
+                        'Simulated wallet top-up',
+                    ),
+                )
+                cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                updated_user = cur.fetchone()
+            conn.commit()
+            return jsonify(
+                {
+                    'message': 'Simulated M-Pesa top-up completed and funds were added to your wallet.',
+                    'status': 'completed',
+                    'currency': currency,
+                    'paymentMethod': 'mpesa',
+                    'user': _safe_user(updated_user, conn),
+                }
+            )
 
         if payment_method in {'stripe_checkout', 'stripe', 'card'} and STRIPE_SECRET_KEY:
             try:
@@ -2157,6 +2747,8 @@ def queue_live_race():
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
+        user_owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0)))
+        user_perks = _store_perks_from_owned_items(user_owned_items)
         with conn.cursor() as cur:
             mode = str(payload.get('mode') or 'standard').strip().lower()
             language = str(payload.get('language') or 'english').strip().lower()
@@ -2169,30 +2761,34 @@ def queue_live_race():
             stake_amount = 0.0
             winner_takes_all = False
 
+            if is_private and invite_code and not user_perks.get('customInviteCodes'):
+                return jsonify({'message': 'Buy the Signature Invite Pass in the marketplace to create custom private room codes.'}), 400
+
             text = _generate_passage(mode, language).get('passage') or LIVE_RACE_TEXTS.get(mode, LIVE_RACE_TEXTS['standard'])
             player_snapshot = {'userId': user['id'], 'username': user['username'], 'progress': 0, 'currentWpm': 0}
 
             if invite_code:
                 room = _find_live_room_by_invite(invite_code)
-                if not room:
+                if not room and not is_private:
                     return jsonify({'message': 'Friend battle room not found.'}), 404
-                if room.get('password') and room.get('password') != room_password:
+                if room and room.get('password') and room.get('password') != room_password:
                     return jsonify({'message': 'Private room password is incorrect.'}), 403
-                if all(existing['userId'] != user['id'] for existing in room['players']) and len(room['players']) >= TOURNAMENT_MATCH_SIZE:
+                if room and all(existing['userId'] != user['id'] for existing in room['players']) and len(room['players']) >= TOURNAMENT_MATCH_SIZE:
                     return jsonify({'message': 'This private room is already full.'}), 400
-                if all(existing['userId'] != user['id'] for existing in room['players']):
+                if room and all(existing['userId'] != user['id'] for existing in room['players']):
                     room['players'].append(player_snapshot)
-                room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
-                room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
-                conn.commit()
-                return jsonify(
-                    {
-                        'room': _serialize_live_room(room, viewer_user_id=user['id']),
-                        'matched': room['status'] == 'countdown',
-                        'user': _safe_user(user),
-                        'message': 'Joined private room.',
-                    }
-                )
+                if room:
+                    room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
+                    room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
+                    conn.commit()
+                    return jsonify(
+                        {
+                            'room': _serialize_live_room(room, viewer_user_id=user['id']),
+                            'matched': room['status'] == 'countdown',
+                            'user': _safe_user(user, conn),
+                            'message': 'Joined private room.',
+                        }
+                    )
 
             if not is_private:
                 for room in LIVE_RACE_ROOMS.values():
@@ -2252,7 +2848,7 @@ def queue_live_race():
                 {
                     'room': _serialize_live_room(room, viewer_user_id=user['id']),
                     'matched': False,
-                    'user': _safe_user(user),
+                    'user': _safe_user(user, conn),
                     'message': 'Private room created.' if is_private else 'Live room created.',
                 }
             ), 201
@@ -2441,6 +3037,7 @@ def store_purchase():
         with conn.cursor() as cur:
             try:
                 _ensure_store_purchase_table(cur)
+                _ensure_marketplace_revenue_table(cur)
                 _ensure_user_equipped_columns(cur)
                 updated_user = _debit_user_balance(cur, user_id=user['id'], amount=float(item['price']))
                 cur.execute(
@@ -2449,6 +3046,14 @@ def store_purchase():
                     VALUES (%s, %s, %s, %s)
                     ''',
                     (user['id'], item['id'], item['name'], float(item['price'])),
+                )
+                purchase_id = cur.lastrowid
+                revenue_info = _record_marketplace_revenue(
+                    cur,
+                    buyer_user_id=int(user['id']),
+                    purchase_id=int(purchase_id) if purchase_id else None,
+                    item=item,
+                    amount=float(item['price']),
                 )
                 equip_field = _equip_field_for_category(item.get('category'))
                 if equip_field:
@@ -2461,8 +3066,103 @@ def store_purchase():
         conn.commit()
         return jsonify(
             {
-                'message': f'{item["name"]} unlocked and equipped successfully.',
+                'message': (
+                    f'{item["name"]} unlocked and equipped successfully. '
+                    f'KES {float(item["price"]):.2f} was recorded as marketplace revenue'
+                    + (' and credited to the platform wallet.' if revenue_info.get('destination') == 'admin_wallet' else '.')
+                ),
                 'item': item,
+                'marketplaceRevenue': revenue_info,
+                'user': _safe_user(updated_user, conn),
+            }
+        )
+    finally:
+        conn.close()
+
+
+@app.post('/api/store/bundle-purchase')
+def store_bundle_purchase():
+    payload = request.get_json(silent=True) or {}
+    bundle_id = str(payload.get('bundleId') or '').strip()
+    bundle = next((candidate for candidate in STORE_BUNDLES if candidate['id'] == bundle_id), None)
+    if not bundle:
+        return jsonify({'message': 'Store bundle not found.'}), 404
+
+    item_map = {item['id']: item for item in MARKETPLACE_ITEMS}
+    bundle_items = [item_map[item_id] for item_id in bundle['item_ids'] if item_id in item_map]
+    if not bundle_items:
+        return jsonify({'message': 'This bundle has no valid store items.'}), 400
+
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+
+        owned_item_ids = set(_owned_store_items_for_user(conn, int(user.get('id') or 0)))
+        unowned_items = [item for item in bundle_items if item['id'] not in owned_item_ids]
+        if not unowned_items:
+            return jsonify({'message': 'You already own every item in this bundle.'}), 400
+
+        total_price = sum(float(item.get('price') or 0) for item in bundle_items)
+        unowned_total_price = sum(float(item.get('price') or 0) for item in unowned_items)
+        discounted_price = round(unowned_total_price * (1 - float(bundle.get('discount_rate') or 0)), 2)
+
+        with conn.cursor() as cur:
+            try:
+                _ensure_store_purchase_table(cur)
+                _ensure_marketplace_revenue_table(cur)
+                _ensure_user_equipped_columns(cur)
+                updated_user = _debit_user_balance(cur, user_id=user['id'], amount=discounted_price)
+                purchase_ids = []
+                for item in unowned_items:
+                    cur.execute(
+                        '''
+                        INSERT INTO store_purchases (user_id, item_id, item_name, price_paid)
+                        VALUES (%s, %s, %s, %s)
+                        ''',
+                        (user['id'], item['id'], item['name'], float(item['price'])),
+                    )
+                    purchase_id = cur.lastrowid
+                    purchase_ids.append(int(purchase_id) if purchase_id else None)
+                    equip_field = _equip_field_for_category(item.get('category'))
+                    if equip_field:
+                        cur.execute(f'UPDATE users SET {equip_field}=%s WHERE id=%s', (item['id'], user['id']))
+
+                revenue_info = _record_marketplace_revenue(
+                    cur,
+                    buyer_user_id=int(user['id']),
+                    purchase_id=purchase_ids[-1] if purchase_ids else None,
+                    item={
+                        'id': bundle['id'],
+                        'name': bundle['name'],
+                    },
+                    amount=discounted_price,
+                )
+                cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                updated_user = cur.fetchone()
+            except ValueError as exc:
+                conn.rollback()
+                return jsonify({'message': str(exc)}), 400
+
+        conn.commit()
+        return jsonify(
+            {
+                'message': (
+                    f'{bundle["name"]} purchased successfully. '
+                    f'{len(unowned_items)} item{"s" if len(unowned_items) != 1 else ""} unlocked for '
+                    f'KES {discounted_price:.2f}.'
+                ),
+                'bundle': {
+                    'id': bundle['id'],
+                    'name': bundle['name'],
+                    'discountRate': float(bundle.get('discount_rate') or 0),
+                    'itemIds': [item['id'] for item in bundle_items],
+                    'regularTotal': total_price,
+                    'remainingRegularTotal': unowned_total_price,
+                    'chargedTotal': discounted_price,
+                },
+                'marketplaceRevenue': revenue_info,
                 'user': _safe_user(updated_user, conn),
             }
         )
@@ -2474,11 +3174,13 @@ def store_purchase():
 def get_tournaments():
     conn = get_connection()
     try:
+        user = _get_user_from_header(conn)
+        owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0))) if user else set()
         with conn.cursor() as cur:
             _sync_tournament_statuses(cur)
             rows = _fetch_all_tournaments(cur)
         conn.commit()
-        return jsonify([_serialize_tournament(r) for r in rows])
+        return jsonify([_serialize_tournament(r, owned_items) for r in rows])
     finally:
         conn.close()
 
@@ -2502,6 +3204,8 @@ def join_tournament(tournament_id: int):
                 return jsonify({'message': 'This tournament has already ended.'}), 400
 
             entry_fee = float(tournament.get('entry_fee') or 0)
+            current_user_owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0)))
+            current_user_perks = _store_perks_from_owned_items(current_user_owned_items)
             user_balance = float(user.get('balance') or 0)
             if user_balance < entry_fee:
                 return jsonify({'message': f'Insufficient funds. You need KES {entry_fee:.2f} to join this tournament.'}), 400
@@ -2519,8 +3223,8 @@ def join_tournament(tournament_id: int):
                             'success': True,
                             'matched': True,
                             'message': 'Tournament starts in the next 30 seconds. Your entry has already been confirmed.',
-                            'tournament': _serialize_tournament(refreshed_tournament),
-                            'user': _safe_user(user),
+                            'tournament': _serialize_tournament(refreshed_tournament, current_user_owned_items),
+                            'user': _safe_user(user, conn),
                         }
                     )
                 remaining_players = max(
@@ -2537,8 +3241,8 @@ def join_tournament(tournament_id: int):
                             f'You are already queued. Waiting for {remaining_players} more '
                             f'player{"s" if remaining_players != 1 else ""}.'
                         ),
-                        'tournament': _serialize_tournament(refreshed_tournament),
-                        'user': _safe_user(user),
+                        'tournament': _serialize_tournament(refreshed_tournament, current_user_owned_items),
+                        'user': _safe_user(user, conn),
                     }
                 )
 
@@ -2578,8 +3282,8 @@ def join_tournament(tournament_id: int):
                             f'You joined the tournament. Waiting for {remaining_players} more '
                             f'player{"s" if remaining_players != 1 else ""}.'
                         ),
-                        'tournament': _serialize_tournament(refreshed_tournament),
-                        'user': _safe_user(user),
+                        'tournament': _serialize_tournament(refreshed_tournament, current_user_owned_items),
+                        'user': _safe_user(user, conn),
                     }
                 )
 
@@ -2588,6 +3292,7 @@ def join_tournament(tournament_id: int):
 
             joined_user_ids = [int(join_row['user_id']) for join_row in tournament_joins]
             joined_users: dict[int, Dict[str, Any]] = {}
+            joined_user_owned_items: dict[int, set[str]] = {}
             insufficient_user_ids: list[int] = []
             for joined_user_id in joined_user_ids:
                 cur.execute('SELECT * FROM users WHERE id = %s FOR UPDATE', (joined_user_id,))
@@ -2596,6 +3301,7 @@ def join_tournament(tournament_id: int):
                     insufficient_user_ids.append(joined_user_id)
                     continue
                 joined_users[joined_user_id] = joined_user
+                joined_user_owned_items[joined_user_id] = set(_owned_store_items_for_user(conn, joined_user_id))
                 if float(joined_user.get('balance') or 0) < entry_fee:
                     insufficient_user_ids.append(joined_user_id)
 
@@ -2612,13 +3318,20 @@ def join_tournament(tournament_id: int):
                         'success': False,
                         'matched': False,
                         'message': 'Some queued players no longer had enough funds and were removed. Join again when the lobby fills up.',
-                        'tournament': _serialize_tournament(refreshed_tournament),
-                        'user': _safe_user(user),
+                        'tournament': _serialize_tournament(refreshed_tournament, current_user_owned_items),
+                        'user': _safe_user(user, conn),
                     }
                 )
 
+            current_user_cashback = 0.0
             for joined_user_id in joined_user_ids:
                 cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (entry_fee, joined_user_id))
+                joined_user_perks = _store_perks_from_owned_items(joined_user_owned_items.get(joined_user_id, set()))
+                cashback_amount = round(entry_fee * float(joined_user_perks.get('tournamentCashbackRate') or 0), 2)
+                if cashback_amount > 0:
+                    cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (cashback_amount, joined_user_id))
+                    if joined_user_id == int(user['id']):
+                        current_user_cashback = cashback_amount
 
             cur.execute(
                 'UPDATE tournament_joins SET paid_amount=%s WHERE tournament_id=%s AND paid_amount=0',
@@ -2639,13 +3352,15 @@ def join_tournament(tournament_id: int):
             f'All {match_size} players have joined. Tournament starts in the next '
             f'{TOURNAMENT_START_DELAY_SECONDS} seconds. Entry fees have been deducted.'
         )
+        if current_user_cashback > 0:
+            message += f' Your Tournament Cashback Pass returned KES {current_user_cashback:.2f} to your wallet.'
         return jsonify(
             {
                 'success': True,
                 'matched': True,
                 'message': message,
-                'tournament': _serialize_tournament(updated_tournament),
-                'user': _safe_user(updated_user),
+                'tournament': _serialize_tournament(updated_tournament, current_user_owned_items),
+                'user': _safe_user(updated_user, conn),
             }
         )
     finally:
@@ -2705,7 +3420,9 @@ def leaderboard():
 
         board = []
         for idx, u in enumerate(users, start=1):
-            row = _safe_user(u)
+            owned_items = _owned_store_items_for_user(conn, int(u.get('id') or 0))
+            perks = _store_perks_from_owned_items(owned_items)
+            row = _safe_user(u, conn)
             tournament_entries = int(u.get('tournament_entries') or 0)
             tournament_payouts = float(u.get('tournament_payouts') or 0)
             live_races = int(u.get('live_races') or 0)
@@ -2715,10 +3432,12 @@ def leaderboard():
             row['liveRaces'] = live_races
             row['liveEarnings'] = live_earnings
             row['seasonPoints'] = int(
-                row['seasonPoints']
+                (
+                    row['seasonPoints']
                 + (live_races * 6)
                 + (tournament_entries * 12)
                 + round((tournament_payouts + live_earnings) / 25)
+                ) * float(perks.get('seasonPointsMultiplier') or 1.0)
             )
             row['rank'] = idx
             row['weeklyRank'] = idx

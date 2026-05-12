@@ -244,6 +244,9 @@ export const addFundsToWallet = async (amount, accountIdentifier, paymentMethod 
     return data;
   } catch (error) {
     console.error('Error adding funds:', error);
+    if (shouldUseLocalFallback(error)) {
+      throw new Error('Cannot add funds because the wallet backend is unreachable. Start the backend on port 3001 and try again.');
+    }
     throw error;
   }
 };
@@ -278,6 +281,9 @@ export const withdrawFundsToWallet = async (amount, accountIdentifier, payoutMet
     return data;
   } catch (error) {
     console.error('Error withdrawing funds:', error);
+    if (shouldUseLocalFallback(error)) {
+      throw new Error('Cannot withdraw because the wallet backend is unreachable. Start the backend on port 3001 and try again.');
+    }
     throw error;
   }
 };
@@ -438,6 +444,42 @@ export const updateAdminAiSettings = async (payload) => {
   return await parseResponse(response);
 };
 
+export const fetchAdminWallet = async () => {
+  try {
+    const response = await fetch(buildApiUrl('/api/admin/wallet'), {
+      headers: buildAdminHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Admin wallet fetch error:', error);
+    return {
+      adminEmail: '',
+      adminUsername: 'Admin',
+      balance: 0,
+      marketplaceRevenueTotal: 0,
+      history: { items: [] },
+    };
+  }
+};
+
+export const addFundsToAdminWallet = async (amount, note = '') => {
+  const response = await fetch(buildApiUrl('/api/admin/wallet/topup'), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify({ amount: Number(amount), note }),
+  });
+  return await parseResponse(response);
+};
+
+export const withdrawFromAdminWallet = async (amount, note = '') => {
+  const response = await fetch(buildApiUrl('/api/admin/wallet/withdraw'), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify({ amount: Number(amount), note }),
+  });
+  return await parseResponse(response);
+};
+
 export const queueLiveRace = async (payload) => {
   const response = await fetch(buildApiUrl('/api/live-races/queue'), {
     method: 'POST',
@@ -541,6 +583,19 @@ export const purchaseStoreItem = async (itemId) => {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ itemId }),
+  });
+  const data = await parseResponse(response);
+  if (data?.user) {
+    setStoredUser(data.user);
+  }
+  return data;
+};
+
+export const purchaseStoreBundle = async (bundleId) => {
+  const response = await fetch(buildApiUrl('/api/store/bundle-purchase'), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ bundleId }),
   });
   const data = await parseResponse(response);
   if (data?.user) {

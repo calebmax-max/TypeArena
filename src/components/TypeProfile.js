@@ -14,6 +14,8 @@ import {
 } from '../utils/typingApi';
 import '../styles/TypeProfile.css';
 
+const USER_CHANGE_EVENT = 'typearena-user-changed';
+
 const formatMethodLabel = (method) => method.replace(/_/g, ' ');
 const EQUIPPED_LABELS = {
   avatar: 'Avatar',
@@ -47,6 +49,7 @@ export default function TypeProfile() {
   const [withdrawMethod, setWithdrawMethod] = useState('paypal');
   const [walletNotice, setWalletNotice] = useState('');
   const [authNotice, setAuthNotice] = useState('');
+  const simulatedPaymentsEnabled = Boolean(walletConfig.simulatedPaymentsEnabled);
 
   const loadProfile = async () => {
     const [user, walletConfigData] = await Promise.all([fetchCurrentUser(), fetchWalletConfig()]);
@@ -149,6 +152,7 @@ export default function TypeProfile() {
         authMode === 'login'
           ? await loginUser(formData.email, formData.password)
           : await signupUser(formData.username, formData.email, formData.password, formData.phoneNumber);
+      window.dispatchEvent(new Event(USER_CHANGE_EVENT));
       setCurrentUser(user);
       setShowAuthForm(false);
       setFormData({ email: '', password: '', username: '', phoneNumber: '' });
@@ -206,6 +210,7 @@ export default function TypeProfile() {
 
   const handleSignOut = () => {
     localStorage.removeItem('typearena_user');
+    window.dispatchEvent(new Event(USER_CHANGE_EVENT));
     setCurrentUser(null);
   };
 
@@ -321,31 +326,59 @@ export default function TypeProfile() {
             </div>
           </div>
 
+          {simulatedPaymentsEnabled && (
+            <p className="wallet-notice">
+              Wallet testing mode is active. M-Pesa top-ups and withdrawals are simulated locally while you verify the flow.
+            </p>
+          )}
+
           <form className="wallet-topup" onSubmit={handleAddFunds}>
             <h3>Wallet Top-Up</h3>
             <div className="wallet-row">
-              <select value={topUpMethod} onChange={(e) => setTopUpMethod(e.target.value)} disabled={!walletConfig.topUpMethods?.length}>
-                {walletConfig.topUpMethods.map((method) => (
-                  <option key={method} value={method}>{formatMethodLabel(method)}</option>
-                ))}
-              </select>
-              <input value={topUpAccount} onChange={(e) => setTopUpAccount(e.target.value)} placeholder="Email, phone, or account ID" required />
-              <input value={topUpAmount} onChange={(e) => setTopUpAmount(e.target.value)} placeholder="Amount" type="number" min="1" required />
-              <button type="submit" className="btn btn-primary" disabled={!walletConfig.topUpMethods?.length}>Add Funds</button>
+              <label className="wallet-field">
+                <span>Method</span>
+                <select value={topUpMethod} onChange={(e) => setTopUpMethod(e.target.value)} disabled={!walletConfig.topUpMethods?.length}>
+                  {walletConfig.topUpMethods.map((method) => (
+                    <option key={method} value={method}>{formatMethodLabel(method)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="wallet-field wallet-field--wide">
+                <span>Phone Number / Account</span>
+                <input value={topUpAccount} onChange={(e) => setTopUpAccount(e.target.value)} placeholder="e.g. 254712345678" required />
+              </label>
+              <label className="wallet-field wallet-field--amount">
+                <span>Amount</span>
+                <input value={topUpAmount} onChange={(e) => setTopUpAmount(e.target.value)} placeholder="KES amount" type="number" min="1" required />
+              </label>
+              <button type="submit" className="btn btn-primary" disabled={!walletConfig.topUpMethods?.length}>
+                {simulatedPaymentsEnabled ? 'Add Simulated Funds' : 'Add Funds'}
+              </button>
             </div>
           </form>
 
           <form className="wallet-topup" onSubmit={handleWithdraw}>
             <h3>Withdraw Winnings</h3>
             <div className="wallet-row">
-              <select value={withdrawMethod} onChange={(e) => setWithdrawMethod(e.target.value)} disabled={!walletConfig.withdrawMethods?.length}>
-                {walletConfig.withdrawMethods.map((method) => (
-                  <option key={method} value={method}>{formatMethodLabel(method)}</option>
-                ))}
-              </select>
-              <input value={withdrawAccount} onChange={(e) => setWithdrawAccount(e.target.value)} placeholder="PayPal email, phone, or bank ref" required />
-              <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="Withdraw amount" type="number" min="1" required />
-              <button type="submit" className="btn btn-outline-primary" disabled={!walletConfig.withdrawMethods?.length}>Withdraw</button>
+              <label className="wallet-field">
+                <span>Method</span>
+                <select value={withdrawMethod} onChange={(e) => setWithdrawMethod(e.target.value)} disabled={!walletConfig.withdrawMethods?.length}>
+                  {walletConfig.withdrawMethods.map((method) => (
+                    <option key={method} value={method}>{formatMethodLabel(method)}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="wallet-field wallet-field--wide">
+                <span>Phone Number / Account</span>
+                <input value={withdrawAccount} onChange={(e) => setWithdrawAccount(e.target.value)} placeholder="e.g. 254712345678" required />
+              </label>
+              <label className="wallet-field wallet-field--amount">
+                <span>Amount</span>
+                <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="KES amount" type="number" min="1" required />
+              </label>
+              <button type="submit" className="btn btn-outline-primary" disabled={!walletConfig.withdrawMethods?.length}>
+                {simulatedPaymentsEnabled ? 'Run Simulated Withdrawal' : 'Withdraw'}
+              </button>
             </div>
             {walletNotice && <p className="wallet-notice">{walletNotice}</p>}
           </form>

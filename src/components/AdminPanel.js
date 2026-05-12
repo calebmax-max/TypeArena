@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  addFundsToAdminWallet,
   adminCreateTournament,
   adminDeleteAllTournaments,
   adminDeleteTournament,
   adminLogout,
   fetchAdminAnalytics,
   fetchAdminAiSettings,
+  fetchAdminWallet,
   fetchTournaments,
   getAdminToken,
   updateAdminAiSettings,
+  withdrawFromAdminWallet,
 } from '../utils/typingApi';
 import '../styles/AdminPanel.css';
 
@@ -20,24 +23,28 @@ export default function AdminPanel() {
     entryFee: '',
     maxParticipants: '2',
     status: 'upcoming',
-    image: '??',
+    image: 'TT',
   });
   const [notice, setNotice] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [tournaments, setTournaments] = useState([]);
   const [aiSettings, setAiSettings] = useState({ provider: 'auto', model: 'gpt-5.2', hasApiKey: false });
+  const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
+  const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
   const [deletingTournamentId, setDeletingTournamentId] = useState(null);
   const [clearingTournaments, setClearingTournaments] = useState(false);
 
   const loadAdminData = async () => {
-    const [analyticsData, tournamentData, aiSettingsData] = await Promise.all([
+    const [analyticsData, tournamentData, aiSettingsData, walletData] = await Promise.all([
       fetchAdminAnalytics(),
       fetchTournaments(),
       fetchAdminAiSettings(),
+      fetchAdminWallet(),
     ]);
     setAnalytics(analyticsData);
     setTournaments(tournamentData);
     setAiSettings(aiSettingsData);
+    setAdminWallet(walletData);
   };
 
   useEffect(() => {
@@ -66,7 +73,7 @@ export default function AdminPanel() {
         entryFee: '',
         maxParticipants: '2',
         status: 'upcoming',
-        image: '??',
+        image: 'TT',
       });
       loadAdminData();
     } catch (error) {
@@ -91,6 +98,30 @@ export default function AdminPanel() {
       setNotice(result.message || 'AI settings updated.');
     } catch (error) {
       setNotice(error.message || 'Could not update AI settings.');
+    }
+  };
+
+  const handleAdminWalletTopUp = async (event) => {
+    event.preventDefault();
+    try {
+      const result = await addFundsToAdminWallet(walletForm.topupAmount, walletForm.topupNote);
+      setNotice(result.message || 'Admin wallet funded.');
+      setWalletForm((prev) => ({ ...prev, topupAmount: '', topupNote: '' }));
+      await loadAdminData();
+    } catch (error) {
+      setNotice(error.message || 'Could not add funds to admin wallet.');
+    }
+  };
+
+  const handleAdminWalletWithdraw = async (event) => {
+    event.preventDefault();
+    try {
+      const result = await withdrawFromAdminWallet(walletForm.withdrawAmount, walletForm.withdrawNote);
+      setNotice(result.message || 'Admin wallet withdrawal completed.');
+      setWalletForm((prev) => ({ ...prev, withdrawAmount: '', withdrawNote: '' }));
+      await loadAdminData();
+    } catch (error) {
+      setNotice(error.message || 'Could not withdraw from admin wallet.');
     }
   };
 
@@ -173,6 +204,8 @@ export default function AdminPanel() {
                 <div className="admin-card metric-card"><span>Active Players</span><strong>{analytics.activePlayers || 0}</strong></div>
                 <div className="admin-card metric-card"><span>M-Pesa Transactions</span><strong>{analytics.mpesaTransactions || 0}</strong></div>
                 <div className="admin-card metric-card"><span>M-Pesa Volume</span><strong>KES {Number(analytics.mpesaVolume || 0).toLocaleString()}</strong></div>
+                <div className="admin-card metric-card"><span>Admin Wallet</span><strong>KES {Number(analytics.adminWalletBalance || 0).toLocaleString()}</strong></div>
+                <div className="admin-card metric-card"><span>Marketplace Revenue</span><strong>KES {Number(analytics.marketplaceRevenueTotal || 0).toLocaleString()}</strong></div>
               </div>
               <div className="admin-grid admin-grid--analytics">
                 <div className="admin-card metric-card"><span>DAU</span><strong>{analytics.dailyActiveUsers || 0}</strong></div>
@@ -185,6 +218,71 @@ export default function AdminPanel() {
               </div>
             </>
           )}
+
+          <div className="admin-grid admin-grid--wallet">
+            <div className="admin-card">
+              <h2>Admin Wallet</h2>
+              <div className="admin-wallet-summary">
+                <div className="admin-wallet-summary__item">
+                  <span>Wallet Owner</span>
+                  <strong>{adminWallet.adminUsername || 'Admin'}</strong>
+                  <small>{adminWallet.adminEmail || 'Admin email not linked yet'}</small>
+                </div>
+                <div className="admin-wallet-summary__item">
+                  <span>Available Balance</span>
+                  <strong>KES {Number(adminWallet.balance || 0).toLocaleString()}</strong>
+                  <small>Live admin wallet balance</small>
+                </div>
+                <div className="admin-wallet-summary__item">
+                  <span>Marketplace Revenue Recorded</span>
+                  <strong>KES {Number(adminWallet.marketplaceRevenueTotal || 0).toLocaleString()}</strong>
+                  <small>Auto-added from marketplace sales</small>
+                </div>
+              </div>
+            </div>
+
+            <form className="admin-card admin-form" onSubmit={handleAdminWalletTopUp}>
+              <h2>Add Funds To Admin Wallet</h2>
+              <div className="admin-grid">
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="Amount"
+                  value={walletForm.topupAmount}
+                  onChange={(event) => setWalletForm((prev) => ({ ...prev, topupAmount: event.target.value }))}
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Reason / note"
+                  value={walletForm.topupNote}
+                  onChange={(event) => setWalletForm((prev) => ({ ...prev, topupNote: event.target.value }))}
+                />
+              </div>
+              <button type="submit" className="btn btn-primary">Add Funds</button>
+            </form>
+
+            <form className="admin-card admin-form" onSubmit={handleAdminWalletWithdraw}>
+              <h2>Withdraw From Admin Wallet</h2>
+              <div className="admin-grid">
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="Amount"
+                  value={walletForm.withdrawAmount}
+                  onChange={(event) => setWalletForm((prev) => ({ ...prev, withdrawAmount: event.target.value }))}
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Reason / note"
+                  value={walletForm.withdrawNote}
+                  onChange={(event) => setWalletForm((prev) => ({ ...prev, withdrawNote: event.target.value }))}
+                />
+              </div>
+              <button type="submit" className="btn btn-outline-primary">Withdraw Funds</button>
+            </form>
+          </div>
 
           <form className="admin-card admin-form" onSubmit={handleCreateTournament}>
             <h2>Create Tournament</h2>
@@ -264,12 +362,28 @@ export default function AdminPanel() {
           </form>
 
           <div className="admin-card">
+            <h2>Admin Wallet Activity</h2>
+            <div className="admin-list">
+              {(adminWallet.history?.items || []).map((item) => (
+                <div key={item.code} className="admin-list-item">
+                  <strong>{item.type.replace(/_/g, ' ')}</strong>
+                  <span>
+                    {item.direction === 'out' ? '-' : '+'}KES {Number(item.amount || 0).toLocaleString()}
+                  </span>
+                  <span>{item.source.replace(/_/g, ' ')}</span>
+                  {item.note ? <span>{item.note}</span> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="admin-card">
             <h2>Top Players</h2>
             <div className="admin-list">
               {(analytics?.topPlayers || []).map((player) => (
                 <div key={player.username} className="admin-list-item">
                   <strong>{player.username}</strong>
-                  <span>{player.wpm} WPM • {player.wins} wins</span>
+                  <span>{player.wpm} WPM | {player.wins} wins</span>
                 </div>
               ))}
             </div>
