@@ -60,6 +60,22 @@ const buildAdminHeaders = () => {
   };
 };
 
+const normalizeTournamentList = (payload) => {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.tournaments)) {
+    return payload.tournaments;
+  }
+
+  if (Array.isArray(payload?.items)) {
+    return payload.items;
+  }
+
+  return [];
+};
+
 // User APIs
 export const fetchCurrentUser = async () => {
   try {
@@ -122,10 +138,11 @@ export const fetchTournaments = async () => {
     const response = await fetch(buildApiUrl('/api/tournaments'), {
       headers: buildHeaders(),
     });
-    return await parseResponse(response);
+    const data = await parseResponse(response);
+    return normalizeTournamentList(data);
   } catch (error) {
     console.error('Error fetching tournaments:', error);
-    return mockTournaments.map((t) => ({ ...t }));
+    return normalizeTournamentList(mockTournaments.map((t) => ({ ...t })));
   }
 };
 
@@ -437,6 +454,51 @@ export const fetchAdminAiSettings = async () => {
 
 export const updateAdminAiSettings = async (payload) => {
   const response = await fetch(buildApiUrl('/api/admin/ai-settings'), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
+export const fetchSiteMarquee = async () => {
+  try {
+    const response = await fetch(buildApiUrl('/api/site-marquee'), {
+      headers: buildHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Site marquee fetch error:', error);
+    return {
+      items: [
+        'Product Update',
+        'Private friend battles are live now.',
+        'Wallet top-up, tournaments, and marketplace are active.',
+      ],
+    };
+  }
+};
+
+export const fetchAdminSiteMarquee = async () => {
+  try {
+    const response = await fetch(buildApiUrl('/api/admin/site-marquee'), {
+      headers: buildAdminHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Admin site marquee fetch error:', error);
+    return {
+      items: [
+        'Product Update',
+        'Private friend battles are live now.',
+        'Wallet top-up, tournaments, and marketplace are active.',
+      ],
+    };
+  }
+};
+
+export const updateAdminSiteMarquee = async (payload) => {
+  const response = await fetch(buildApiUrl('/api/admin/site-marquee'), {
     method: 'PUT',
     headers: buildAdminHeaders(),
     body: JSON.stringify(payload),

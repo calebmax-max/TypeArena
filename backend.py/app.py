@@ -50,6 +50,12 @@ AI_SETTINGS: Dict[str, Any] = {
     'provider': os.getenv('AI_CONTENT_PROVIDER', 'auto').strip().lower() or 'auto',
     'model': OPENAI_MODEL,
 }
+DEFAULT_SITE_MARQUEE_ITEMS = [
+    'Product Update',
+    'Private friend battles are live now.',
+    'Wallet top-up, tournaments, and marketplace are active.',
+]
+SITE_SETTINGS_FILE = Path(__file__).resolve().parent.parent / 'site_settings.json'
 PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', '')
 PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', '')
 PAYPAL_BASE_URL = os.getenv('PAYPAL_BASE_URL', 'https://api-m.sandbox.paypal.com')
@@ -403,6 +409,44 @@ def _current_ai_settings() -> Dict[str, Any]:
         provider = 'auto'
     model = str(AI_SETTINGS.get('model') or OPENAI_MODEL).strip() or OPENAI_MODEL
     return {'provider': provider, 'model': model}
+
+
+def _default_site_marquee_settings() -> Dict[str, Any]:
+    return {'items': list(DEFAULT_SITE_MARQUEE_ITEMS)}
+
+
+def _normalize_site_marquee_items(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return list(DEFAULT_SITE_MARQUEE_ITEMS)
+
+    normalized_items: list[str] = []
+    for item in items:
+        text = str(item or '').strip()
+        if text:
+            normalized_items.append(text[:160])
+
+    return normalized_items or list(DEFAULT_SITE_MARQUEE_ITEMS)
+
+
+def _load_site_settings() -> Dict[str, Any]:
+    defaults = _default_site_marquee_settings()
+    if not SITE_SETTINGS_FILE.exists():
+        return defaults
+
+    try:
+        raw = json.loads(SITE_SETTINGS_FILE.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return defaults
+
+    return {
+        'items': _normalize_site_marquee_items(raw.get('siteMarqueeItems')),
+    }
+
+
+def _save_site_marquee_settings(items: list[str]) -> Dict[str, Any]:
+    settings = {'siteMarqueeItems': _normalize_site_marquee_items(items)}
+    SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    return {'items': list(settings['siteMarqueeItems'])}
 
 
 def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
@@ -1530,6 +1574,36 @@ def admin_update_ai_settings():
     settings = _current_ai_settings()
     settings['hasApiKey'] = bool(OPENAI_API_KEY)
     return jsonify({'message': 'AI content settings updated.', 'settings': settings})
+
+
+@app.get('/api/site-marquee')
+def site_marquee_settings():
+    return jsonify(_load_site_settings())
+
+
+@app.get('/api/admin/site-marquee')
+def admin_site_marquee_settings():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    return jsonify(_load_site_settings())
+
+
+@app.put('/api/admin/site-marquee')
+def admin_update_site_marquee_settings():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    items = payload.get('items')
+    if not isinstance(items, list):
+        return jsonify({'message': 'Marquee items must be sent as a list.'}), 400
+
+    try:
+        settings = _save_site_marquee_settings(items)
+    except OSError:
+        return jsonify({'message': 'Could not save marquee settings on the server.'}), 500
+
+    return jsonify({'message': 'Marquee content updated.', 'settings': settings})
 
 
 @app.post('/api/auth/signup')

@@ -8,13 +8,28 @@ import {
   adminLogout,
   fetchAdminAnalytics,
   fetchAdminAiSettings,
+  fetchAdminSiteMarquee,
   fetchAdminWallet,
   fetchTournaments,
   getAdminToken,
   updateAdminAiSettings,
+  updateAdminSiteMarquee,
   withdrawFromAdminWallet,
 } from '../utils/typingApi';
 import '../styles/AdminPanel.css';
+
+const DEFAULT_SITE_MARQUEE_ITEMS = [
+  'Product Update',
+  'Private friend battles are live now.',
+  'Wallet top-up, tournaments, and marketplace are active.',
+];
+const SITE_MARQUEE_CHANGE_EVENT = 'typearena-site-marquee-changed';
+const normalizeTournamentList = (value) => (Array.isArray(value) ? value : []);
+const normalizeAiSettings = (value) => ({
+  provider: String(value?.provider || 'auto'),
+  model: String(value?.model || 'gpt-5.2'),
+  hasApiKey: Boolean(value?.hasApiKey),
+});
 
 export default function AdminPanel() {
   const [token, setToken] = useState(getAdminToken());
@@ -28,22 +43,25 @@ export default function AdminPanel() {
   const [notice, setNotice] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [tournaments, setTournaments] = useState([]);
-  const [aiSettings, setAiSettings] = useState({ provider: 'auto', model: 'gpt-5.2', hasApiKey: false });
+  const [aiSettings, setAiSettings] = useState(normalizeAiSettings());
+  const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
   const [deletingTournamentId, setDeletingTournamentId] = useState(null);
   const [clearingTournaments, setClearingTournaments] = useState(false);
 
   const loadAdminData = async () => {
-    const [analyticsData, tournamentData, aiSettingsData, walletData] = await Promise.all([
+    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData] = await Promise.all([
       fetchAdminAnalytics(),
       fetchTournaments(),
       fetchAdminAiSettings(),
+      fetchAdminSiteMarquee(),
       fetchAdminWallet(),
     ]);
     setAnalytics(analyticsData);
-    setTournaments(tournamentData);
-    setAiSettings(aiSettingsData);
+    setTournaments(normalizeTournamentList(tournamentData));
+    setAiSettings(normalizeAiSettings(aiSettingsData));
+    setSiteMarqueeText((siteMarqueeData?.items || DEFAULT_SITE_MARQUEE_ITEMS).join('\n'));
     setAdminWallet(walletData);
   };
 
@@ -75,7 +93,7 @@ export default function AdminPanel() {
         status: 'upcoming',
         image: 'TT',
       });
-      loadAdminData();
+      await loadAdminData();
     } catch (error) {
       setNotice(error.message || 'Could not create tournament.');
     }
@@ -94,10 +112,33 @@ export default function AdminPanel() {
         provider: aiSettings.provider,
         model: aiSettings.model,
       });
-      setAiSettings(result.settings || aiSettings);
+      setAiSettings(normalizeAiSettings(result.settings || aiSettings));
       setNotice(result.message || 'AI settings updated.');
     } catch (error) {
       setNotice(error.message || 'Could not update AI settings.');
+    }
+  };
+
+  const handleSiteMarqueeSave = async (event) => {
+    event.preventDefault();
+    const items = siteMarqueeText
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (items.length === 0) {
+      setNotice('Add at least one marquee line before saving.');
+      return;
+    }
+
+    try {
+      const result = await updateAdminSiteMarquee({ items });
+      const savedItems = result?.settings?.items || items;
+      setSiteMarqueeText(savedItems.join('\n'));
+      window.dispatchEvent(new Event(SITE_MARQUEE_CHANGE_EVENT));
+      setNotice(result.message || 'Marquee content updated.');
+    } catch (error) {
+      setNotice(error.message || 'Could not update marquee content.');
     }
   };
 
@@ -134,7 +175,7 @@ export default function AdminPanel() {
     setDeletingTournamentId(tournament.id);
     try {
       const result = await adminDeleteTournament(tournament.id);
-      setTournaments((prev) => prev.filter((item) => item.id !== tournament.id));
+      setTournaments((prev) => normalizeTournamentList(prev).filter((item) => item.id !== tournament.id));
       setNotice(result.message || 'Tournament deleted.');
     } catch (error) {
       setNotice(error.message || 'Could not delete tournament.');
@@ -359,6 +400,20 @@ export default function AdminPanel() {
               />
             </div>
             <button type="submit" className="btn btn-outline-primary">Save AI Settings</button>
+          </form>
+
+          <form className="admin-card admin-form" onSubmit={handleSiteMarqueeSave}>
+            <h2>Site Marquee</h2>
+            <p className="admin-form-note">
+              Write one announcement per line. These lines will scroll across the public header.
+            </p>
+            <textarea
+              rows="5"
+              placeholder="One marquee line per row"
+              value={siteMarqueeText}
+              onChange={(event) => setSiteMarqueeText(event.target.value)}
+            />
+            <button type="submit" className="btn btn-outline-primary">Save Marquee</button>
           </form>
 
           <div className="admin-card">

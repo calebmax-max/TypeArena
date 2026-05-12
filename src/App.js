@@ -12,9 +12,16 @@ import Results from './components/Results';
 import Notfound from './components/Notfound';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
+import { fetchSiteMarquee } from './utils/typingApi';
 
 const USER_STORAGE_KEY = 'typearena_user';
 const USER_CHANGE_EVENT = 'typearena-user-changed';
+const SITE_MARQUEE_CHANGE_EVENT = 'typearena-site-marquee-changed';
+const DEFAULT_SITE_MARQUEE_ITEMS = [
+  'Product Update',
+  'Private friend battles are live now.',
+  'Wallet top-up, tournaments, and marketplace are active.',
+];
 
 const readStoredUser = () => {
   try {
@@ -30,6 +37,7 @@ function AppLayout() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [siteMarqueeItems, setSiteMarqueeItems] = useState(DEFAULT_SITE_MARQUEE_ITEMS);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -51,6 +59,29 @@ function AppLayout() {
     return () => {
       window.removeEventListener('storage', syncUser);
       window.removeEventListener(USER_CHANGE_EVENT, syncUser);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSiteMarquee = async () => {
+      const data = await fetchSiteMarquee();
+      const items = Array.isArray(data?.items)
+        ? data.items.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+
+      if (active && items.length > 0) {
+        setSiteMarqueeItems(items);
+      }
+    };
+
+    loadSiteMarquee();
+    window.addEventListener(SITE_MARQUEE_CHANGE_EVENT, loadSiteMarquee);
+
+    return () => {
+      active = false;
+      window.removeEventListener(SITE_MARQUEE_CHANGE_EVENT, loadSiteMarquee);
     };
   }, []);
 
@@ -98,12 +129,9 @@ function AppLayout() {
 
       <div className="site-marquee" aria-label="Announcements">
         <div className="site-marquee__track">
-          <span>Product Update</span>
-          <span>Private friend battles are live now.</span>
-          <span>Wallet top-up, tournaments, and marketplace are active.</span>
-          <span>Product Update</span>
-          <span>Private friend battles are live now.</span>
-          <span>Wallet top-up, tournaments, and marketplace are active.</span>
+          {[...siteMarqueeItems, ...siteMarqueeItems].map((item, index) => (
+            <span key={`${item}-${index}`}>{item}</span>
+          ))}
         </div>
       </div>
 
