@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchCurrentUser, fetchTournaments, joinTournament } from '../utils/typingApi';
 import '../styles/Tournaments.css';
 
 export default function Tournaments() {
+  const navigate = useNavigate();
   const [tournaments, setTournaments] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -21,6 +23,15 @@ export default function Tournaments() {
   }, []);
 
   const handleJoinTournament = async (tournament) => {
+    if (!currentUser?.id) {
+      setJoinNotice({
+        type: 'info',
+        text: 'Sign in first before joining a tournament.',
+      });
+      navigate('/profile?redirect=%2Ftournaments');
+      return;
+    }
+
     const confirmed = window.confirm(
       `Join "${tournament.name}" for KES ${Number(tournament.cost ?? tournament.entryFee).toLocaleString()}?`
     );
@@ -55,6 +66,12 @@ export default function Tournaments() {
         <h1>Premium Match Tournaments</h1>
         <p>Join multi-player paid tournaments. When the lobby fills, the tournament starts after a 30 second countdown.</p>
       </div>
+
+      {!currentUser?.id && (
+        <div className="join-notice join-notice--info">
+          Sign in first to join or compete in tournaments.
+        </div>
+      )}
 
       {joinNotice && (
         <div className={`join-notice join-notice--${joinNotice.type}`}>{joinNotice.text}</div>
@@ -109,7 +126,9 @@ export default function Tournaments() {
                   onClick={() => handleJoinTournament(tournament)}
                   disabled={processingId === tournament.id || isFull}
                 >
-                  {processingId === tournament.id
+                  {!currentUser?.id
+                    ? 'Sign In To Join'
+                    : processingId === tournament.id
                     ? 'Joining Tournament...'
                     : isFull
                     ? 'Tournament Full'

@@ -212,6 +212,12 @@ export default function Play() {
     fetchCurrentUser().then(setCurrentUser).catch(() => {});
   }, []);
 
+  const redirectToProfile = useCallback(() => {
+    const redirectPath = `${location.pathname}${location.search || ''}`;
+    setNotice('Sign in first to play, join live races, or compete in private rooms.');
+    navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}`);
+  }, [location.pathname, location.search, navigate]);
+
   useEffect(() => {
     if (phase !== 'racing') {
       setActiveKeys([]);
@@ -383,6 +389,11 @@ export default function Play() {
   };
 
   const startPracticeRace = () => {
+    if (!currentUser?.id) {
+      redirectToProfile();
+      return;
+    }
+
     setLiveRoom(null);
     setTypingText('');
     setReplayFrames([]);
@@ -394,6 +405,11 @@ export default function Play() {
   };
 
   const startLiveRace = async () => {
+    if (!currentUser?.id) {
+      redirectToProfile();
+      return;
+    }
+
     setLoadingLive(true);
     setNotice('');
     try {
@@ -422,6 +438,11 @@ export default function Play() {
   };
 
   const createFriendBattle = async () => {
+    if (!currentUser?.id) {
+      redirectToProfile();
+      return;
+    }
+
     setLoadingLive(true);
     setNotice('');
     try {
@@ -452,6 +473,11 @@ export default function Play() {
   };
 
   const joinFriendBattle = async () => {
+    if (!currentUser?.id) {
+      redirectToProfile();
+      return;
+    }
+
     setLoadingLive(true);
     setNotice('');
     try {
@@ -670,6 +696,12 @@ export default function Play() {
               {loadingLive ? 'Joining Live Room...' : 'Join Live 1v1'}
             </button>
           </div>
+
+          {!currentUser?.id && (
+            <p className="results-challenge">
+              Sign in first to start practice, enter live 1v1 battles, or open private rooms.
+            </p>
+          )}
 
           <div className="friend-battle-card">
             <div className="live-board__header">
