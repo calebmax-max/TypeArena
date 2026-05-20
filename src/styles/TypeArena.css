@@ -135,6 +135,28 @@ main {
   letter-spacing: 0.02em;
 }
 
+.navbar-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
+.navbar-auth-mobile {
+  display: none;
+}
+
+.nav-link--auth-mobile {
+  font-size: 0.84rem;
+  padding: 0.42rem 0.78rem !important;
+  white-space: nowrap;
+}
+
+.navbar-desktop-only {
+  display: inline-flex;
+}
+
 .navbar-nav .nav-link {
   position: relative;
   color: hsl(0 0% 88%) !important;
@@ -310,7 +332,22 @@ footer p {
 
   .navbar-brand {
     font-size: 1.2rem;
-    text-align: center;
+    text-align: left;
+  }
+
+  .navbar-topbar {
+    align-items: center;
+  }
+
+  .navbar-auth-mobile {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+  }
+
+  .navbar-desktop-only {
+    display: none !important;
   }
 
   .navbar-nav--persistent {
@@ -384,6 +421,11 @@ footer p {
 @media (max-width: 420px) {
   .navbar-brand {
     font-size: 1.05rem;
+  }
+
+  .nav-link--auth-mobile {
+    font-size: 0.76rem;
+    padding: 0.36rem 0.62rem !important;
   }
 
   .navbar-nav--persistent {

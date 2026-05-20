@@ -162,9 +162,22 @@ function AppLayout() {
     <div className="App">
       <header className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
         <div className="container-fluid">
-          <Link to="/" className="navbar-brand fw-bold">
-            TypeArena
-          </Link>
+          <div className="navbar-topbar">
+            <Link to="/" className="navbar-brand fw-bold">
+              TypeArena
+            </Link>
+            <div className="navbar-auth-mobile">
+              {currentUser ? (
+                <NavLink to="/profile" className="nav-link nav-link--auth-mobile">
+                  Profile
+                </NavLink>
+              ) : (
+                <NavLink to="/profile" className="nav-link nav-link--auth-mobile">
+                  Sign In
+                </NavLink>
+              )}
+            </div>
+          </div>
           <nav className="navbar-nav navbar-nav--persistent ms-auto">
             <NavLink to="/play" className={navLinkClassName}>Play</NavLink>
             <NavLink to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
@@ -172,13 +185,13 @@ function AppLayout() {
             <NavLink to="/marketplace" className={navLinkClassName}>Marketplace</NavLink>
             {currentUser ? (
               <>
-                <NavLink to="/profile" className={navLinkClassName}>Profile</NavLink>
-                <button onClick={handleSignOut} className="nav-link btn btn-link">
+                <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`}>Profile</NavLink>
+                <button onClick={handleSignOut} className="nav-link btn btn-link navbar-desktop-only">
                   Sign Out
                 </button>
               </>
             ) : (
-              <NavLink to="/profile" className={navLinkClassName}>Sign In</NavLink>
+              <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`}>Sign In</NavLink>
             )}
           </nav>
         </div>
