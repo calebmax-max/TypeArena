@@ -550,36 +550,234 @@ STORE_BUNDLES = [
         'discount_rate': 0.12,
     },
 ]
+PRACTICE_PASSAGE_PARTS = {
+    'standard': {
+        'intros': [
+            'Practice arena note: this solo standard run is built to sharpen rhythm before you step back into real duels.',
+            'Warm-up card: standard mode rewards clean timing, strong posture, and steady confidence through the full paragraph.',
+            'Solo sprint memo: use this practice block to build smoother motion before pressure and spectators get involved.',
+            'Training room update: standard practice should feel disciplined, not frantic, even when the pace begins to rise.',
+            'Focus session briefing: this run is about turning repetition into cleaner execution one sentence at a time.',
+        ],
+        'focuses': [
+            'Preserve every symbol, comma, and quote while holding the phrase "practice clean, race cleaner" exactly as shown.',
+            'Keep your line compact through brackets, slashes, and pause marks instead of forcing speed too early.',
+            'Type with calm hands and protect the structure of the full sentence from opening word to closing mark.',
+            'Use the round to build a smoother lane through punctuation clusters and small correction moments.',
+            'Hold steady rhythm across the paragraph and do not let one rushed sequence break the flow of the session.',
+        ],
+        'metrics': [
+            'Keep values like 18, 47, and 93.4% intact, together with symbols such as %, /, #, and :.',
+            'Protect 26, 59, and 91.2 while every bracket, quote, and dash remains in place.',
+            'Preserve checkpoint #06, ratio 3:1, and figures 14 and 72 exactly as written.',
+            'Hold 22, 41, and 96.0 while commas, slashes, and semicolons stay clean.',
+            'Keep 9:4, 33, and 88.7% untouched through the whole run.',
+        ],
+        'closers': [
+            'The point of practice is to make clean motion feel normal before the scoreboard matters.',
+            'Strong public results usually begin with quiet private sessions like this one.',
+            'The best training runs are the ones that feel controlled all the way to the last character.',
+            'Clean repetition here becomes confidence when the live clock starts later.',
+        ],
+    },
+    'survival': {
+        'intros': [
+            'Survival practice alert: this solo round is here to train calm hands when every mistake feels louder.',
+            'Training pressure memo: survival mode teaches you to protect details after the first clean streak ends.',
+            'Last-life practice note: use this session to build precision when punctuation and pressure arrive together.',
+            'Clutch prep briefing: survival practice matters because real matches punish rushed recovery the same way.',
+            'Control drill update: every symbol in this paragraph is part of the pressure test.',
+        ],
+        'focuses': [
+            'Preserve the quote "clean correction beats desperate recovery" exactly as shown through the full line.',
+            'Keep breathing steady while decimals, slashes, and brackets stack up toward the finish.',
+            'Type through pressure without handing away free errors on the easy sections of the paragraph.',
+            'Hold your form when symbols arrive back to back and the line starts feeling tighter than expected.',
+            'Use this run to train discipline on the parts that usually trigger panic in live play.',
+        ],
+        'metrics': [
+            'Keep #12, 8/14, and 91.5 exact while brackets and semicolons remain untouched.',
+            'Protect 15, 38, and 88.9% with every %, #, and / left in place.',
+            'Preserve 27, 64, and 92.3 together with {}, (), and :.',
+            'Hold 11:3, 49, and 90.1 while each quote and slash stays clean.',
+            'Keep 6, 29, and 94.0 intact through the full pressure sequence.',
+        ],
+        'closers': [
+            'Survival practice is where you learn to stay composed before the real room turns loud.',
+            'The players who panic less in training usually leak less in live finals.',
+            'Pressure becomes manageable once your hands trust accuracy more than fear.',
+            'One clean closing sequence in practice often fixes a whole class of live mistakes.',
+        ],
+    },
+    'speed_burst': {
+        'intros': [
+            'Burst practice memo: this short run is built to sharpen your opening speed without wrecking structure.',
+            'Quickfire training card: use this session to attack early while keeping your correction cost low.',
+            'Fast-start drill update: burst mode teaches you how to launch with intent and still stay clean.',
+            'Velocity prep note: this paragraph trains the first ten seconds where many live duels are decided.',
+            'Sprint warm-up briefing: this run is about fast confidence, not careless speed.',
+        ],
+        'focuses': [
+            'Preserve the line "start hot, stay sharp, end cleaner" exactly as shown while the pace rises.',
+            'Keep dashes, quotes, and slashes locked in place even when your fingers want to sprint ahead.',
+            'Type with explosive intent, but protect the structure of every short phrase and symbol cluster.',
+            'Train yourself to finish the burst without flattening your accuracy on the final words.',
+            'Use this mode to build recovery speed after tiny slips instead of letting them expand.',
+        ],
+        'metrics': [
+            'Keep #03, 5:2, and 18.8 intact while each symbol and comma remains clean.',
+            'Protect 12, 31, and 97.0% with every slash, quote, and dash untouched.',
+            'Preserve 8:1, 27, and 94.6 exactly as written through the short clock.',
+            'Hold 21, 46, and 98.1 while %, /, and # stay in their original places.',
+            'Keep 7, 39, and 90.8 intact across the whole burst sequence.',
+        ],
+        'closers': [
+            'Burst training works best when speed grows without accuracy breaking underneath it.',
+            'The cleanest opening is still more useful than the loudest one.',
+            'Short sessions like this teach your hands how to stay sharp after the launch.',
+            'A fast start becomes dangerous only when the structure survives it.',
+        ],
+    },
+    'code': {
+        'intros': [
+            'Code practice briefing: this solo dev run is built to sharpen syntax accuracy before competitive code rooms.',
+            'Training compile note: code mode rewards typists who can respect structure even when the line grows messy.',
+            'Syntax drill memo: every bracket, operator, and quote in this session matters as much as the words.',
+            'Developer warm-up card: this practice block should make symbols feel less expensive under live pressure.',
+            'Solo script update: use this run to build cleaner code rhythm before real room stakes return.',
+        ],
+        'focuses': [
+            'Preserve every brace, semicolon, underscore, and quote exactly through the full snippet.',
+            'Keep the structure intact from start to finish because one missing symbol can break the whole line.',
+            'Type with steady spacing while logical operators, brackets, and tags begin to stack up.',
+            'Respect the syntax more than the pace and let clean structure guide the full run.',
+            'Use this drill to make symbols feel automatic instead of stressful.',
+        ],
+        'metrics': [
+            'Keep room_id, retry_count, and 91.8 exact while {}, (), and ; remain untouched.',
+            'Protect score > 88, errors < 3, and latency_ms=37 across the whole snippet.',
+            'Preserve "P-17", update_v3, and 96.4 while quotes, braces, and commas stay clean.',
+            'Hold 19:45, #sync, and result_map["room-4"] exactly as written.',
+            'Keep 92.5, clean-win, and retry-room-8 intact with every operator in place.',
+        ],
+        'closers': [
+            'Code practice pays off when symbols stop feeling like traps in live rooms.',
+            'The strongest code typists train structure until panic has less to break.',
+            'Clean syntax in practice becomes quiet confidence in competition.',
+            'A disciplined dev run teaches your fingers to respect every character equally.',
+        ],
+    },
+    'memory': {
+        'intros': [
+            'Memory practice prompt: this run trains structure retention before speed takes over.',
+            'Recall session note: solo memory work is where you teach your hands to trust the stored pattern.',
+            'Retention drill memo: this paragraph is built to sharpen recall on numbers, punctuation, and order.',
+            'Mental map warm-up: use this run to hold the shape before you chase pace.',
+            'Short-retention training update: every detail here is part of the memory test.',
+        ],
+        'focuses': [
+            'Preserve the line "see it once, type it right" exactly as shown throughout the run.',
+            'Keep the pattern intact through slashes, quotes, and ratios without guessing missing pieces.',
+            'Type from structure first and let speed follow once the sequence feels stable.',
+            'Hold the image of the line cleanly even when the details begin to pile up.',
+            'Use this drill to protect punctuation as strongly as words and numbers.',
+        ],
+        'metrics': [
+            'Keep 14, 29, and 73 intact together with %, :, /, and ().',
+            'Protect #5, 2:1, and 88.7% while every quote and slash remains in place.',
+            'Preserve 18, 46, and 90.5 through the full recall sequence.',
+            'Hold 6:2, 33, and 92.4 exactly as written in the room.',
+            'Keep 27, 52, and 89.6 while :, /, and # stay untouched.',
+        ],
+        'closers': [
+            'Memory practice works when the structure survives even after the first rush fades.',
+            'The clearest recall usually comes from calm repetition rather than forced speed.',
+            'Training memory this way makes live recall rooms feel much less chaotic.',
+            'One clean practice run can fix several lazy habits at once.',
+        ],
+    },
+    'quote': {
+        'intros': [
+            'Quote practice note: this session is for building calm rhythm on reflective text before pressure returns.',
+            'Solo quote memo: use this run to sharpen punctuation discipline on lines that look easier than they are.',
+            'Practice wisdom card: these rounds reward patience, timing, and steady attention to detail.',
+            'Training quote update: this paragraph is here to make clean phrasing feel automatic under your fingers.',
+            'Focus quote briefing: let the sentence teach control before the live room asks for speed.',
+        ],
+        'focuses': [
+            'Preserve the phrase "focus > panic" exactly as shown through every symbol and pause.',
+            'Keep the full quote intact while commas, slashes, and timing marks stay in their original places.',
+            'Type with clean pacing and do not let one rushed section break the shape of the whole line.',
+            'Use the paragraph to train detail protection on small marks that live players often overlook.',
+            'Hold the quote steady from opening word to final character without flattening its structure.',
+        ],
+        'metrics': [
+            'Keep ratio 3:2, checkpoint #11, and 21:15 intact while all symbols remain exact.',
+            'Protect 22, 49, and 94.4 together with %, /, and # exactly as written.',
+            'Preserve 13, 58, and 96.1 while every quote and bracket stays untouched.',
+            'Hold 71, 105, and 91.2 with the same care you give each symbol.',
+            'Keep 64, 117, and 92.8 across the line without punctuation drift.',
+        ],
+        'closers': [
+            'Quote practice becomes powerful when rhythm and detail start feeling inseparable.',
+            'The cleanest live quote rooms usually begin with quiet sessions like this.',
+            'Strong phrasing under pressure comes from disciplined repetition in training.',
+            'A calm practice line often teaches more than a rushed leaderboard chase.',
+        ],
+    },
+    'marathon': {
+        'intros': [
+            'Marathon practice report: this long-form run is designed to train endurance before you return to deeper races.',
+            'Distance session memo: long paragraphs reveal whether your posture and rhythm can survive beyond the opening burst.',
+            'Extended practice note: marathon mode teaches efficient motion after the easy pace disappears.',
+            'Endurance warm-up briefing: use this run to protect form through a longer line without forcing speed.',
+            'Long-set training update: every sentence here is meant to stretch your focus without letting accuracy collapse.',
+        ],
+        'focuses': [
+            'Preserve the phrase "stay smooth through the final stretch" exactly as shown across the whole run.',
+            'Keep your rhythm compact through longer clauses, symbols, and pause marks instead of drifting late.',
+            'Type with patient control when the paragraph begins to feel heavy and repetitive.',
+            'Use this mode to build efficient movement after the early adrenaline of the session fades.',
+            'Hold clean structure through the deeper part of the sentence where fatigue usually leaks points.',
+        ],
+        'metrics': [
+            'Keep 31, 58, and 104.3% intact while commas, brackets, and symbols remain clean.',
+            'Protect 26, 44, and 89.9 with %, /, #, and ; left exactly in place.',
+            'Preserve 19, 67, and 93.0 while %, /, :, and # stay untouched.',
+            'Hold 32, 74, and 90.7 with every semicolon and bracket locked in.',
+            'Keep 28, 61, and 95.2 intact from opening word to final mark.',
+        ],
+        'closers': [
+            'Marathon practice is where efficient hands learn to outlast early excitement.',
+            'Long-form control grows when you protect rhythm after the sentence stops feeling easy.',
+            'The best endurance gains come from staying disciplined after fatigue first appears.',
+            'Clean long sessions turn into stronger closing speed in every other mode too.',
+        ],
+    },
+}
 AI_PASSAGE_BANK = {
-    'coding': [
-        'Sprint review 01: refactor the payments module so each function owns 1 clear job, log every retry with code #A17, and ship a safer release before 18:30. The winning patch must validate input, escape symbols like {}[]()<>, and keep notes such as total=24, failed=3, passed=21 without losing rhythm or accuracy.',
-        'Debug report v2.4 says the room service should filter 128 sessions, group users by match_id, and return the fastest score in under 90 seconds. Type the snippet carefully: if score >= 87.5 and errors <= 2, mark status="verified"; otherwise push item #404 into retry_queue and notify ops@example.dev immediately.',
-    ],
-    'legal': [
-        'This agreement confirms that each participant accepts the competition rules, payout schedule, and dispute process before joining any paid room.',
-    ],
-    'medical': [
-        'Clinical documentation requires precise terminology, steady pacing, and careful attention so patient records remain accurate and easy to review.',
-    ],
-    'business': [
-        'Quarterly operations memo: the arena processed 2,480 matches, KES 184,500 in entry volume, and 96 verified payouts during cycle 04. Leaders must compare retention at 62%, churn at 11%, and referral lift at +18% while checking symbols like %, +, /, and # in every line before approving the final dashboard update at 17:45.',
-        'Investor summary 2026-04: revenue reached KES 215,000, repeat purchases hit 37%, and premium upgrades moved from 84 to 129 accounts in just 30 days. Please review the notes, confirm item codes A-14, C-27, and Z-09, then publish the clean paragraph with commas, quotation marks, and figures like 7.5%, 12/20, and 3:1 intact.',
-    ],
+    mode: _build_live_mode_passages(parts)
+    for mode, parts in PRACTICE_PASSAGE_PARTS.items()
+}
+AI_PASSAGE_BANK.update({
+    'coding': list(AI_PASSAGE_BANK['code']),
+    'business': list(AI_PASSAGE_BANK['standard']),
+    'exam': list(AI_PASSAGE_BANK['memory']),
     'french': [
-        "Rapport de tournoi 05: les meilleurs joueurs progressent avec discipline, precision et regularite, meme quand le tableau affiche 128 participants, 3 manches finales et un prize pool de KES 75,000. Merci de verifier les symboles %, /, # et les chiffres 14, 27 et 39 avant de valider la version finale a 18:20.",
-        "Note d'exploitation: pendant la session premium, l'equipe doit comparer 2 strategies, corriger 4 erreurs critiques et confirmer que le score moyen reste au-dessus de 91.5%. Tapez chaque phrase avec soin, gardez les signes () {} [] et recopiez exactement les references X-17, Q-08 et ticket #553.",
+        "Rapport d'entrainement 01: la pratique solo renforce le rythme, la precision et la discipline avant les grandes manches. Gardez 14, 27 et 39 exacts, conservez les symboles %, /, # et recopiez \"precision avant vitesse\" sans perdre la structure.",
+        "Session de frappe 02: un bon joueur construit sa confiance pendant l'entrainement, surtout quand les chiffres 18, 44 et 91.5% apparaissent avec des signes comme (), :, ; et /. Tapez chaque detail proprement jusqu'au dernier caractere.",
     ],
     'swahili': [
-        'Ripoti ya mashindano 07 inaonyesha kuwa washindi wanahitaji kasi, umakini, na nidhamu kila siku, hasa wakati takwimu zinaonyesha mechi 240, ushindi 18, na bonasi ya KES 45,000. Hakikisha unaandika alama kama %, /, #, na namba 12, 48, 96 kwa usahihi kabla ya muda wa mwisho wa saa 17:30.',
-        'Kwenye duru ya mwisho, msimamizi alitaja kuwa wachezaji 2 walikamilisha maandishi ndani ya sekunde 95, makosa yakabaki chini ya 3, na kiwango cha usahihi kikafika 94.7%. Andika sentensi yote pamoja na alama za mabano (), nukuu "", na kumbukumbu za faili kama match-21 au room#8 bila kuruka herufi.',
+        'Kipindi cha mazoezi 01: mazoezi ya peke yako hujenga mdundo, umakini, na nidhamu kabla ya mechi za moja kwa moja. Linda 12, 48, na 96 pamoja na alama kama %, /, #, na nukuu "usahihi kabla ya kasi" hadi mwisho wa mstari.',
+        'Ripoti ya mazoezi 02: mpigaji bora hujenga utulivu wake wakati wa practice, hasa namba 17, 33, na 92.4% zinapoonekana pamoja na alama kama (), :, na /. Andika kila sehemu kwa usafi bila kuvunja mpangilio.',
     ],
-    'exam': [
-        'Assessment packet 03 instructs candidates to review section A, B, and C in order, complete 45 items in 30 minutes, and keep the error count below 2 per page. Read every symbol carefully, including %, :, ;, and (), then confirm that line 14 references code X9-33 while line 27 records a score of 88.4 out of 100.',
+    'legal': [
+        'Practice agreement note: every solo session should still reward exact typing, clear pacing, and careful attention to symbols before competitive rooms begin.',
     ],
-    'quote': [
-        'Consistency creates momentum long before the results are visible, which is why disciplined practice can look ordinary at 06:00, 12:30, and 21:15 until it suddenly delivers a 103 WPM finish. Keep the punctuation, numbers, and symbols exactly as written: "focus > panic", ratio 3:2, and checkpoint #11 all matter in this round.',
+    'medical': [
+        'Clinical practice passage: accurate transcription matters because each number, term, and symbol must remain clear from the first character to the last.',
     ],
-}
+})
 
 PASSAGE_DECORATORS = [
     'Final check: preserve every digit, symbol, and capital letter exactly as shown.',
@@ -823,24 +1021,24 @@ def _equip_field_for_category(category: str) -> str | None:
 
 
 def _generate_passage(mode: str, language: str) -> Dict[str, Any]:
-    normalized_mode = str(mode or 'business').strip().lower()
+    normalized_mode = str(mode or 'standard').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
     if normalized_language == 'swahili':
         pool_key = 'swahili'
     elif normalized_language == 'french':
         pool_key = 'french'
     elif normalized_language == 'code':
-        pool_key = 'coding'
+        pool_key = 'code'
     elif normalized_mode in {'code', 'coding'}:
-        pool_key = 'coding'
+        pool_key = 'code'
     elif normalized_mode in {'quote', 'quote battle'}:
         pool_key = 'quote'
     elif normalized_mode in {'memory', 'exam'}:
-        pool_key = 'exam'
+        pool_key = 'memory'
     else:
-        pool_key = normalized_mode if normalized_mode in AI_PASSAGE_BANK else 'business'
+        pool_key = normalized_mode if normalized_mode in AI_PASSAGE_BANK else 'standard'
 
-    passages = AI_PASSAGE_BANK.get(pool_key) or AI_PASSAGE_BANK['business']
+    passages = AI_PASSAGE_BANK.get(pool_key) or AI_PASSAGE_BANK['standard']
     base_passage = passages[secrets.randbelow(len(passages))]
     decorator = PASSAGE_DECORATORS[secrets.randbelow(len(PASSAGE_DECORATORS))]
     checksum = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))

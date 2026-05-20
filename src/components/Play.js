@@ -676,6 +676,17 @@ export default function Play({ practicePage = false }) {
     setTimeout(() => inputRef.current?.focus(), 150);
   };
 
+  const backToLobby = useCallback(() => {
+    setLiveRoom(null);
+    setRaceResult(null);
+    setTypingText('');
+    setReplayFrames([]);
+    setNotice('');
+    setShowPracticeModes(false);
+    setPhase('lobby');
+    navigate('/play');
+  }, [navigate]);
+
   const startLiveRace = async () => {
     if (!currentUser?.id) {
       redirectToProfile();
@@ -1088,7 +1099,7 @@ export default function Play({ practicePage = false }) {
                 {loadingLive ? 'Canceling Room...' : 'Cancel Room'}
               </button>
             )}
-            <button className="btn btn-secondary" onClick={() => setPhase('lobby')}>
+            <button className="btn btn-secondary" onClick={backToLobby}>
               Back to Lobby
             </button>
           </div>
@@ -1325,7 +1336,7 @@ export default function Play({ practicePage = false }) {
             <button className="btn btn-outline-primary" onClick={() => navigate(`/results/${raceResult.id}`)}>
               Open Result Page
             </button>
-            <button className="btn btn-primary" onClick={() => setPhase('lobby')}>
+            <button className="btn btn-primary" onClick={backToLobby}>
               Back to Lobby
             </button>
             <button className="btn btn-secondary" onClick={startPracticeRace}>
