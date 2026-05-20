@@ -20,6 +20,7 @@ import {
 import '../styles/Play.css';
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
+const LIVE_RACE_COUNTDOWN_FALLBACK = 5;
 const KEYBOARD_LAYOUT = [
   ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
   ['Tab', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
@@ -198,6 +199,7 @@ export default function Play() {
   const [generatedContent, setGeneratedContent] = useState(null);
   const [replayFrames, setReplayFrames] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [friendBattle, setFriendBattle] = useState({
     inviteCode: '',
     password: '',
@@ -358,6 +360,27 @@ export default function Play() {
     setPhase('results');
   }, [duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText]);
 
+  const syncRoomClock = useCallback((room) => {
+    if (!room?.startedAt) {
+      setCountdownRemaining(Number(room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
+      return;
+    }
+
+    const countdownSeconds = Number(room.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
+    const startedAtMs = new Date(room.startedAt).getTime();
+    if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) {
+      setCountdownRemaining(countdownSeconds);
+      return;
+    }
+
+    const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
+    const remainingCountdown = Math.max(0, Math.ceil(countdownSeconds - elapsedSeconds));
+    const raceElapsed = Math.max(0, Math.floor(elapsedSeconds - countdownSeconds));
+
+    setCountdownRemaining(remainingCountdown);
+    setTimeLeft(Math.max(0, Number(room.duration || duration) - raceElapsed));
+  }, [duration]);
+
   useEffect(() => {
     const loadFeed = async () => {
       const rooms = await fetchLiveRaces().catch(() => []);
@@ -377,10 +400,12 @@ export default function Play() {
       try {
         const room = await fetchLiveRaceRoom(liveRoom.id);
         setLiveRoom(room);
-        if (phase === 'queued' && room.status !== 'waiting') {
-          setPhase('racing');
-          setTimeLeft(Number(room.duration || duration));
-          setTimeout(() => inputRef.current?.focus(), 150);
+        syncRoomClock(room);
+        if (phase === 'queued') {
+          if (room.status !== 'waiting' && countdownRemaining <= 0) {
+            setPhase('racing');
+            setTimeout(() => inputRef.current?.focus(), 150);
+          }
         }
       } catch (error) {
         console.error('Live room polling error:', error);
@@ -388,19 +413,51 @@ export default function Play() {
     }, phase === 'queued' ? 1500 : 2200);
 
     return () => window.clearInterval(interval);
-  }, [duration, liveRoom, phase]);
+  }, [countdownRemaining, liveRoom, phase, syncRoomClock]);
+
+  useEffect(() => {
+    if (phase === 'queued' && liveRoom?.status === 'countdown') {
+      setNotice(`Race starts in ${Math.max(0, countdownRemaining)} seconds...`);
+      if (countdownRemaining <= 0) {
+        setPhase('racing');
+        setTimeout(() => inputRef.current?.focus(), 150);
+      }
+    }
+  }, [countdownRemaining, liveRoom?.status, phase]);
 
   useEffect(() => () => {
     window.clearTimeout(heartbeatTimerRef.current);
   }, []);
 
   useEffect(() => {
+    if (phase === 'queued' && liveRoom?.status === 'countdown') {
+      syncRoomClock(liveRoom);
+      const countdownTimer = window.setInterval(() => {
+        syncRoomClock(liveRoom);
+      }, 250);
+      return () => window.clearInterval(countdownTimer);
+    }
+
     if (phase !== 'racing') {
       window.clearInterval(timerRef.current);
       return undefined;
     }
 
+    syncRoomClock(liveRoom);
     timerRef.current = window.setInterval(() => {
+      if (liveRoom?.startedAt) {
+        syncRoomClock(liveRoom);
+        const startedAtMs = new Date(liveRoom.startedAt).getTime();
+        const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
+        const countdownSeconds = Number(liveRoom.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
+        const raceRemaining = Math.max(0, Number(liveRoom.duration || duration) - Math.floor(elapsedSeconds - countdownSeconds));
+        if (raceRemaining <= 0) {
+          window.clearInterval(timerRef.current);
+          finishRace();
+        }
+        return;
+      }
+
       setTimeLeft((current) => {
         if (current <= 1) {
           window.clearInterval(timerRef.current);
@@ -409,10 +466,10 @@ export default function Play() {
         }
         return current - 1;
       });
-    }, 1000);
+    }, 250);
 
     return () => window.clearInterval(timerRef.current);
-  }, [finishRace, phase]);
+  }, [duration, finishRace, liveRoom, phase, syncRoomClock]);
 
   const refreshFeed = async () => {
     const rooms = await fetchLiveRaces().catch(() => []);
@@ -454,12 +511,10 @@ export default function Play() {
       setTypingText('');
       setReplayFrames([]);
       setRaceResult(null);
-      setPhase(response.matched ? 'racing' : 'queued');
+      setPhase('queued');
+      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
       setTimeLeft(Number(response.room?.duration || duration));
       setNotice(response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player...');
-      if (response.matched) {
-        setTimeout(() => inputRef.current?.focus(), 150);
-      }
       refreshFeed();
     } catch (error) {
       setNotice(error.message || 'Could not join a live race.');
@@ -490,6 +545,7 @@ export default function Play() {
       setReplayFrames([]);
       setRaceResult(null);
       setPhase('queued');
+      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
       setTimeLeft(Number(response.room?.duration || duration));
       setFriendBattle((prev) => ({ ...prev, inviteCode: response.room.inviteCode || '' }));
       setNotice(
@@ -522,7 +578,8 @@ export default function Play() {
       setMode(response.room.mode || mode);
       setLanguage(response.room.language || language);
       setDuration(Number(response.room.duration || duration));
-      setPhase(response.matched ? 'racing' : 'queued');
+      setPhase('queued');
+      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
       setTimeLeft(Number(response.room?.duration || duration));
       setNotice(
         response.message || (
@@ -531,9 +588,6 @@ export default function Play() {
             : 'Joined successfully. Waiting for the host to start the match.'
         )
       );
-      if (response.matched) {
-        setTimeout(() => inputRef.current?.focus(), 150);
-      }
       refreshFeed();
     } catch (error) {
       const inviteCode = friendBattle.inviteCode.trim().toUpperCase();
@@ -652,6 +706,10 @@ export default function Play() {
   const accuracyValue = calculateAccuracy(sourceText, typingText);
   const wpmValue = calculateWPM(typingText, Math.max(1, duration - timeLeft));
   const completionRate = Math.min(100, Math.round((typingText.length / Math.max(sourceText.length, 1)) * 100));
+  const winnerName =
+    liveRoom?.winnerUsername ||
+    liveRoom?.players?.find((player) => String(player.userId) === String(liveRoom?.winnerUserId))?.username ||
+    '';
   const equippedSummary = [
     themePreset.label,
     equippedItems.skin || 'Default keyboard skin',
@@ -978,9 +1036,9 @@ export default function Play() {
           <h1>Race Complete</h1>
           <p className="results-challenge">
             {liveRoom?.winnerUserId
-              ? `Winner: ${
-                  liveRoom.players?.find((player) => player.userId === liveRoom.winnerUserId)?.username || 'Pending'
-                }`
+              ? `Winner: ${winnerName || 'Pending'}`
+              : liveRoom?.id
+              ? 'Waiting for winner confirmation...'
               : 'Results submitted.'}
           </p>
 

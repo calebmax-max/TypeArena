@@ -75,6 +75,7 @@ TOURNAMENT_MATCH_SIZE = 2
 TOURNAMENT_START_DELAY_SECONDS = 30
 WINNER_PRIZE_SHARE = 0.60
 WITHDRAWAL_FEE = 50.0
+LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 LIVE_RACE_TEXTS = {
     'standard': 'Speed comes from rhythm, not panic. Keep your shoulders relaxed and let accurate keystrokes build momentum every second of the race.',
@@ -749,8 +750,12 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
 
 def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = None) -> Dict[str, Any]:
     players = []
+    winner_user_id = room.get('winnerUserId')
+    winner_username = ''
     for player in room.get('players', []):
         result = room.get('results', {}).get(player['userId'], {})
+        if winner_user_id is not None and str(player['userId']) == str(winner_user_id):
+            winner_username = str(player.get('username') or '')
         players.append(
             {
                 'userId': player['userId'],
@@ -774,10 +779,11 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'mode': room['mode'],
         'language': room['language'],
         'duration': room['duration'],
-        'countdown': room.get('countdown', 3),
+        'countdown': room.get('countdown', LIVE_RACE_COUNTDOWN_SECONDS),
         'text': room['text'],
         'players': players,
-        'winnerUserId': room.get('winnerUserId'),
+        'winnerUserId': winner_user_id,
+        'winnerUsername': winner_username or str(room.get('winner', {}).get('username') or ''),
         'winnerPrize': float(room.get('winnerPrize') or 0),
         'stakeAmount': float(room.get('stakeAmount') or 0),
         'totalEscrow': float(room.get('totalEscrow') or 0),
@@ -1724,7 +1730,8 @@ def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
 
     elapsed_seconds = (datetime.utcnow().timestamp() - started_at.timestamp())
     duration_seconds = max(1, int(room.get('duration') or 0))
-    if elapsed_seconds < duration_seconds:
+    countdown_seconds = max(0, int(room.get('countdown') or LIVE_RACE_COUNTDOWN_SECONDS))
+    if elapsed_seconds < duration_seconds + countdown_seconds:
         return False
 
     room.setdefault('results', {})
@@ -3583,7 +3590,7 @@ def queue_live_race():
                 'mode': mode,
                 'language': language,
                 'duration': duration,
-                'countdown': 3,
+                'countdown': LIVE_RACE_COUNTDOWN_SECONDS,
                 'text': text,
                 'inviteCode': generated_invite,
                 'password': room_password if is_private else '',
