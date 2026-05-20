@@ -93,29 +93,29 @@ export default function TypeProfile() {
 
   const loadProfile = useCallback(async () => {
     try {
-      const [user, walletConfigData] = await Promise.all([
-        fetchCurrentUser(),
-        loadWalletConfig(),
-      ]);
-
-      setWalletConfig(
-        walletConfigData || {
-          topUpMethods: [],
-          withdrawMethods: [],
-        }
-      );
-
+      const user = await fetchCurrentUser();
       setCurrentUser(user);
 
       if (user?.id) {
-        const [history, wallet] = await Promise.all([
+        const [walletConfigData, history, wallet] = await Promise.all([
+          loadWalletConfig(),
           fetchRaceHistory(user.id),
           fetchWalletHistory(),
         ]);
 
+        setWalletConfig(
+          walletConfigData || {
+            topUpMethods: [],
+            withdrawMethods: [],
+          }
+        );
         setRaceHistory(history || []);
         setWalletHistory(wallet?.items || []);
       } else {
+        setWalletConfig({
+          topUpMethods: [],
+          withdrawMethods: [],
+        });
         setRaceHistory([]);
         setWalletHistory([]);
       }

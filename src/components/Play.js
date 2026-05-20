@@ -10,7 +10,6 @@ import {
   cancelLiveRaceRoom,
   fetchCurrentUser,
   generateRaceContent,
-  fetchLiveRaceByInvite,
   fetchLiveRaceRoom,
   fetchLiveRaces,
   queueLiveRace,
@@ -206,6 +205,9 @@ export default function Play() {
   });
   const inputRef = useRef(null);
   const timerRef = useRef(null);
+  const heartbeatTimerRef = useRef(null);
+  const heartbeatPayloadRef = useRef(null);
+  const heartbeatInFlightRef = useRef(false);
   const [activeKeys, setActiveKeys] = useState([]);
 
   useEffect(() => {
@@ -284,6 +286,31 @@ export default function Play() {
     loadGeneratedContent();
   }, [language, mode]);
 
+  const flushLiveHeartbeat = useCallback(async () => {
+    if (!liveRoom?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
+      return;
+    }
+
+    heartbeatInFlightRef.current = true;
+    const payload = heartbeatPayloadRef.current;
+    heartbeatPayloadRef.current = null;
+
+    try {
+      const room = await updateLiveRaceHeartbeat(liveRoom.id, payload);
+      setLiveRoom(room);
+    } catch (error) {
+      console.error('Live heartbeat error:', error);
+    } finally {
+      heartbeatInFlightRef.current = false;
+      if (heartbeatPayloadRef.current) {
+        window.clearTimeout(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = window.setTimeout(() => {
+          flushLiveHeartbeat();
+        }, 120);
+      }
+    }
+  }, [liveRoom?.id]);
+
   const finishRace = useCallback(async () => {
     const elapsed = Math.max(1, duration - timeLeft);
     const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
@@ -358,10 +385,14 @@ export default function Play() {
       } catch (error) {
         console.error('Live room polling error:', error);
       }
-    }, 1200);
+    }, phase === 'queued' ? 1500 : 2200);
 
     return () => window.clearInterval(interval);
   }, [duration, liveRoom, phase]);
+
+  useEffect(() => () => {
+    window.clearTimeout(heartbeatTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (phase !== 'racing') {
@@ -481,9 +512,8 @@ export default function Play() {
     setLoadingLive(true);
     setNotice('');
     try {
-      const roomPreview = await fetchLiveRaceByInvite(friendBattle.inviteCode.trim());
       const response = await queueLiveRace({
-        inviteCode: roomPreview.inviteCode || friendBattle.inviteCode.trim(),
+        inviteCode: friendBattle.inviteCode.trim(),
         password: friendBattle.password,
       });
       setLiveRoom(response.room);
@@ -578,11 +608,12 @@ export default function Play() {
       const progress = Math.min(100, Math.round((value.length / sourceTextLength) * 100));
       const currentWpm = calculateWPM(value, Math.max(1, duration - timeLeft));
       const currentAccuracy = calculateAccuracy(sourceText, value);
-      try {
-        const room = await updateLiveRaceHeartbeat(liveRoom.id, { progress, currentWpm, currentAccuracy });
-        setLiveRoom(room);
-      } catch (error) {
-        console.error('Live heartbeat error:', error);
+      heartbeatPayloadRef.current = { progress, currentWpm, currentAccuracy };
+      if (!heartbeatTimerRef.current) {
+        heartbeatTimerRef.current = window.setTimeout(() => {
+          heartbeatTimerRef.current = null;
+          flushLiveHeartbeat();
+        }, 180);
       }
     }
   };
