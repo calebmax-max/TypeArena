@@ -23,6 +23,8 @@ const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const LIVE_RACE_COUNTDOWN_FALLBACK = 5;
 const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
 const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
+const LIVE_RESULT_WAIT_ATTEMPTS = 5;
+const LIVE_RESULT_WAIT_INTERVAL_MS = 350;
 const KEYBOARD_LAYOUT = [
   ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
   ['Tab', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
@@ -425,6 +427,32 @@ export default function Play({ practicePage = false }) {
     };
   }, [buildRoomStandings, currentUser?.id, duration, generatedContent?.passage, language, mode, replayFrames, timeLeft, typingText]);
 
+  const waitForCompletedLiveRoom = useCallback(async (roomId, initialRoom = null) => {
+    if (initialRoom?.status === 'completed') {
+      return initialRoom;
+    }
+
+    if (!roomId) {
+      return initialRoom;
+    }
+
+    let latestRoom = initialRoom;
+    for (let attempt = 0; attempt < LIVE_RESULT_WAIT_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, LIVE_RESULT_WAIT_INTERVAL_MS));
+      try {
+        const refreshedRoom = await fetchLiveRaceRoom(roomId);
+        latestRoom = refreshedRoom;
+        if (refreshedRoom?.status === 'completed') {
+          return refreshedRoom;
+        }
+      } catch (error) {
+        console.error('Live result refresh error:', error);
+      }
+    }
+
+    return latestRoom;
+  }, []);
+
   const finishRace = useCallback(async () => {
     const elapsed = Math.max(1, duration - timeLeft);
     const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
@@ -447,8 +475,18 @@ export default function Play({ practicePage = false }) {
 
     if (liveRoom?.id) {
       try {
-        const room = await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
-        setLiveRoom(room);
+        const submittedRoom = await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
+        const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, submittedRoom);
+        if (finalRoom) {
+          setLiveRoom(finalRoom);
+          const finalPayload = buildRoomResultPayload(finalRoom);
+          if (finalPayload) {
+            sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
+            setRaceResult(finalPayload);
+            setPhase('results');
+            return;
+          }
+        }
       } catch (error) {
         console.error('Live race submit error:', error);
       }
@@ -475,7 +513,7 @@ export default function Play({ practicePage = false }) {
     sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
     setRaceResult(resultPayload);
     setPhase('results');
-  }, [duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText]);
+  }, [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom]);
 
   const syncRoomClock = useCallback((room) => {
     if (!room?.startedAt) {
@@ -956,12 +994,6 @@ export default function Play({ practicePage = false }) {
           {isPracticePage && (
             <p className="results-challenge">
               This page is only for solo practice. Use the Play page for live races, friend battles, and private rooms.
-            </p>
-          )}
-
-          {!currentUser?.id && (
-            <p className="results-challenge">
-              Sign in first to start practice, enter live 1v1 battles, or open private rooms.
             </p>
           )}
 

@@ -67,12 +67,6 @@ export default function Tournaments() {
         <p>Join multi-player paid tournaments. When the lobby fills, the tournament starts after a 30 second countdown.</p>
       </div>
 
-      {!currentUser?.id && (
-        <div className="join-notice join-notice--info">
-          Sign in first to join or compete in tournaments.
-        </div>
-      )}
-
       {joinNotice && (
         <div className={`join-notice join-notice--${joinNotice.type}`}>{joinNotice.text}</div>
       )}
