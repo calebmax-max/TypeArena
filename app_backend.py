@@ -757,6 +757,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
                 'username': player['username'],
                 'progress': int(player.get('progress') or 0),
                 'currentWpm': float(player.get('currentWpm') or 0),
+                'currentAccuracy': float(player.get('currentAccuracy') or 100),
                 'submitted': bool(result),
                 'result': result or None,
             }
@@ -816,6 +817,16 @@ def _now_iso() -> str:
 
 def _now_db() -> str:
     return datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace('Z', '+00:00'))
+    except ValueError:
+        return None
 
 
 def _normalize_mpesa_phone(raw_phone: str) -> str:
@@ -1698,6 +1709,47 @@ def _complete_live_race_if_ready(room: Dict[str, Any]) -> None:
         conn.close()
 
     _persist_completed_live_race(room)
+
+
+def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
+    if not room or str(room.get('status') or '').lower() == 'completed':
+        return False
+
+    if len(room.get('players', [])) < 2:
+        return False
+
+    started_at = _parse_iso_datetime(room.get('startedAt'))
+    if started_at is None:
+        return False
+
+    elapsed_seconds = (datetime.utcnow().timestamp() - started_at.timestamp())
+    duration_seconds = max(1, int(room.get('duration') or 0))
+    if elapsed_seconds < duration_seconds:
+        return False
+
+    room.setdefault('results', {})
+    finished_at = _now_iso()
+    finished_at_ts = datetime.utcnow().timestamp()
+
+    for player in room.get('players', []):
+      user_id = int(player.get('userId') or 0)
+      if user_id in room['results']:
+          continue
+      room['results'][user_id] = {
+          'userId': user_id,
+          'username': player.get('username') or 'Player',
+          'wpm': round(float(player.get('currentWpm') or 0), 1),
+          'accuracy': round(float(player.get('currentAccuracy') or 100), 1),
+          'finishedAt': finished_at,
+          'finishedAtTs': finished_at_ts,
+      }
+
+    _complete_live_race_if_ready(room)
+    if str(room.get('status') or '').lower() != 'completed':
+        room['status'] = 'completed'
+        room['completedAt'] = finished_at
+        _persist_completed_live_race(room)
+    return True
 
 
 def _get_recent_wallet_history(cur, user_id: int) -> Dict[str, Any]:
@@ -3464,7 +3516,13 @@ def queue_live_race():
                 return jsonify({'message': 'Buy the Signature Invite Pass in the marketplace to create custom private room codes.'}), 400
 
             text = _generate_passage(mode, language).get('passage') or LIVE_RACE_TEXTS.get(mode, LIVE_RACE_TEXTS['standard'])
-            player_snapshot = {'userId': user['id'], 'username': user['username'], 'progress': 0, 'currentWpm': 0}
+            player_snapshot = {
+                'userId': user['id'],
+                'username': user['username'],
+                'progress': 0,
+                'currentWpm': 0,
+                'currentAccuracy': 100,
+            }
 
             if invite_code:
                 room = _get_live_room_by_invite(cur, invite_code)
@@ -3566,12 +3624,13 @@ def get_live_race(room_id: str):
             room = _get_live_room(cur, room_id)
             if not room:
                 return jsonify({'message': 'Live race room not found.'}), 404
+            _finalize_live_room_if_expired(room)
             user_id_raw = request.headers.get('X-User-Id')
             viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
             if viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}:
                 room['spectators'] = int(room.get('spectators') or 0) + 1
-                _save_live_room(cur, room)
-                conn.commit()
+            _save_live_room(cur, room)
+            conn.commit()
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
     finally:
         conn.close()
@@ -3585,6 +3644,9 @@ def get_live_race_by_invite(invite_code: str):
             room = _get_live_room_by_invite(cur, invite_code)
             if not room:
                 return jsonify({'message': 'Friend battle room not found.'}), 404
+            _finalize_live_room_if_expired(room)
+            _save_live_room(cur, room)
+            conn.commit()
             user_id_raw = request.headers.get('X-User-Id')
             viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
@@ -3652,9 +3714,11 @@ def update_live_race_progress(room_id: str):
             if player['userId'] == user['id']:
                 player['progress'] = max(0, min(100, int(payload.get('progress') or 0)))
                 player['currentWpm'] = max(0, float(payload.get('currentWpm') or 0))
+                player['currentAccuracy'] = max(0, min(100, float(payload.get('currentAccuracy') or 0)))
                 break
         if room['status'] == 'countdown':
             room['status'] = 'racing'
+        _finalize_live_room_if_expired(room)
         with conn.cursor() as cur:
             _save_live_room(cur, room)
         conn.commit()

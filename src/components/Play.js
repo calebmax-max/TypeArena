@@ -577,8 +577,9 @@ export default function Play() {
       const sourceTextLength = Math.max(1, (liveRoom.text || '').length);
       const progress = Math.min(100, Math.round((value.length / sourceTextLength) * 100));
       const currentWpm = calculateWPM(value, Math.max(1, duration - timeLeft));
+      const currentAccuracy = calculateAccuracy(sourceText, value);
       try {
-        const room = await updateLiveRaceHeartbeat(liveRoom.id, { progress, currentWpm });
+        const room = await updateLiveRaceHeartbeat(liveRoom.id, { progress, currentWpm, currentAccuracy });
         setLiveRoom(room);
       } catch (error) {
         console.error('Live heartbeat error:', error);
