@@ -77,6 +77,26 @@ WINNER_PRIZE_SHARE = 0.60
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
+
+
+def _build_live_mode_passages(parts: Dict[str, list[str]]) -> list[str]:
+    intros = list(parts.get('intros') or [])
+    focuses = list(parts.get('focuses') or [])
+    metrics = list(parts.get('metrics') or [])
+    closers = list(parts.get('closers') or [])
+
+    passages: list[str] = []
+    if not intros or not focuses or not metrics or not closers:
+        return passages
+
+    for intro_index, intro in enumerate(intros):
+        for focus_index, focus in enumerate(focuses):
+            for closer_index, closer in enumerate(closers):
+                metric = metrics[(intro_index + focus_index + closer_index) % len(metrics)]
+                passages.append(f'{intro} {focus} {metric} {closer}')
+    return passages
+
+
 LIVE_RACE_TEXTS = {
     'standard': 'Speed comes from rhythm, not panic. Keep your shoulders relaxed and let accurate keystrokes build momentum every second of the race.',
     'survival': 'In survival mode every mistake costs pressure. Stay calm, stay precise, and protect your lead with clean, confident typing.',
@@ -85,6 +105,215 @@ LIVE_RACE_TEXTS = {
     'memory': 'Remember the phrase before the countdown ends, then reproduce it with focus, control, and steady breathing under pressure.',
     'quote': 'Discipline beats motivation when the work must be done every day, especially when excellence is built one correct character at a time.',
     'marathon': 'Long-form races test endurance. The fastest typists conserve motion, preserve posture, and finish with accuracy still intact.',
+}
+LIVE_BATTLE_PASSAGE_PARTS = {
+    'standard': {
+        'intros': [
+            'Nairobi arena memo: the 1v1 card is live and both players have one clean minute to own the room without drifting into panic.',
+            'Prime duel briefing: the lobby is loud, the stakes are even, and this matchup will reward the player who types with cleaner rhythm from the opening word.',
+            'Championship room update: two typists loaded in with no room for lazy corrections once the countdown breaks and the first line starts to move.',
+            'Kenya server notice: tonight\'s versus race favors disciplined hands, sharp focus, and smooth recovery whenever pressure spikes near the end.',
+            'Matchday bulletin: the duel looks even on paper, but the scoreboard will reward the player who keeps execution cleaner through every transition.',
+        ],
+        'focuses': [
+            'Preserve every symbol, bracket, and quote while holding the phrase "hold the lane, own the finish" exactly as shown.',
+            'Keep commas, slashes, and score tags locked in place because small details decide more duels than raw speed alone.',
+            'Type with stable tempo through every checkpoint and protect the quoted line "finish clean, not frantic" without breaking form.',
+            'Carry calm hands across the full sentence and do not let one rushed correction damage the flow of the round.',
+            'Stay composed through punctuation clusters, closing marks, and the final burst where most players lose free points.',
+        ],
+        'metrics': [
+            'Watch figures like 16, 38, and 97.1%, plus symbols such as %, /, #, and :, exactly as written.',
+            'Protect values like 24, 44, and 91.6 while keeping ratio 4:1 and checkpoint #08 untouched.',
+            'Keep 5:3, 28, and 86.4 intact while every slash, comma, and dash stays in its original place.',
+            'Lock in 17, 42, and 108 with the same discipline you use on every bracket and quote.',
+            'Preserve 31, 57, and 93.8 while each symbol, number, and pause marker lands cleanly.',
+        ],
+        'closers': [
+            'The result screen usually belongs to the player who keeps form longer than the crowd expects.',
+            'Silent hands and a louder scoreboard still win more races than flashy panic ever will.',
+            'Pressure only changes the board when a typist stops trusting clean motion near the finish.',
+            'The final gap often appears in the last seconds when one player protects details and the other leaks them.',
+        ],
+    },
+    'survival': {
+        'intros': [
+            'Survival room alert: one careless entry can swing the whole duel, so every line now carries real pressure.',
+            'Final-life dispatch: both players are deep enough into the round that every dropped mark becomes a free opening.',
+            'Arena elimination notice: this survival battle will punish panic faster than it rewards reckless speed.',
+            'Clutch-round memo: the room is tight, the pressure is rising, and the cleanest typist usually survives longest.',
+            'Matchpoint signal: once survival mode narrows, one rushed correction can erase a full stretch of solid typing.',
+        ],
+        'focuses': [
+            'Preserve the warning "protect the lead with precision" and keep every closing symbol in place.',
+            'Type through decimals, quotes, and brackets without giving away cheap mistakes on the safer parts of the line.',
+            'Hold your rhythm steady even when punctuation stacks up and the room starts to feel louder than the text.',
+            'Keep the phrase "clean correction beats desperate recovery" exactly as shown from start to finish.',
+            'Resist panic when slash, colon, and percentage marks arrive back to back in the pressure zone.',
+        ],
+        'metrics': [
+            'Keep #18, 9/12, and 91.3 exact while preserving brackets and semicolons across the line.',
+            'Protect 14, 63, and 92.1 with the same care you give to %, #, and /.',
+            'Hold 31, 57, and 88.6 intact while symbols like {}, (), and : stay untouched.',
+            'Preserve 12/16, 94.2%, and code tags like #11 without a rushed slip.',
+            'Lock in 3, 11, and 87.4 while each symbol and pause marker remains clean.',
+        ],
+        'closers': [
+            'Survival rounds are usually decided by whichever player keeps breathing when the line tightens.',
+            'The board flips late when one typist guards details and the other starts rushing them.',
+            'Pressure punishes loose hands faster than it rewards brave ones.',
+            'One clean final sequence can matter more than a fast opening half.',
+        ],
+    },
+    'speed_burst': {
+        'intros': [
+            'Burst race dispatch: the opening seconds will shape the whole board before either player fully settles.',
+            'Quickfire lobby update: this duel rewards the typist who explodes early without losing structure.',
+            'Short-clock esports note: the first line matters more than usual because the timer leaves no room for lazy recoveries.',
+            'Fast-lane memo: both players need instant rhythm because hesitation gets punished almost immediately.',
+            'Velocity room bulletin: this sprint will turn on who launches hardest while still keeping the sentence clean.',
+        ],
+        'focuses': [
+            'Preserve the phrase "start hot, stay sharp, end cleaner" exactly as shown while the speed rises.',
+            'Keep every dash, slash, and quote in place because burst duels leak points on tiny misses.',
+            'Type "hit the gas, keep the shape, close with intent" with zero drift on punctuation.',
+            'Hold your line through the first surge and do not let one rushed correction flatten the whole run.',
+            'Explode forward, but protect each detail once the paragraph starts stacking symbols and short pauses.',
+        ],
+        'metrics': [
+            'Protect #07, 5:2, and 18.4 while every symbol, number, and pause marker stays intact.',
+            'Keep 21, 56, and 99% untouched together with each dash, comma, and slash.',
+            'Preserve 11, 34, and 95.7 plus symbols like #, /, and : exactly as written.',
+            'Lock in 7, 19, and 98.2 while all punctuation lands cleanly at full pace.',
+            'Hold 23, 41, and 90.9 without dropping %, /, or # near the close.',
+        ],
+        'closers': [
+            'Burst rooms are won by players who stay sharp after the first explosion, not just during it.',
+            'A clean finish still beats a noisy launch when both players start fast.',
+            'The smallest stumble feels bigger in a short race because the clock never slows down.',
+            'Fast hands matter most when they still respect the shape of the sentence.',
+        ],
+    },
+    'code': {
+        'intros': [
+            'Developer showdown brief: this room uses code syntax, so every symbol carries real weight from the opening token.',
+            'Scrim build notice: code mode rewards typists who can stay calm while operators, braces, and underscores pile up.',
+            'Match script update: one missing character can flip the entire board faster than a slow hand ever could.',
+            'Arena dev log: this duel runs on precision because punctuation errors cost harder in code than in prose.',
+            'Finals compile memo: both players need clean structure when the line fills with quotes, brackets, and operators.',
+        ],
+        'focuses': [
+            'Preserve every backtick, semicolon, and brace while keeping the snippet structurally correct all the way through.',
+            'Type the full sequence with exact spacing because one missing symbol can change the entire meaning of the line.',
+            'Keep the expression intact from start to finish and protect every quote, underscore, and operator.',
+            'Hold the syntax steady through brackets, colons, and logical checks without improvising a single character.',
+            'Respect the structure of the snippet and keep every delimiter locked in its original place.',
+        ],
+        'metrics': [
+            'Protect values like 12, 27, and 91.8 while symbols such as {}, (), and ; remain exact.',
+            'Keep room_id, latency_ms=37, and tags like #sync untouched through the full run.',
+            'Preserve score > 88, errors < 3, and update_v3 while every brace and quote stays clean.',
+            'Hold "P-17", 96.4, and retry-room-8 exactly as written alongside each underscore and bracket.',
+            'Keep 92.5, 19:45, and winner?.name ?? "pending" in place without dropping any operator.',
+        ],
+        'closers': [
+            'Code rooms usually reward the player who respects structure more than the one who only chases speed.',
+            'One missing symbol can erase a strong run faster than any slow split on the board.',
+            'Clean syntax still beats reckless pace when the final comparison is exact.',
+            'The strongest coders in the arena type symbols like they matter, because they do.',
+        ],
+    },
+    'memory': {
+        'intros': [
+            'Memory duel prompt: the best players capture the shape first, then trust rhythm when the recall window closes.',
+            'Recall sprint memo: this room rewards typists who can hold structure under pressure instead of rushing the release.',
+            'Retention battle note: memory mode flips fast when one player remembers punctuation and the other only remembers words.',
+            'Short-retention alert: both players saw the pattern, but only one will carry every detail into the final output.',
+            'Mental map briefing: this duel is about storing the line cleanly before speed even becomes a factor.',
+        ],
+        'focuses': [
+            'Preserve the phrase "see it once, type it right" exactly while holding the structure together.',
+            'Type "hold the image, trust the fingers" with the same punctuation and spacing shown in the room.',
+            'Keep every symbol, ratio, and quoted note intact because memory races leak points on tiny forgotten details.',
+            'Lock in the pattern first, then release it with calm hands even when the pressure starts to rise.',
+            'Carry the sequence cleanly through slashes, brackets, and numbers without guessing the missing shape.',
+        ],
+        'metrics': [
+            'Protect 14, 29, and 73 while symbols like %, :, /, and () remain exact.',
+            'Keep #5, 2:1, and 88.7% untouched together with every quote and slash.',
+            'Preserve 18, 46, and 90.5 while symbols such as %, #, and () stay in place.',
+            'Hold 6:2, 33, and 92.4 with the same care you give every comma and quote.',
+            'Keep 27, 52, and 89.6 intact while :, /, and # land exactly where they belong.',
+        ],
+        'closers': [
+            'Memory rooms usually belong to the player who guards structure even when speed starts pulling harder.',
+            'Clean recall beats brave guessing once the last line begins to tighten.',
+            'The scoreboard rewards the typist who remembers the details others think are safe to improvise.',
+            'One forgotten symbol near the end can undo a whole minute of disciplined recall.',
+        ],
+    },
+    'quote': {
+        'intros': [
+            'Arena quote note: this duel carries more pressure than noise, and the cleanest player usually looks calm the whole way through.',
+            'Match wisdom briefing: strong typists build their lead one exact character at a time before the board finally shows it.',
+            'Private room quote update: patience, form, and detail control often decide these battles more than loud confidence ever does.',
+            'Scoreboard memo: the line looks simple until the symbols, timing marks, and final phrase start punishing lazy hands.',
+            'Champion quote bulletin: the room will reward the player who trusts clean repetition when the tension rises late.',
+        ],
+        'focuses': [
+            'Preserve the quote "calm is a weapon" exactly as written and do not let the punctuation drift.',
+            'Keep the phrase "precision leaves no argument" intact while every slash, symbol, and pause stays clean.',
+            'Type "focus > noise" with the same confidence and structure shown in the original line.',
+            'Hold "calm pressure wins finals" exactly as displayed while protecting the rest of the sentence from rushed edits.',
+            'Carry "patience builds pace" to the finish without breaking form on any symbol or number.',
+        ],
+        'metrics': [
+            'Protect ratio 3:2, checkpoint #14, and 21:30 with every symbol left exactly in place.',
+            'Keep 64, 117, and 92.8 untouched together with each > sign, quote, and slash.',
+            'Preserve 22, 49, and 94.4 while %, /, and # remain exact from open to close.',
+            'Hold 71, 105, and 91.2 with the same discipline you use on every quote and bracket.',
+            'Keep 13, 58, and 96.1 intact while all slashes, commas, and quotes stay untouched.',
+        ],
+        'closers': [
+            'Quiet confidence still wins more rooms than noisy panic once the final words arrive.',
+            'The board rarely lies for long when one player protects form and the other stops trusting it.',
+            'Good quotes expose rushed hands because every symbol feels more visible near the end.',
+            'The final gap usually comes from discipline, not drama.',
+        ],
+    },
+    'marathon': {
+        'intros': [
+            'Endurance duel report: long rooms reveal every habit once the early adrenaline fades and both players have to settle.',
+            'Distance battle memo: marathon mode rewards efficient motion, breathing control, and clean correction choices over flashy starts.',
+            'Extended room bulletin: the player who stays compact after line three usually owns the final board in long-form duels.',
+            'Long-set arena note: posture, rhythm, and detail protection matter more with every extra sentence in a marathon room.',
+            'Deep-race briefing: this challenge will expose wasted movement the same way a long final exposes weak fundamentals.',
+        ],
+        'focuses': [
+            'Preserve the closing instruction "stay smooth through the final stretch" exactly as written.',
+            'Keep "endurance is accuracy under fatigue" intact while every bracket, symbol, and pause marker stays clean.',
+            'Type "steady rhythm outlasts sudden pace" with the same discipline you began the room with.',
+            'Hold "finish disciplined, not exhausted" exactly while every quote, slash, and percentage sign remains in place.',
+            'Protect the shape of the sentence through every longer clause because marathon rooms punish sloppy drift.',
+        ],
+        'metrics': [
+            'Keep 31, 58, and 104.3% untouched with every comma, bracket, and number preserved.',
+            'Preserve 26, 44, and 89.9 together with symbols like %, /, #, and ; exactly as shown.',
+            'Hold 19, 67, and 93.0 while %, /, :, and # remain in their original places.',
+            'Protect 32, 74, and 90.7 plus each semicolon and bracket without breaking rhythm.',
+            'Keep 28, 61, and 95.2 intact while every quote, slash, and symbol lands cleanly.',
+        ],
+        'closers': [
+            'Marathon wins usually come from efficient hands that stay disciplined after the easy pace disappears.',
+            'Long-form rooms punish sloppy recovery because the sentence keeps offering more ways to leak points.',
+            'The gap often opens late when one player preserves posture and the other starts forcing speed.',
+            'Endurance still belongs to the typist who respects clean motion all the way to the last character.',
+        ],
+    },
+}
+LIVE_BATTLE_PASSAGE_BANK = {
+    mode: _build_live_mode_passages(parts)
+    for mode, parts in LIVE_BATTLE_PASSAGE_PARTS.items()
 }
 MARKETPLACE_ITEMS = [
     {
@@ -625,6 +854,30 @@ def _generate_passage(mode: str, language: str) -> Dict[str, Any]:
         'provider': 'local',
         'model': 'template-bank',
     }
+
+
+def _generate_live_battle_passage(mode: str, language: str, is_private: bool = False) -> str:
+    normalized_mode = str(mode or 'standard').strip().lower()
+    normalized_language = str(language or 'english').strip().lower()
+
+    if normalized_language == 'swahili':
+        passages = AI_PASSAGE_BANK.get('swahili') or []
+    elif normalized_language == 'french':
+        passages = AI_PASSAGE_BANK.get('french') or []
+    elif normalized_language == 'code' or normalized_mode in {'code', 'coding'}:
+        passages = LIVE_BATTLE_PASSAGE_BANK.get('code') or []
+    else:
+        passages = LIVE_BATTLE_PASSAGE_BANK.get(normalized_mode) or LIVE_BATTLE_PASSAGE_BANK.get('standard') or []
+
+    if not passages:
+        fallback = _generate_passage(mode, language).get('passage')
+        return fallback or LIVE_RACE_TEXTS.get(normalized_mode, LIVE_RACE_TEXTS['standard'])
+
+    base_passage = passages[secrets.randbelow(len(passages))]
+    if is_private:
+        room_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+        return f'{base_passage} Private room note: keep code {room_code} and every symbol exactly as shown.'
+    return base_passage
 
 
 def _current_ai_settings() -> Dict[str, Any]:
@@ -3522,7 +3775,7 @@ def queue_live_race():
             if is_private and invite_code and not user_perks.get('customInviteCodes'):
                 return jsonify({'message': 'Buy the Signature Invite Pass in the marketplace to create custom private room codes.'}), 400
 
-            text = _generate_passage(mode, language).get('passage') or LIVE_RACE_TEXTS.get(mode, LIVE_RACE_TEXTS['standard'])
+            text = _generate_live_battle_passage(mode, language, is_private=is_private)
             player_snapshot = {
                 'userId': user['id'],
                 'username': user['username'],
