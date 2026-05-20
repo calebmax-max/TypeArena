@@ -27,14 +27,43 @@ class AppErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { error: null };
+    this.handleWindowError = this.handleWindowError.bind(this);
+    this.handleUnhandledRejection = this.handleUnhandledRejection.bind(this);
   }
 
   static getDerivedStateFromError(error) {
     return { error };
   }
 
+  componentDidMount() {
+    window.addEventListener('error', this.handleWindowError);
+    window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('error', this.handleWindowError);
+    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
+  }
+
   componentDidCatch(error, errorInfo) {
     console.error('TypeArena runtime error:', error, errorInfo);
+  }
+
+  handleWindowError(event) {
+    if (event?.error) {
+      console.error('TypeArena uncaught window error:', event.error);
+      this.setState({ error: event.error });
+    }
+  }
+
+  handleUnhandledRejection(event) {
+    const rejectionError =
+      event?.reason instanceof Error
+        ? event.reason
+        : new Error(String(event?.reason || 'Unhandled async error'));
+
+    console.error('TypeArena unhandled promise rejection:', rejectionError);
+    this.setState({ error: rejectionError });
   }
 
   render() {

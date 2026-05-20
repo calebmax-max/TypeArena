@@ -6,9 +6,22 @@ const ADMIN_TOKEN_KEY = 'typearena_admin_token';
 const DEFAULT_ADMIN_EMAIL = 'caleb@gmail.com';
 const DEFAULT_ADMIN_PASSWORD = 'Caleb123';
 
+const safeJsonParse = (rawValue, fallback = null) => {
+  if (!rawValue) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch (error) {
+    console.warn('Failed to parse stored JSON value. Clearing stale browser state.', error);
+    return fallback;
+  }
+};
+
 const getStoredUser = () => {
   const raw = localStorage.getItem('typearena_user');
-  return raw ? JSON.parse(raw) : null;
+  return safeJsonParse(raw, null);
 };
 
 const sanitizeUser = (user) => {

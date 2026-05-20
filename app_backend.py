@@ -17,10 +17,11 @@ from urllib import request as urlrequest
 
 import pymysql
 from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
 CORS(app)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -4156,6 +4157,8 @@ def handle_mysql_error(exc):
 
 @app.errorhandler(Exception)
 def handle_unexpected_error(exc):
+    if isinstance(exc, HTTPException):
+        return exc
     app.logger.exception('Unexpected error while serving request')
     return jsonify({'message': f'Unexpected server error: {exc}'}), 500
 

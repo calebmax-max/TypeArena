@@ -757,9 +757,9 @@ export default function TypeProfile() {
                 />
               </label>
 
-              {/* <button type="submit" className="btn btn-primary">
+              <button type="submit" className="btn btn-primary">
                 Add Funds
-              </button> */}
+              </button>
             </div>
           </form>
 
@@ -804,9 +804,9 @@ export default function TypeProfile() {
                 />
               </label>
 
-              {/* <button type="submit" className="btn btn-outline-light">
+              <button type="submit" className="btn btn-outline-light">
                 Withdraw
-              </button> */}
+              </button>
             </div>
           </form>
 
