@@ -313,6 +313,45 @@ export default function Play() {
     }
   }, [liveRoom?.id]);
 
+  const buildRoomResultPayload = useCallback((room) => {
+    if (!room) {
+      return null;
+    }
+
+    const myResult =
+      room.players?.find((player) => String(player.userId) === String(currentUser?.id))?.result ||
+      null;
+
+    const fallbackWpm = calculateWPM(typingText, Math.max(1, duration - timeLeft));
+    const fallbackAccuracy = calculateAccuracy(
+      room?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '',
+      typingText
+    );
+
+    return {
+      id: generateRaceId(),
+      wpm: Number(myResult?.wpm ?? fallbackWpm),
+      accuracy: Number(myResult?.accuracy ?? fallbackAccuracy),
+      duration: Number(room.duration || duration),
+      mode: room.mode || mode,
+      language: room.language || language,
+      netWPM: Math.max(
+        0,
+        Math.round(
+          (Number(myResult?.wpm ?? fallbackWpm) * (Number(myResult?.accuracy ?? fallbackAccuracy) / 100)) * 10
+        ) / 10
+      ),
+      coachTip:
+        Number(myResult?.accuracy ?? fallbackAccuracy) < 92
+          ? 'Accuracy dipped. Try smoother keystrokes and avoid forcing speed.'
+          : 'Strong run. Keep your rhythm and push for a faster opening burst.',
+      replayFrames,
+      shareText: `I typed ${Math.round(Number(myResult?.wpm ?? fallbackWpm))} WPM on TypeArena.`,
+      winnerPrize: Number(room?.winnerPrize || 0),
+      completedAt: room?.completedAt || new Date().toISOString(),
+    };
+  }, [currentUser?.id, duration, generatedContent?.passage, language, mode, replayFrames, timeLeft, typingText]);
+
   const finishRace = useCallback(async () => {
     const elapsed = Math.max(1, duration - timeLeft);
     const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
@@ -400,6 +439,15 @@ export default function Play() {
       try {
         const room = await fetchLiveRaceRoom(liveRoom.id);
         setLiveRoom(room);
+        if (room.status === 'completed') {
+          const finalPayload = buildRoomResultPayload(room);
+          if (finalPayload) {
+            sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
+            setRaceResult(finalPayload);
+          }
+          setPhase('results');
+          return;
+        }
         syncRoomClock(room);
         if (phase === 'queued') {
           if (room.status !== 'waiting' && countdownRemaining <= 0) {
@@ -413,7 +461,7 @@ export default function Play() {
     }, phase === 'queued' ? 1500 : 2200);
 
     return () => window.clearInterval(interval);
-  }, [countdownRemaining, liveRoom, phase, syncRoomClock]);
+  }, [buildRoomResultPayload, countdownRemaining, liveRoom, phase, syncRoomClock]);
 
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown') {
@@ -430,6 +478,16 @@ export default function Play() {
   }, []);
 
   useEffect(() => {
+    if (liveRoom?.status === 'completed' && phase !== 'results') {
+      const finalPayload = buildRoomResultPayload(liveRoom);
+      if (finalPayload) {
+        sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
+        setRaceResult(finalPayload);
+      }
+      setPhase('results');
+      return;
+    }
+
     if (phase === 'queued' && liveRoom?.status === 'countdown') {
       syncRoomClock(liveRoom);
       const countdownTimer = window.setInterval(() => {
@@ -469,7 +527,7 @@ export default function Play() {
     }, 250);
 
     return () => window.clearInterval(timerRef.current);
-  }, [duration, finishRace, liveRoom, phase, syncRoomClock]);
+  }, [buildRoomResultPayload, duration, finishRace, liveRoom, phase, syncRoomClock]);
 
   const refreshFeed = async () => {
     const rooms = await fetchLiveRaces().catch(() => []);
@@ -672,7 +730,7 @@ export default function Play() {
     }
   };
 
-  const myPlayer = liveRoom?.players?.[0];
+  const myPlayer = liveRoom?.players?.find((player) => String(player.userId) === String(currentUser?.id)) || liveRoom?.players?.[0];
   const opponent = liveRoom?.players?.find((player) => player.userId !== myPlayer?.userId);
   const hasSignatureInvites = Boolean(currentUser?.storePerks?.customInviteCodes);
   const equippedItems = currentUser?.equippedItems || {};

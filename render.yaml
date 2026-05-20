@@ -1,12 +1,10 @@
 services:
   - type: web
-    name: typearena
+    name: typearena-api
     plan: free
-    buildCommand: npm install && npm run build && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --worker-class gthread --threads 4 --timeout 120 --graceful-timeout 30 --keep-alive 5 wsgi:application
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.14.3
-      - key: NODE_VERSION
-        value: 22.22.0
