@@ -521,6 +521,30 @@ def _ensure_admin_wallet_transactions_table(cur) -> None:
     )
 
 
+def _ensure_prize_payout_tracking_columns(cur) -> None:
+    cur.execute("SHOW COLUMNS FROM prize_payouts LIKE 'payout_method'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE prize_payouts ADD COLUMN payout_method VARCHAR(40) NULL AFTER amount")
+    cur.execute("SHOW COLUMNS FROM prize_payouts LIKE 'fee_amount'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE prize_payouts ADD COLUMN fee_amount DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER payout_method")
+    cur.execute("SHOW COLUMNS FROM prize_payouts LIKE 'provider_originator_conversation_id'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE prize_payouts ADD COLUMN provider_originator_conversation_id VARCHAR(120) NULL AFTER fee_amount")
+    cur.execute("SHOW COLUMNS FROM prize_payouts LIKE 'provider_conversation_id'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE prize_payouts ADD COLUMN provider_conversation_id VARCHAR(120) NULL AFTER provider_originator_conversation_id")
+    cur.execute("SHOW COLUMNS FROM prize_payouts LIKE 'result_code'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE prize_payouts ADD COLUMN result_code VARCHAR(40) NULL AFTER provider_conversation_id")
+    cur.execute("SHOW COLUMNS FROM prize_payouts LIKE 'result_desc'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE prize_payouts ADD COLUMN result_desc VARCHAR(255) NULL AFTER result_code")
+    cur.execute("SHOW COLUMNS FROM prize_payouts LIKE 'failed_at'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE prize_payouts ADD COLUMN failed_at DATETIME NULL AFTER completed_at")
+
+
 def _owned_store_items_for_user(conn, user_id: int) -> list[str]:
     if user_id <= 0:
         return []
@@ -1344,6 +1368,37 @@ def _record_prize_wallet_credit(
         (payout_code, user_id, tournament_id, phone_number, amount, _now_db(), _now_db()),
     )
     cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount, user_id))
+    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+    return cur.fetchone()
+
+
+def _refund_failed_withdrawal(cur, payout_row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    user_id = int(payout_row.get('user_id') or 0)
+    if user_id <= 0:
+        return None
+
+    amount_value = float(payout_row.get('amount') or 0)
+    fee_amount = float(payout_row.get('fee_amount') or 0)
+    total_refund = amount_value + fee_amount
+    if total_refund > 0:
+        cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (total_refund, user_id))
+
+    admin_user = _get_admin_user(cur)
+    if admin_user and fee_amount > 0:
+        admin_balance = float(admin_user.get('balance') or 0)
+        debit_amount = min(admin_balance, fee_amount)
+        if debit_amount > 0:
+            cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (debit_amount, admin_user['id']))
+            _record_admin_wallet_transaction(
+                cur,
+                admin_user_id=int(admin_user['id']),
+                transaction_type='withdrawal_fee_reversal',
+                amount=float(debit_amount),
+                direction='out',
+                source='wallet_fee_refund',
+                note=f'Fee refund for failed withdrawal {payout_row.get("payout_code")}',
+            )
+
     cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
     return cur.fetchone()
 
@@ -2382,6 +2437,7 @@ def wallet_withdraw():
 
         payout_status = 'pending'
         payout_mode = 'live'
+        payout_response: Dict[str, Any] = {}
         if capabilities.get('simulatedPaymentsEnabled'):
             payout_status = 'completed'
             payout_mode = 'simulated'
@@ -2390,7 +2446,7 @@ def wallet_withdraw():
                 if payout_method == 'paypal':
                     _paypal_payout(payout_destination, amount_value, currency)
                 elif payout_method == 'mpesa':
-                    _mpesa_b2c_payout(
+                    payout_response = _mpesa_b2c_payout(
                         phone_number=_normalize_mpesa_phone(payout_destination),
                         amount=amount_value,
                         remarks='TypeArena withdrawal',
@@ -2402,18 +2458,42 @@ def wallet_withdraw():
                 return jsonify({'message': str(exc)}), 400
 
         with conn.cursor() as cur:
+            _ensure_prize_payout_tracking_columns(cur)
             cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (total_debit, user['id']))
+            payout_code = f'withdraw_{int(datetime.utcnow().timestamp() * 1000)}'
             cur.execute(
                 '''
                 INSERT INTO prize_payouts
-                (payout_code, user_id, tournament_id, phone_number, amount, status, mode, created_at, completed_at)
-                VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s)
+                (
+                    payout_code,
+                    user_id,
+                    tournament_id,
+                    phone_number,
+                    amount,
+                    payout_method,
+                    fee_amount,
+                    provider_originator_conversation_id,
+                    provider_conversation_id,
+                    result_code,
+                    result_desc,
+                    status,
+                    mode,
+                    created_at,
+                    completed_at
+                )
+                VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''',
                 (
-                    f'withdraw_{int(datetime.utcnow().timestamp() * 1000)}',
+                    payout_code,
                     user['id'],
                     payout_destination,
                     amount_value,
+                    payout_method,
+                    withdrawal_fee,
+                    payout_response.get('OriginatorConversationID'),
+                    payout_response.get('ConversationID'),
+                    str(payout_response.get('ResponseCode') or '') if payout_response else '',
+                    payout_response.get('ResponseDescription') if payout_response else '',
                     payout_status,
                     payout_mode,
                     _now_db(),
@@ -2447,6 +2527,9 @@ def wallet_withdraw():
                 'amount': amount_value,
                 'currency': currency,
                 'payoutMethod': payout_method,
+                'status': payout_status,
+                'payoutCode': payout_code,
+                'provider': payout_response,
                 'user': _safe_user(updated_user),
             }
         )
@@ -2848,6 +2931,102 @@ def verify_wallet_topup():
         conn.close()
 
 
+@app.get('/api/wallet/topup/status')
+def wallet_topup_status():
+    checkout_request_id = str(request.args.get('checkoutRequestId') or '').strip()
+    if not checkout_request_id:
+        return jsonify({'message': 'checkoutRequestId is required.'}), 400
+
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT *
+                FROM mpesa_transactions
+                WHERE checkout_request_id = %s AND user_id = %s
+                LIMIT 1
+                ''',
+                (checkout_request_id, user['id']),
+            )
+            tx = cur.fetchone()
+            if not tx:
+                return jsonify({'message': 'Top-up transaction not found for this user.'}), 404
+
+            latest_user = user
+            if str(tx.get('status') or '').lower() == 'completed':
+                cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                latest_user = cur.fetchone() or user
+
+        return jsonify(
+            {
+                'status': str(tx.get('status') or 'pending').lower(),
+                'amount': float(tx.get('amount') or 0),
+                'paymentMethod': 'mpesa',
+                'checkoutRequestId': checkout_request_id,
+                'receiptNumber': tx.get('mpesa_receipt_number') or '',
+                'resultCode': str(tx.get('result_code') or ''),
+                'resultDescription': tx.get('result_desc') or '',
+                'user': _safe_user(latest_user, conn) if latest_user else None,
+            }
+        )
+    finally:
+        conn.close()
+
+
+@app.get('/api/wallet/withdraw/status')
+def wallet_withdraw_status():
+    payout_code = str(request.args.get('payoutCode') or '').strip()
+    if not payout_code:
+        return jsonify({'message': 'payoutCode is required.'}), 400
+
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+
+        with conn.cursor() as cur:
+            _ensure_prize_payout_tracking_columns(cur)
+            cur.execute(
+                '''
+                SELECT *
+                FROM prize_payouts
+                WHERE payout_code = %s AND user_id = %s
+                LIMIT 1
+                ''',
+                (payout_code, user['id']),
+            )
+            payout = cur.fetchone()
+            if not payout:
+                return jsonify({'message': 'Withdrawal transaction not found for this user.'}), 404
+
+            latest_user = user
+            if str(payout.get('status') or '').lower() in {'completed', 'failed'}:
+                cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                latest_user = cur.fetchone() or user
+
+        return jsonify(
+            {
+                'payoutCode': payout_code,
+                'status': str(payout.get('status') or 'pending').lower(),
+                'amount': float(payout.get('amount') or 0),
+                'fee': float(payout.get('fee_amount') or 0),
+                'payoutMethod': payout.get('payout_method') or '',
+                'phoneNumber': payout.get('phone_number') or '',
+                'resultCode': str(payout.get('result_code') or ''),
+                'resultDescription': payout.get('result_desc') or '',
+                'user': _safe_user(latest_user, conn) if latest_user else None,
+            }
+        )
+    finally:
+        conn.close()
+
+
 @app.post('/api/stripe/webhook')
 def stripe_webhook():
     raw_payload = request.get_data(cache=False, as_text=False) or b''
@@ -2967,12 +3146,134 @@ def payout_prize_to_winner():
 
 @app.post('/api/mpesa/callback/b2c-result')
 def mpesa_b2c_result_callback():
-    return jsonify({'ResultCode': 0, 'ResultDesc': 'B2C result callback received'})
+    payload = request.get_json(silent=True) or {}
+    result = payload.get('Result', {}) if isinstance(payload.get('Result'), dict) else {}
+    originator_conversation_id = str(result.get('OriginatorConversationID') or '').strip()
+    conversation_id = str(result.get('ConversationID') or '').strip()
+    result_code = str(result.get('ResultCode') or '').strip()
+    result_desc = str(result.get('ResultDesc') or '').strip()
+
+    if not originator_conversation_id and not conversation_id:
+        return jsonify({'ResultCode': 0, 'ResultDesc': 'Ignored: missing conversation ids.'})
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_prize_payout_tracking_columns(cur)
+            cur.execute(
+                '''
+                SELECT *
+                FROM prize_payouts
+                WHERE provider_originator_conversation_id = %s OR provider_conversation_id = %s
+                LIMIT 1
+                ''',
+                (originator_conversation_id, conversation_id),
+            )
+            payout = cur.fetchone()
+            if not payout:
+                return jsonify({'ResultCode': 0, 'ResultDesc': 'Ignored: unknown payout reference.'})
+
+            current_status = str(payout.get('status') or '').lower()
+            if current_status == 'completed':
+                return jsonify({'ResultCode': 0, 'ResultDesc': 'Payout already completed.'})
+            if current_status == 'failed':
+                return jsonify({'ResultCode': 0, 'ResultDesc': 'Payout already marked failed.'})
+
+            if result_code == '0':
+                cur.execute(
+                    '''
+                    UPDATE prize_payouts
+                    SET
+                        status='completed',
+                        completed_at=%s,
+                        result_code=%s,
+                        result_desc=%s,
+                        provider_originator_conversation_id=%s,
+                        provider_conversation_id=%s
+                    WHERE id=%s
+                    ''',
+                    (_now_db(), result_code, result_desc, originator_conversation_id, conversation_id, payout['id']),
+                )
+            else:
+                updated_user = _refund_failed_withdrawal(cur, payout)
+                cur.execute(
+                    '''
+                    UPDATE prize_payouts
+                    SET
+                        status='failed',
+                        failed_at=%s,
+                        result_code=%s,
+                        result_desc=%s,
+                        provider_originator_conversation_id=%s,
+                        provider_conversation_id=%s
+                    WHERE id=%s
+                    ''',
+                    (_now_db(), result_code, result_desc, originator_conversation_id, conversation_id, payout['id']),
+                )
+                if updated_user:
+                    pass
+        conn.commit()
+        return jsonify({'ResultCode': 0, 'ResultDesc': 'B2C result callback processed'})
+    finally:
+        conn.close()
 
 
 @app.post('/api/mpesa/callback/b2c-timeout')
 def mpesa_b2c_timeout_callback():
-    return jsonify({'ResultCode': 0, 'ResultDesc': 'B2C timeout callback received'})
+    payload = request.get_json(silent=True) or {}
+    originator_conversation_id = str(payload.get('OriginatorConversationID') or '').strip()
+    conversation_id = str(payload.get('ConversationID') or '').strip()
+
+    if not originator_conversation_id and not conversation_id:
+        return jsonify({'ResultCode': 0, 'ResultDesc': 'Ignored: missing conversation ids.'})
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_prize_payout_tracking_columns(cur)
+            cur.execute(
+                '''
+                SELECT *
+                FROM prize_payouts
+                WHERE provider_originator_conversation_id = %s OR provider_conversation_id = %s
+                LIMIT 1
+                ''',
+                (originator_conversation_id, conversation_id),
+            )
+            payout = cur.fetchone()
+            if not payout:
+                return jsonify({'ResultCode': 0, 'ResultDesc': 'Ignored: unknown payout reference.'})
+
+            current_status = str(payout.get('status') or '').lower()
+            if current_status in {'completed', 'failed'}:
+                return jsonify({'ResultCode': 0, 'ResultDesc': 'Payout already finalized.'})
+
+            _refund_failed_withdrawal(cur, payout)
+            cur.execute(
+                '''
+                UPDATE prize_payouts
+                SET
+                    status='failed',
+                    failed_at=%s,
+                    result_code=%s,
+                    result_desc=%s,
+                    provider_originator_conversation_id=%s,
+                    provider_conversation_id=%s
+                WHERE id=%s
+                ''',
+                (
+                    _now_db(),
+                    'TIMEOUT',
+                    'M-Pesa B2C timeout callback received before completion.',
+                    originator_conversation_id,
+                    conversation_id,
+                    payout['id'],
+                ),
+            )
+        conn.commit()
+        return jsonify({'ResultCode': 0, 'ResultDesc': 'B2C timeout callback processed'})
+    finally:
+        conn.close()
 
 
 @app.get('/api/live-races')

@@ -7,6 +7,8 @@ import {
   fetchRaceHistory,
   fetchWalletConfig,
   fetchWalletHistory,
+  fetchWalletTopupStatus,
+  fetchWalletWithdrawStatus,
   loginUser,
   signupUser,
   verifyWalletTopupSession,
@@ -15,6 +17,10 @@ import {
 import '../styles/TypeProfile.css';
 
 const USER_CHANGE_EVENT = 'typearena-user-changed';
+const TOPUP_STATUS_POLL_INTERVAL_MS = 4000;
+const TOPUP_STATUS_POLL_MAX_ATTEMPTS = 20;
+const WITHDRAW_STATUS_POLL_INTERVAL_MS = 4000;
+const WITHDRAW_STATUS_POLL_MAX_ATTEMPTS = 20;
 
 const formatMethodLabel = (method) => method.replace(/_/g, ' ');
 
@@ -62,6 +68,11 @@ export default function TypeProfile() {
   const [walletNotice, setWalletNotice] = useState('');
   const [authNotice, setAuthNotice] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  const applyFreshUserState = useCallback((user) => {
+    setCurrentUser(user);
+    window.dispatchEvent(new Event(USER_CHANGE_EVENT));
+  }, []);
 
   const simulatedPaymentsEnabled = Boolean(
     walletConfig.simulatedPaymentsEnabled
@@ -264,7 +275,7 @@ export default function TypeProfile() {
         new Event(USER_CHANGE_EVENT)
       );
 
-      setCurrentUser(user);
+      applyFreshUserState(user);
       setShowAuthForm(false);
 
       setFormData({
@@ -294,6 +305,91 @@ export default function TypeProfile() {
     }
   };
 
+  const watchMpesaTopupStatus = useCallback(
+    async (checkoutRequestId) => {
+      for (
+        let attempt = 0;
+        attempt < TOPUP_STATUS_POLL_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, TOPUP_STATUS_POLL_INTERVAL_MS)
+        );
+
+        const status = await fetchWalletTopupStatus(checkoutRequestId);
+
+        if (status?.status === 'completed' && status?.user) {
+          applyFreshUserState(status.user);
+          setWalletNotice(
+            status.resultDescription ||
+              'Payment confirmed and funds added to your wallet.'
+          );
+          await loadProfile();
+          return true;
+        }
+
+        if (status?.status === 'failed') {
+          setWalletNotice(
+            status.resultDescription ||
+              'The payment did not complete successfully.'
+          );
+          await loadProfile();
+          return false;
+        }
+      }
+
+      setWalletNotice(
+        'Payment request was sent. Your wallet will update automatically once M-Pesa confirms the transaction.'
+      );
+      return false;
+    },
+    [applyFreshUserState, loadProfile]
+  );
+
+  const watchWithdrawalStatus = useCallback(
+    async (payoutCode) => {
+      for (
+        let attempt = 0;
+        attempt < WITHDRAW_STATUS_POLL_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, WITHDRAW_STATUS_POLL_INTERVAL_MS)
+        );
+
+        const status = await fetchWalletWithdrawStatus(payoutCode);
+
+        if (status?.status === 'completed' && status?.user) {
+          applyFreshUserState(status.user);
+          setWalletNotice(
+            status.resultDescription ||
+              'Withdrawal confirmed successfully.'
+          );
+          await loadProfile();
+          return true;
+        }
+
+        if (status?.status === 'failed') {
+          if (status?.user) {
+            applyFreshUserState(status.user);
+          }
+          setWalletNotice(
+            status.resultDescription ||
+              'Withdrawal failed and your wallet has been refunded.'
+          );
+          await loadProfile();
+          return false;
+        }
+      }
+
+      setWalletNotice(
+        'Withdrawal request was sent. We will update this wallet as soon as M-Pesa confirms the payout.'
+      );
+      return false;
+    },
+    [applyFreshUserState, loadProfile]
+  );
+
   const handleAddFunds = async (event) => {
     event.preventDefault();
 
@@ -316,11 +412,31 @@ export default function TypeProfile() {
         return;
       }
 
+      if (
+        result?.status === 'pending' &&
+        result?.paymentMethod === 'mpesa' &&
+        result?.mpesa?.CheckoutRequestID
+      ) {
+        setWalletNotice(
+          result.message ||
+            'M-Pesa prompt sent. Waiting for payment confirmation...'
+        );
+
+        setTopUpAmount('');
+
+        await watchMpesaTopupStatus(result.mpesa.CheckoutRequestID);
+        return;
+      }
+
       setWalletNotice(
         result.message || 'Top-up completed.'
       );
 
       setTopUpAmount('');
+
+      if (result?.user) {
+        applyFreshUserState(result.user);
+      }
 
       await loadProfile();
     } catch (error) {
@@ -368,6 +484,19 @@ export default function TypeProfile() {
       );
 
       setWithdrawAmount('');
+
+      if (result?.user) {
+        applyFreshUserState(result.user);
+      }
+
+      if (
+        result?.status === 'pending' &&
+        result?.payoutMethod === 'mpesa' &&
+        result?.payoutCode
+      ) {
+        await watchWithdrawalStatus(result.payoutCode);
+        return;
+      }
 
       await loadProfile();
     } catch (error) {

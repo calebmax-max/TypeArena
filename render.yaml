@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: typearena
+    plan: free
+    buildCommand: npm install && npm run build && pip install -r requirements.txt
+    startCommand: gunicorn wsgi:application
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      - key: NODE_VERSION
+        value: 22.22.0

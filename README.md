@@ -30,6 +30,9 @@ Then open `http://127.0.0.1:3001/api/health`.
 - The backend now reads `HOST` and `PORT` from the environment, so it can run on hosts that assign a dynamic port.
 - The React production build must exist in `build/` on the server because Flask serves the frontend from that folder.
 - `public/.htaccess` is included for Apache-style hosting so frontend routes work while `/api/...` stays available to the backend.
+- On Render, do not use `npm start` as the service start command. Use the included [render.yaml](/c:/Users/USER/Desktop/type/render.yaml) or set:
+  `build command`: `npm install && npm run build && pip install -r requirements.txt`
+  `start command`: `gunicorn wsgi:application`
 
 ## Required environment variables
 

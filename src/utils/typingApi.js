@@ -332,6 +332,20 @@ export const verifyWalletTopupSession = async (sessionId) => {
   return data;
 };
 
+export const fetchWalletTopupStatus = async (checkoutRequestId) => {
+  const response = await apiFetch(
+    buildApiUrl(`/api/wallet/topup/status?checkoutRequestId=${encodeURIComponent(checkoutRequestId)}`),
+    {
+      headers: buildHeaders(),
+    }
+  );
+  const data = await parseResponse(response);
+  if (data?.user) {
+    setStoredUser(data.user);
+  }
+  return data;
+};
+
 export const withdrawFundsToWallet = async (amount, accountIdentifier, payoutMethod = 'paypal', currency = 'USD') => {
   try {
     const response = await apiFetch(buildApiUrl('/api/wallet/withdraw'), {
@@ -356,6 +370,20 @@ export const withdrawFundsToWallet = async (amount, accountIdentifier, payoutMet
     }
     throw error;
   }
+};
+
+export const fetchWalletWithdrawStatus = async (payoutCode) => {
+  const response = await apiFetch(
+    buildApiUrl(`/api/wallet/withdraw/status?payoutCode=${encodeURIComponent(payoutCode)}`),
+    {
+      headers: buildHeaders(),
+    }
+  );
+  const data = await parseResponse(response);
+  if (data?.user) {
+    setStoredUser(data.user);
+  }
+  return data;
 };
 
 export const fetchWalletHistory = async () => {
