@@ -564,11 +564,28 @@
   cursor: text;
 }
 
+.typing-stage__hint {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.95rem;
+  z-index: 3;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: hsl(240 12% 8% / 0.9);
+  border: 1px solid var(--arena-panel-border);
+  color: var(--arena-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
 .display-text {
   position: relative;
   z-index: 1;
   padding: 1.1rem;
   min-height: 210px;
+  padding-top: 2.9rem;
   color: var(--arena-text);
   font-family: 'JetBrains Mono', monospace;
   line-height: 1.85;
@@ -632,7 +649,7 @@
   inset: 0;
   z-index: 2;
   min-height: 100%;
-  padding: 1.1rem;
+  padding: 2.9rem 1.1rem 1.1rem;
   border: 0;
   border-radius: 14px;
   background: transparent;

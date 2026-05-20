@@ -874,6 +874,11 @@ export default function Play() {
               onClick={() => inputRef.current?.focus()}
               role="presentation"
             >
+              {!typingText && (
+                <div className="typing-stage__hint">
+                  Tap here and start typing
+                </div>
+              )}
               <div className="display-text">
                 {renderedText}
               </div>
@@ -882,7 +887,7 @@ export default function Play() {
                 className="typing-input typing-input--overlay"
                 value={typingText}
                 onChange={handleInputChange}
-                placeholder="Start typing here..."
+                aria-label="Typing input"
                 spellCheck="false"
                 autoCapitalize="off"
                 autoCorrect="off"
