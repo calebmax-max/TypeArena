@@ -200,6 +200,7 @@ export default function Play() {
   const [replayFrames, setReplayFrames] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
+  const [showPracticeModes, setShowPracticeModes] = useState(false);
   const [friendBattle, setFriendBattle] = useState({
     inviteCode: '',
     password: '',
@@ -313,13 +314,57 @@ export default function Play() {
     }
   }, [liveRoom?.id]);
 
+  const buildRoomStandings = useCallback((room) => {
+    if (!room?.players?.length) {
+      return [];
+    }
+
+    const standings = room.players.map((player) => {
+      const result = player?.result || null;
+      return {
+        userId: player.userId,
+        username: player.username || 'Player',
+        wpm: Number(result?.wpm ?? player?.currentWpm ?? 0),
+        accuracy: Number(result?.accuracy ?? player?.currentAccuracy ?? 0),
+        finishedAtTs: Number(result?.finishedAtTs ?? 0),
+        submitted: Boolean(result),
+        isWinner: String(player.userId) === String(room?.winnerUserId),
+        isCurrentUser: String(player.userId) === String(currentUser?.id),
+      };
+    });
+
+    standings.sort((left, right) => {
+      if (left.submitted !== right.submitted) {
+        return left.submitted ? -1 : 1;
+      }
+      if (right.wpm !== left.wpm) {
+        return right.wpm - left.wpm;
+      }
+      if (right.accuracy !== left.accuracy) {
+        return right.accuracy - left.accuracy;
+      }
+      if (left.finishedAtTs && right.finishedAtTs && left.finishedAtTs !== right.finishedAtTs) {
+        return left.finishedAtTs - right.finishedAtTs;
+      }
+      return String(left.username).localeCompare(String(right.username));
+    });
+
+    return standings.map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+    }));
+  }, [currentUser?.id]);
+
   const buildRoomResultPayload = useCallback((room) => {
     if (!room) {
       return null;
     }
 
+    const standings = buildRoomStandings(room);
+    const myStanding = standings.find((entry) => entry.isCurrentUser) || null;
     const myResult =
       room.players?.find((player) => String(player.userId) === String(currentUser?.id))?.result ||
+      myStanding ||
       null;
 
     const fallbackWpm = calculateWPM(typingText, Math.max(1, duration - timeLeft));
@@ -349,8 +394,14 @@ export default function Play() {
       shareText: `I typed ${Math.round(Number(myResult?.wpm ?? fallbackWpm))} WPM on TypeArena.`,
       winnerPrize: Number(room?.winnerPrize || 0),
       completedAt: room?.completedAt || new Date().toISOString(),
+      winnerUserId: room?.winnerUserId || null,
+      winnerUsername:
+        room?.winnerUsername ||
+        standings.find((entry) => entry.isWinner)?.username ||
+        '',
+      standings,
     };
-  }, [currentUser?.id, duration, generatedContent?.passage, language, mode, replayFrames, timeLeft, typingText]);
+  }, [buildRoomStandings, currentUser?.id, duration, generatedContent?.passage, language, mode, replayFrames, timeLeft, typingText]);
 
   const finishRace = useCallback(async () => {
     const elapsed = Math.max(1, duration - timeLeft);
@@ -392,6 +443,11 @@ export default function Play() {
       shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
       winnerPrize: Number(liveRoom?.winnerPrize || 0),
       completedAt: new Date().toISOString(),
+      winnerUserId: liveRoom?.winnerUserId || null,
+      winnerUsername:
+        liveRoom?.winnerUsername ||
+        liveRoom?.players?.find((player) => String(player.userId) === String(liveRoom?.winnerUserId))?.username ||
+        '',
     };
 
     sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
@@ -532,6 +588,16 @@ export default function Play() {
   const refreshFeed = async () => {
     const rooms = await fetchLiveRaces().catch(() => []);
     setLiveFeed(Array.isArray(rooms) ? rooms : []);
+  };
+
+  const startPracticeRaceWithMode = (nextMode) => {
+    if (nextMode) {
+      setMode(nextMode);
+    }
+    setShowPracticeModes(false);
+    setTimeout(() => {
+      startPracticeRace();
+    }, 0);
   };
 
   const startPracticeRace = () => {
@@ -800,7 +866,7 @@ export default function Play() {
           <h1>Live Premium Typing Arena</h1>
 
           <div className="challenge-toolbar">
-            <h2>Choose a premium race mode</h2>
+            <h2>Practice and compete in live typing battles</h2>
             <div className="challenge-toolbar__actions">
               <div className="duration-switch">
                 {[30, 60, 120].map((item) => (
@@ -816,34 +882,38 @@ export default function Play() {
             </div>
           </div>
 
-          <div className="challenge-grid">
-            {MODE_CONFIG.map((item) => (
-              <button
-                key={item.id}
-                className={`challenge-card ${mode === item.id ? 'active' : ''}`}
-                onClick={() => setMode(item.id)}
-              >
-                <div className="challenge-card__top">
-                  <h3>{item.label}</h3>
-                  <span className="challenge-difficulty">{language}</span>
-                </div>
-                <p>{generatedContent?.title && mode === item.id ? generatedContent.passage : item.description}</p>
-                <div className="challenge-meta">
-                  <span>{duration}s</span>
-                  <span>{generatedContent?.antiCheatHint && mode === item.id ? 'AI Generated' : 'Live + Practice'}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-
           <div className="results-actions">
-            <button className="btn btn-outline-primary" onClick={startPracticeRace}>
-              Start Practice
-            </button>
+            <div className="practice-launcher">
+              <button
+                className="btn btn-outline-primary"
+                onClick={() => setShowPracticeModes((current) => !current)}
+              >
+                Start Practice
+              </button>
+              {showPracticeModes && (
+                <div className="practice-menu">
+                  {MODE_CONFIG.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`practice-menu__item ${mode === item.id ? 'active' : ''}`}
+                      onClick={() => startPracticeRaceWithMode(item.id)}
+                    >
+                      <strong>{item.label}</strong>
+                      <span>{item.description}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive}>
               {loadingLive ? 'Joining Live Room...' : 'Join Live 1v1'}
             </button>
           </div>
+
+          <p className="results-challenge">
+            Current practice mode: {MODE_CONFIG.find((item) => item.id === mode)?.label || 'Standard'} for {duration}s.
+          </p>
 
           {!currentUser?.id && (
             <p className="results-challenge">
@@ -1093,8 +1163,8 @@ export default function Play() {
           </div>
           <h1>Race Complete</h1>
           <p className="results-challenge">
-            {liveRoom?.winnerUserId
-              ? `Winner: ${winnerName || 'Pending'}`
+            {raceResult?.winnerUserId
+              ? `Winner: ${raceResult.winnerUsername || winnerName || 'Pending'}`
               : liveRoom?.id
               ? 'Waiting for winner confirmation...'
               : 'Results submitted.'}
@@ -1122,6 +1192,32 @@ export default function Play() {
           </div>
 
           <p className="results-challenge">{raceResult.coachTip}</p>
+
+          {raceResult.standings?.length ? (
+            <div className="results-standings">
+              <div className="live-board__header">
+                <h2>Final Standings</h2>
+                <span className="results-challenge">Everyone in this battle can see the winner and final order.</span>
+              </div>
+              <div className="live-board__grid">
+                {raceResult.standings.map((entry) => (
+                  <div
+                    key={entry.userId}
+                    className={`result-card results-standing-card${entry.isWinner ? ' results-standing-card--winner' : ''}`}
+                  >
+                    <span className="result-label">
+                      #{entry.rank} {entry.isWinner ? 'Winner' : 'Participant'}
+                    </span>
+                    <span className="result-value">{entry.username}</span>
+                    <p className="results-standing-meta">
+                      {entry.isCurrentUser ? 'You' : 'Opponent'} • {entry.wpm.toFixed(1)} WPM • {entry.accuracy.toFixed(1)}% accuracy
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="results-content-creator">
             <div className="result-card">
               <span className="result-label">Creator Hook</span>

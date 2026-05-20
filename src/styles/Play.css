@@ -39,6 +39,56 @@
   flex-wrap: wrap;
 }
 
+.practice-launcher {
+  position: relative;
+}
+
+.practice-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.65rem);
+  z-index: 8;
+  width: min(340px, 88vw);
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem;
+  border-radius: 16px;
+  border: 1px solid hsl(240 10% 20%);
+  background: hsl(240 12% 8% / 0.98);
+  box-shadow: 0 18px 38px hsl(240 24% 4% / 0.48);
+}
+
+.practice-menu__item {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid hsl(240 10% 20%);
+  background: hsl(240 12% 10% / 0.92);
+  color: hsl(0 0% 95%);
+  transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.practice-menu__item:hover,
+.practice-menu__item.active {
+  transform: translateY(-1px);
+  border-color: hsl(145 80% 42% / 0.55);
+  background: hsl(145 80% 42% / 0.12);
+}
+
+.practice-menu__item strong {
+  font-size: 0.96rem;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.practice-menu__item span {
+  color: hsl(240 5% 72%);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .language-strip {
   display: flex;
   flex-wrap: wrap;
@@ -808,6 +858,23 @@
   z-index: 1;
 }
 
+.results-standings {
+  margin-top: 1.4rem;
+  text-align: left;
+}
+
+.results-standing-card--winner {
+  border-color: hsl(45 100% 62% / 0.55);
+  box-shadow: 0 14px 36px hsl(45 100% 62% / 0.12);
+}
+
+.results-standing-meta {
+  margin: 0.65rem 0 0;
+  color: hsl(240 5% 70%);
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
 .live-board {
   margin-top: 1.5rem;
   text-align: left;
@@ -989,6 +1056,11 @@
 
   .challenge-toolbar__actions {
     width: 100%;
+  }
+
+  .practice-menu {
+    left: 50%;
+    transform: translateX(-50%);
   }
 
   .opponent-panel {
