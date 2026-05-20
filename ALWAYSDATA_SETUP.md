@@ -2,7 +2,7 @@
 
 This project can run on Alwaysdata with:
 
-- a static frontend built from React
+- a React frontend built into `build/`
 - a Python WSGI backend served by `passenger_wsgi.py`
 - a MySQL database configured through Alwaysdata environment variables
 
@@ -11,9 +11,12 @@ This project can run on Alwaysdata with:
 Upload these parts of the repo to your Alwaysdata app directory:
 
 - `build/`
-- `backend.py/`
+- `app_backend.py`
+- `app_loader.py`
 - `passenger_wsgi.py`
+- `wsgi.py`
 - `requirements.txt`
+- `site_settings.json`
 
 If you are rebuilding on your local machine before upload, use:
 
@@ -80,11 +83,11 @@ It manages these tables:
 
 The React app expects API requests under `/api`.
 
-The included `public/.htaccess` does two things:
+The included `build/.htaccess` does two things:
 
 - keeps `/api/...` requests away from the React router
 - rewrites all other unknown paths to `index.html` so routes like `/profile` and `/marketplace` work after refresh
 
 ## 6. Important note
 
-This repo currently contains mixed Alwaysdata defaults in source from earlier work. The safest setup is to ignore those old defaults and define the real values only in Alwaysdata environment variables.
+The active backend entrypoint is `app_backend.py`. Older helper folders still exist in the repo for compatibility, but deployment should use the root files listed above.

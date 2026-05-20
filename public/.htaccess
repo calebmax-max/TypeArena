@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# Let the backend keep ownership of API routes.
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteRule ^ - [L]
+
+# Serve real files and directories directly.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Send every other route to the React app.
+RewriteRule ^ index.html [L]

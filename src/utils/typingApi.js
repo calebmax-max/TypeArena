@@ -36,17 +36,53 @@ const buildHeaders = (extraHeaders = {}) => {
 };
 
 const parseResponse = async (response) => {
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = data?.message || 'Request failed';
-    throw new Error(message);
+  const rawText = await response.text();
+  let data = {};
+
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = {};
+    }
   }
+
+  if (!response.ok) {
+    const compactText = rawText.replace(/\s+/g, ' ').trim();
+    const looksLikeProxyError =
+      compactText.toLowerCase().includes('error occurred while trying to proxy') ||
+      compactText.toLowerCase().includes('proxy error');
+
+    let message = data?.message;
+    if (!message && looksLikeProxyError) {
+      message = 'Cannot reach the backend server on port 3001. Start the Python API so /api requests can be served.';
+    } else if (!message && compactText.startsWith('<')) {
+      message = `Request failed with status ${response.status}. The server returned HTML instead of JSON.`;
+    } else if (!message && compactText) {
+      message = compactText.slice(0, 220);
+    } else if (!message) {
+      message = `Request failed with status ${response.status}`;
+    }
+
+    const error = new Error(message);
+    error.status = response.status;
+    error.body = data;
+    error.rawBody = rawText;
+    throw error;
+  }
+
   return data;
 };
 
 const shouldUseLocalFallback = (error) => {
   const msg = String(error?.message || '').toLowerCase();
-  return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed');
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('load failed') ||
+    msg.includes('cannot reach the backend server on port 3001') ||
+    msg.includes('proxy error')
+  );
 };
 
 const buildAdminHeaders = () => {
@@ -59,6 +95,12 @@ const buildAdminHeaders = () => {
     'X-Admin-Token': token,
   };
 };
+
+const apiFetch = (url, options = {}) =>
+  fetch(url, {
+    credentials: 'omit',
+    ...options,
+  });
 
 const normalizeTournamentList = (payload) => {
   if (Array.isArray(payload)) {
@@ -82,7 +124,7 @@ export const fetchCurrentUser = async () => {
     const stored = getStoredUser();
     if (!stored?.id) return null;
 
-    const response = await fetch(buildApiUrl('/api/user/me'), {
+    const response = await apiFetch(buildApiUrl('/api/user/me'), {
       headers: buildHeaders(),
     });
     const user = await parseResponse(response);
@@ -96,7 +138,7 @@ export const fetchCurrentUser = async () => {
 
 export const loginUser = async (email, password) => {
   try {
-    const response = await fetch(buildApiUrl('/api/auth/login'), {
+    const response = await apiFetch(buildApiUrl('/api/auth/login'), {
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify({ email, password }),
@@ -115,7 +157,7 @@ export const loginUser = async (email, password) => {
 
 export const signupUser = async (username, email, password, phoneNumber) => {
   try {
-    const response = await fetch(buildApiUrl('/api/auth/signup'), {
+    const response = await apiFetch(buildApiUrl('/api/auth/signup'), {
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify({ username, email, password, phoneNumber }),
@@ -135,7 +177,7 @@ export const signupUser = async (username, email, password, phoneNumber) => {
 // Tournament APIs
 export const fetchTournaments = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/tournaments'), {
+    const response = await apiFetch(buildApiUrl('/api/tournaments'), {
       headers: buildHeaders(),
     });
     const data = await parseResponse(response);
@@ -148,7 +190,7 @@ export const fetchTournaments = async () => {
 
 export const joinTournament = async (tournamentId) => {
   try {
-    const response = await fetch(buildApiUrl(`/api/tournaments/${tournamentId}/join`), {
+    const response = await apiFetch(buildApiUrl(`/api/tournaments/${tournamentId}/join`), {
       method: 'POST',
       headers: buildHeaders(),
     });
@@ -168,7 +210,7 @@ export const joinTournament = async (tournamentId) => {
 // Leaderboard APIs
 export const fetchLeaderboard = async (limit = 100) => {
   try {
-    const response = await fetch(buildApiUrl(`/api/leaderboard?limit=${limit}`), {
+    const response = await apiFetch(buildApiUrl(`/api/leaderboard?limit=${limit}`), {
       headers: buildHeaders(),
     });
     return await parseResponse(response);
@@ -181,7 +223,7 @@ export const fetchLeaderboard = async (limit = 100) => {
 // Race/Results APIs
 export const submitRaceResult = async (raceData) => {
   try {
-    const response = await fetch(buildApiUrl('/api/races/submit'), {
+    const response = await apiFetch(buildApiUrl('/api/races/submit'), {
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify(raceData),
@@ -203,7 +245,7 @@ export const submitRaceResult = async (raceData) => {
 
 export const fetchRaceHistory = async (userId) => {
   try {
-    const response = await fetch(buildApiUrl(`/api/users/${userId}/races`), {
+    const response = await apiFetch(buildApiUrl(`/api/users/${userId}/races`), {
       headers: buildHeaders(),
     });
     return await parseResponse(response);
@@ -216,7 +258,7 @@ export const fetchRaceHistory = async (userId) => {
 // User Profile APIs
 export const fetchUserStats = async (userId) => {
   try {
-    const response = await fetch(buildApiUrl('/api/user/me'), {
+    const response = await apiFetch(buildApiUrl('/api/user/me'), {
       headers: buildHeaders(),
     });
     return await parseResponse(response);
@@ -228,7 +270,7 @@ export const fetchUserStats = async (userId) => {
 
 export const updateUserProfile = async (userId, updates) => {
   try {
-    const response = await fetch(buildApiUrl(`/api/users/${userId}`), {
+    const response = await apiFetch(buildApiUrl(`/api/users/${userId}`), {
       method: 'PUT',
       headers: buildHeaders(),
       body: JSON.stringify(updates),
@@ -260,7 +302,7 @@ export const addFundsToWallet = async (amount, accountIdentifier, paymentMethod 
             paymentMethod,
             currency,
           };
-    const response = await fetch(buildApiUrl(endpoint), {
+    const response = await apiFetch(buildApiUrl(endpoint), {
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify(body),
@@ -280,7 +322,7 @@ export const addFundsToWallet = async (amount, accountIdentifier, paymentMethod 
 };
 
 export const verifyWalletTopupSession = async (sessionId) => {
-  const response = await fetch(buildApiUrl(`/api/wallet/topup/verify?sessionId=${encodeURIComponent(sessionId)}`), {
+  const response = await apiFetch(buildApiUrl(`/api/wallet/topup/verify?sessionId=${encodeURIComponent(sessionId)}`), {
     headers: buildHeaders(),
   });
   const data = await parseResponse(response);
@@ -292,7 +334,7 @@ export const verifyWalletTopupSession = async (sessionId) => {
 
 export const withdrawFundsToWallet = async (amount, accountIdentifier, payoutMethod = 'paypal', currency = 'USD') => {
   try {
-    const response = await fetch(buildApiUrl('/api/wallet/withdraw'), {
+    const response = await apiFetch(buildApiUrl('/api/wallet/withdraw'), {
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify({
@@ -318,7 +360,7 @@ export const withdrawFundsToWallet = async (amount, accountIdentifier, payoutMet
 
 export const fetchWalletHistory = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/wallet/history'), {
+    const response = await apiFetch(buildApiUrl('/api/wallet/history'), {
       headers: buildHeaders(),
     });
     return await parseResponse(response);
@@ -330,7 +372,7 @@ export const fetchWalletHistory = async () => {
 
 export const fetchWalletConfig = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/wallet/config'), {
+    const response = await apiFetch(buildApiUrl('/api/wallet/config'), {
       headers: buildHeaders(),
     });
     return await parseResponse(response);
@@ -342,7 +384,7 @@ export const fetchWalletConfig = async () => {
 
 export const sendPrizeToWinner = async ({ userId, amount, tournamentId = null }) => {
   try {
-    const response = await fetch(buildApiUrl('/api/prizes/payout'), {
+    const response = await apiFetch(buildApiUrl('/api/prizes/payout'), {
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify({ userId, amount, tournamentId }),
@@ -356,7 +398,7 @@ export const sendPrizeToWinner = async ({ userId, amount, tournamentId = null })
 
 export const adminLogin = async (email, password) => {
   try {
-    const response = await fetch(buildApiUrl('/api/admin/login'), {
+    const response = await apiFetch(buildApiUrl('/api/admin/login'), {
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify({ email, password }),
@@ -393,7 +435,7 @@ export const getAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
 
 export const adminCreateTournament = async (payload) => {
   try {
-    const response = await fetch(buildApiUrl('/api/admin/tournaments'), {
+    const response = await apiFetch(buildApiUrl('/api/admin/tournaments'), {
       method: 'POST',
       headers: buildAdminHeaders(),
       body: JSON.stringify(payload),
@@ -407,7 +449,7 @@ export const adminCreateTournament = async (payload) => {
 
 export const adminDeleteTournament = async (tournamentId) => {
   try {
-    const response = await fetch(buildApiUrl(`/api/admin/tournaments/${tournamentId}`), {
+    const response = await apiFetch(buildApiUrl(`/api/admin/tournaments/${tournamentId}`), {
       method: 'DELETE',
       headers: buildAdminHeaders(),
     });
@@ -420,7 +462,7 @@ export const adminDeleteTournament = async (tournamentId) => {
 
 export const adminDeleteAllTournaments = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/admin/tournaments'), {
+    const response = await apiFetch(buildApiUrl('/api/admin/tournaments'), {
       method: 'DELETE',
       headers: buildAdminHeaders(),
     });
@@ -433,7 +475,7 @@ export const adminDeleteAllTournaments = async () => {
 
 export const fetchAdminAnalytics = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/admin/analytics'), {
+    const response = await apiFetch(buildApiUrl('/api/admin/analytics'), {
       headers: buildAdminHeaders(),
     });
     return await parseResponse(response);
@@ -453,7 +495,7 @@ export const fetchAdminAnalytics = async () => {
 
 export const fetchAdminAiSettings = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/admin/ai-settings'), {
+    const response = await apiFetch(buildApiUrl('/api/admin/ai-settings'), {
       headers: buildAdminHeaders(),
     });
     return await parseResponse(response);
@@ -464,7 +506,7 @@ export const fetchAdminAiSettings = async () => {
 };
 
 export const updateAdminAiSettings = async (payload) => {
-  const response = await fetch(buildApiUrl('/api/admin/ai-settings'), {
+  const response = await apiFetch(buildApiUrl('/api/admin/ai-settings'), {
     method: 'PUT',
     headers: buildAdminHeaders(),
     body: JSON.stringify(payload),
@@ -474,7 +516,7 @@ export const updateAdminAiSettings = async (payload) => {
 
 export const fetchSiteMarquee = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/site-marquee'), {
+    const response = await apiFetch(buildApiUrl('/api/site-marquee'), {
       headers: buildHeaders(),
     });
     return await parseResponse(response);
@@ -492,7 +534,7 @@ export const fetchSiteMarquee = async () => {
 
 export const fetchAdminSiteMarquee = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/admin/site-marquee'), {
+    const response = await apiFetch(buildApiUrl('/api/admin/site-marquee'), {
       headers: buildAdminHeaders(),
     });
     return await parseResponse(response);
@@ -509,7 +551,7 @@ export const fetchAdminSiteMarquee = async () => {
 };
 
 export const updateAdminSiteMarquee = async (payload) => {
-  const response = await fetch(buildApiUrl('/api/admin/site-marquee'), {
+  const response = await apiFetch(buildApiUrl('/api/admin/site-marquee'), {
     method: 'PUT',
     headers: buildAdminHeaders(),
     body: JSON.stringify(payload),
@@ -519,7 +561,7 @@ export const updateAdminSiteMarquee = async (payload) => {
 
 export const fetchAdminWallet = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/admin/wallet'), {
+    const response = await apiFetch(buildApiUrl('/api/admin/wallet'), {
       headers: buildAdminHeaders(),
     });
     return await parseResponse(response);
@@ -536,7 +578,7 @@ export const fetchAdminWallet = async () => {
 };
 
 export const addFundsToAdminWallet = async (amount, note = '') => {
-  const response = await fetch(buildApiUrl('/api/admin/wallet/topup'), {
+  const response = await apiFetch(buildApiUrl('/api/admin/wallet/topup'), {
     method: 'POST',
     headers: buildAdminHeaders(),
     body: JSON.stringify({ amount: Number(amount), note }),
@@ -545,7 +587,7 @@ export const addFundsToAdminWallet = async (amount, note = '') => {
 };
 
 export const withdrawFromAdminWallet = async (amount, note = '') => {
-  const response = await fetch(buildApiUrl('/api/admin/wallet/withdraw'), {
+  const response = await apiFetch(buildApiUrl('/api/admin/wallet/withdraw'), {
     method: 'POST',
     headers: buildAdminHeaders(),
     body: JSON.stringify({ amount: Number(amount), note }),
@@ -554,7 +596,7 @@ export const withdrawFromAdminWallet = async (amount, note = '') => {
 };
 
 export const queueLiveRace = async (payload) => {
-  const response = await fetch(buildApiUrl('/api/live-races/queue'), {
+  const response = await apiFetch(buildApiUrl('/api/live-races/queue'), {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify(payload),
@@ -567,28 +609,28 @@ export const queueLiveRace = async (payload) => {
 };
 
 export const fetchLiveRaces = async () => {
-  const response = await fetch(buildApiUrl('/api/live-races'), {
+  const response = await apiFetch(buildApiUrl('/api/live-races'), {
     headers: buildHeaders(),
   });
   return await parseResponse(response);
 };
 
 export const fetchLiveRaceRoom = async (roomId) => {
-  const response = await fetch(buildApiUrl(`/api/live-races/${roomId}`), {
+  const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}`), {
     headers: buildHeaders(),
   });
   return await parseResponse(response);
 };
 
 export const fetchLiveRaceByInvite = async (inviteCode) => {
-  const response = await fetch(buildApiUrl(`/api/live-races/invite/${inviteCode}`), {
+  const response = await apiFetch(buildApiUrl(`/api/live-races/invite/${inviteCode}`), {
     headers: buildHeaders(),
   });
   return await parseResponse(response);
 };
 
 export const cancelLiveRaceRoom = async (roomId) => {
-  const response = await fetch(buildApiUrl(`/api/live-races/${roomId}/cancel`), {
+  const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/cancel`), {
     method: 'POST',
     headers: buildHeaders(),
   });
@@ -600,7 +642,7 @@ export const cancelLiveRaceRoom = async (roomId) => {
 };
 
 export const updateLiveRaceHeartbeat = async (roomId, payload) => {
-  const response = await fetch(buildApiUrl(`/api/live-races/${roomId}/heartbeat`), {
+  const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/heartbeat`), {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify(payload),
@@ -609,7 +651,7 @@ export const updateLiveRaceHeartbeat = async (roomId, payload) => {
 };
 
 export const submitLiveRaceResult = async (roomId, payload) => {
-  const response = await fetch(buildApiUrl(`/api/live-races/${roomId}/submit`), {
+  const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/submit`), {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify(payload),
@@ -624,7 +666,7 @@ export const submitLiveRaceResult = async (roomId, payload) => {
 
 export const generateRaceContent = async (mode, language) => {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       buildApiUrl(`/api/race-content/generate?mode=${encodeURIComponent(mode)}&language=${encodeURIComponent(language)}`),
       { headers: buildHeaders() }
     );
@@ -641,7 +683,7 @@ export const generateRaceContent = async (mode, language) => {
 
 export const fetchStoreCatalog = async () => {
   try {
-    const response = await fetch(buildApiUrl('/api/store/catalog'), {
+    const response = await apiFetch(buildApiUrl('/api/store/catalog'), {
       headers: buildHeaders(),
     });
     return await parseResponse(response);
@@ -652,7 +694,7 @@ export const fetchStoreCatalog = async () => {
 };
 
 export const purchaseStoreItem = async (itemId) => {
-  const response = await fetch(buildApiUrl('/api/store/purchase'), {
+  const response = await apiFetch(buildApiUrl('/api/store/purchase'), {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ itemId }),
@@ -665,7 +707,7 @@ export const purchaseStoreItem = async (itemId) => {
 };
 
 export const purchaseStoreBundle = async (bundleId) => {
-  const response = await fetch(buildApiUrl('/api/store/bundle-purchase'), {
+  const response = await apiFetch(buildApiUrl('/api/store/bundle-purchase'), {
     method: 'POST',
     headers: buildHeaders(),
     body: JSON.stringify({ bundleId }),

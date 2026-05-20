@@ -5,4 +5,8 @@ app = load_application()
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3001, debug=False, use_reloader=False)
+    import os
+
+    host = os.getenv('HOST', '0.0.0.0').strip() or '0.0.0.0'
+    port = int(os.getenv('PORT', '3001'))
+    app.run(host=host, port=port, debug=False, use_reloader=False)

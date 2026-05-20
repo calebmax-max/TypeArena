@@ -23,8 +23,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app = Flask(__name__)
 CORS(app)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent
 BUILD_DIR = BASE_DIR / 'build'
+APP_HOST = os.getenv('HOST', '0.0.0.0').strip() or '0.0.0.0'
+APP_PORT = int(os.getenv('PORT', '3001'))
 
 DB_HOST = os.getenv('ALWAYSDATA_DB_HOST', '').strip()
 DB_USER = os.getenv('ALWAYSDATA_DB_USER', '').strip()
@@ -1765,7 +1767,15 @@ def _get_admin_user(cur) -> Optional[Dict[str, Any]]:
 
 @app.get('/api/health')
 def health():
-    return jsonify({'ok': True, 'service': 'typearena-backend', 'storage': 'mysql'})
+    return jsonify(
+        {
+            'ok': True,
+            'service': 'typearena-backend',
+            'storage': 'mysql',
+            'buildAvailable': BUILD_DIR.exists(),
+            'databaseConfigured': bool(DB_HOST and DB_USER and DB_NAME),
+        }
+    )
 
 
 @app.post('/api/admin/login')
@@ -3818,19 +3828,6 @@ def update_user(user_id: int):
         return jsonify(_safe_user(updated))
     finally:
         conn.close()
-
-
-@app.get('/api/health')
-def api_health():
-    return jsonify(
-        {
-            'status': 'ok',
-            'buildAvailable': BUILD_DIR.exists(),
-            'databaseConfigured': bool(DB_HOST and DB_USER and DB_NAME),
-        }
-    )
-
-
 def _frontend_file_response(path: str = ''):
     if not BUILD_DIR.exists():
         return jsonify({'message': 'Frontend build not found on server. Upload the build/ directory.'}), 404
@@ -3853,7 +3850,7 @@ def handle_runtime_error(exc):
 @app.errorhandler(pymysql.MySQLError)
 def handle_mysql_error(exc):
     app.logger.exception('Database error while serving request')
-    return jsonify({'message': f'Database error: {exc}'}), 500
+    return jsonify({'message': f'Database unavailable: {exc}'}), 503
 
 
 @app.errorhandler(Exception)
@@ -3875,4 +3872,4 @@ def frontend_routes(path: str):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3001, debug=True)
+    app.run(host=APP_HOST, port=APP_PORT, debug=False)

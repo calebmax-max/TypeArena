@@ -12,9 +12,12 @@ Use these Alwaysdata details for this project:
 Upload these from this project to your Alwaysdata app directory:
 
 - `build/`
-- `backend.py/`
+- `app_backend.py`
+- `app_loader.py`
 - `passenger_wsgi.py`
+- `wsgi.py`
 - `requirements.txt`
+- `site_settings.json`
 
 If you rebuild locally first, run:
 
@@ -29,7 +32,7 @@ Create a Python WSGI application and set:
 - App root: the directory where you uploaded the files
 - Entry file: `passenger_wsgi.py`
 
-The included WSGI loader starts the Flask app from `backend.py/app.py`.
+The included WSGI loader starts the Flask app from `app_backend.py`.
 
 ### Environment variables
 
@@ -61,7 +64,7 @@ This command is safe to run on an existing live database. It will create missing
 
 ### Frontend routing
 
-The built frontend already includes `.htaccess` so:
+The built frontend already includes `.htaccess` inside `build/` so:
 
 - `/api/...` stays available for backend routes
 - React routes like `/profile` and `/marketplace` keep working on refresh

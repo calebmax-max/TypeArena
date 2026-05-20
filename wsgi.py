@@ -2,6 +2,11 @@ from app_loader import load_application
 
 
 app = load_application()
+application = app
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3001, debug=True)
+    import os
+
+    host = os.getenv('HOST', '0.0.0.0').strip() or '0.0.0.0'
+    port = int(os.getenv('PORT', '3001'))
+    app.run(host=host, port=port, debug=False)
