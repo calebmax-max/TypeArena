@@ -1,5 +1,5 @@
 import './App.css';
-import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import Home from './components/Home';
 import Play from './components/Play';
@@ -103,13 +103,8 @@ const readStoredUser = () => {
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [siteMarqueeItems, setSiteMarqueeItems] = useState(DEFAULT_SITE_MARQUEE_ITEMS);
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [location.pathname]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -160,6 +155,9 @@ function AppLayout() {
     navigate('/');
   };
 
+  const navLinkClassName = ({ isActive }) =>
+    `nav-link${isActive ? ' nav-link--active' : ''}`;
+
   return (
     <div className="App">
       <header className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
@@ -167,31 +165,22 @@ function AppLayout() {
           <Link to="/" className="navbar-brand fw-bold">
             TypeArena
           </Link>
-          <button
-            className={`navbar-toggler ${menuOpen ? '' : 'collapsed'}`}
-            type="button"
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            <span className="navbar-toggler-icon"></span>
-          </button>
-          <div className={`collapse navbar-collapse ${menuOpen ? 'show' : ''}`}>
-            <nav className="navbar-nav ms-auto gap-2">
-              <Link to="/play" className="nav-link">Play</Link>
-              <Link to="/tournaments" className="nav-link">Tournaments</Link>
-              <Link to="/leaderboard" className="nav-link">Leaderboard</Link>
-              <Link to="/marketplace" className="nav-link">Marketplace</Link>
-              {currentUser ? (
-                <>
-                  <Link to="/profile" className="nav-link">Profile</Link>
-                  <button onClick={handleSignOut} className="nav-link btn btn-link">
-                    Sign Out
-                  </button>
-                </>
-              ) : (
-                <Link to="/profile" className="nav-link">Sign In</Link>
-              )}
-            </nav>
-          </div>
+          <nav className="navbar-nav navbar-nav--persistent ms-auto">
+            <NavLink to="/play" className={navLinkClassName}>Play</NavLink>
+            <NavLink to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
+            <NavLink to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
+            <NavLink to="/marketplace" className={navLinkClassName}>Marketplace</NavLink>
+            {currentUser ? (
+              <>
+                <NavLink to="/profile" className={navLinkClassName}>Profile</NavLink>
+                <button onClick={handleSignOut} className="nav-link btn btn-link">
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <NavLink to="/profile" className={navLinkClassName}>Sign In</NavLink>
+            )}
+          </nav>
         </div>
       </header>
 
@@ -207,6 +196,7 @@ function AppLayout() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/play" element={<Play />} />
+          <Route path="/practice" element={<Play practicePage />} />
           <Route path="/tournaments" element={<Tournaments />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/marketplace" element={<Marketplace />} />

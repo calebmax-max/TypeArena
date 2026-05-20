@@ -21,6 +21,8 @@ import '../styles/Play.css';
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const LIVE_RACE_COUNTDOWN_FALLBACK = 5;
+const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
+const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
 const KEYBOARD_LAYOUT = [
   ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
   ['Tab', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
@@ -182,7 +184,7 @@ const normalizeKeyboardKey = (key) => {
   return key;
 };
 
-export default function Play() {
+export default function Play({ practicePage = false }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [phase, setPhase] = useState('lobby');
@@ -212,10 +214,30 @@ export default function Play() {
   const heartbeatPayloadRef = useRef(null);
   const heartbeatInFlightRef = useRef(false);
   const [activeKeys, setActiveKeys] = useState([]);
+  const isPracticePage = practicePage;
 
   useEffect(() => {
     fetchCurrentUser().then(setCurrentUser).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      return;
+    }
+
+    setNotice((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const normalized = String(current).toLowerCase();
+      if (normalized.includes('sign in first')) {
+        return '';
+      }
+
+      return current;
+    });
+  }, [currentUser?.id]);
 
   const redirectToProfile = useCallback(() => {
     const redirectPath = `${location.pathname}${location.search || ''}`;
@@ -548,7 +570,7 @@ export default function Play() {
       syncRoomClock(liveRoom);
       const countdownTimer = window.setInterval(() => {
         syncRoomClock(liveRoom);
-      }, 250);
+      }, LIVE_CLOCK_SYNC_INTERVAL_MS);
       return () => window.clearInterval(countdownTimer);
     }
 
@@ -580,7 +602,7 @@ export default function Play() {
         }
         return current - 1;
       });
-    }, 250);
+    }, liveRoom?.startedAt ? LIVE_CLOCK_SYNC_INTERVAL_MS : LOCAL_RACE_TICK_INTERVAL_MS);
 
     return () => window.clearInterval(timerRef.current);
   }, [buildRoomResultPayload, duration, finishRace, liveRoom, phase, syncRoomClock]);
@@ -863,10 +885,14 @@ export default function Play() {
     <div className="play-container">
       {phase === 'lobby' && (
         <div className="mode-select">
-          <h1>Live Premium Typing Arena</h1>
+          <h1>{isPracticePage ? 'Practice Arena' : 'Live Premium Typing Arena'}</h1>
 
           <div className="challenge-toolbar">
-            <h2>Practice and compete in live typing battles</h2>
+            <h2>
+              {isPracticePage
+                ? 'Choose your mode and launch a focused solo typing session'
+                : 'Practice and compete in live typing battles'}
+            </h2>
             <div className="challenge-toolbar__actions">
               <div className="duration-switch">
                 {[30, 60, 120].map((item) => (
@@ -886,9 +912,15 @@ export default function Play() {
             <div className="practice-launcher">
               <button
                 className="btn btn-outline-primary"
-                onClick={() => setShowPracticeModes((current) => !current)}
+                onClick={() => {
+                  if (!isPracticePage) {
+                    navigate('/practice');
+                    return;
+                  }
+                  setShowPracticeModes((current) => !current);
+                }}
               >
-                Start Practice
+                {isPracticePage ? 'Choose Practice Mode' : 'Start Practice'}
               </button>
               {showPracticeModes && (
                 <div className="practice-menu">
@@ -906,14 +938,26 @@ export default function Play() {
                 </div>
               )}
             </div>
-            <button className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive}>
-              {loadingLive ? 'Joining Live Room...' : 'Join Live 1v1'}
-            </button>
+            {isPracticePage ? (
+              <button className="btn btn-primary" onClick={startPracticeRace}>
+                Start This Practice
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive}>
+                {loadingLive ? 'Joining Live Room...' : 'Join Live 1v1'}
+              </button>
+            )}
           </div>
 
           <p className="results-challenge">
             Current practice mode: {MODE_CONFIG.find((item) => item.id === mode)?.label || 'Standard'} for {duration}s.
           </p>
+
+          {isPracticePage && (
+            <p className="results-challenge">
+              This page is only for solo practice. Use the Play page for live races, friend battles, and private rooms.
+            </p>
+          )}
 
           {!currentUser?.id && (
             <p className="results-challenge">
@@ -921,6 +965,7 @@ export default function Play() {
             </p>
           )}
 
+          {!isPracticePage && (
           <div className="friend-battle-card">
             <div className="live-board__header">
               <h2>Friend Battles + Private Rooms</h2>
@@ -967,9 +1012,11 @@ export default function Play() {
                 : 'Invite code and private password work here for private matches. Buy Signature Invite Pass to create your own custom room code.'}
             </p>
           </div>
+          )}
 
           {notice && <p className="results-challenge">{notice}</p>}
 
+          {!isPracticePage && (
           <div className="live-board">
             <div className="live-board__header">
               <h2>Live Spectator Feed</h2>
@@ -989,6 +1036,7 @@ export default function Play() {
               ))}
             </div>
           </div>
+          )}
         </div>
       )}
 
