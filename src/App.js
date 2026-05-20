@@ -1,6 +1,6 @@
 import './App.css';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Home from './components/Home';
 import Play from './components/Play';
 import Tournaments from './components/Tournaments';
@@ -22,6 +22,45 @@ const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Private friend battles are live now.',
   'Wallet top-up, tournaments, and marketplace are active.',
 ];
+
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('TypeArena runtime error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="profile-container" style={{ minHeight: '100vh', paddingTop: '4rem' }}>
+          <section className="auth-section">
+            <h1>TypeArena hit a runtime error</h1>
+            <p className="auth-notice">
+              {this.state.error?.message || 'The page crashed while loading.'}
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => window.location.reload()}
+            >
+              Reload page
+            </button>
+          </section>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const readStoredUser = () => {
   try {
@@ -159,9 +198,11 @@ function AppLayout() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AppLayout />
-    </BrowserRouter>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <AppLayout />
+      </BrowserRouter>
+    </AppErrorBoundary>
   );
 }
 
