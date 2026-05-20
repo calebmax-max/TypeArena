@@ -1769,6 +1769,149 @@ def _find_live_room_by_invite(invite_code: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _ensure_live_race_rooms_table(cur) -> None:
+    cur.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS live_race_rooms (
+            room_id VARCHAR(64) PRIMARY KEY,
+            invite_code VARCHAR(32) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            is_private TINYINT(1) NOT NULL DEFAULT 0,
+            room_data LONGTEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_live_race_invite (invite_code),
+            KEY idx_live_race_status (status),
+            KEY idx_live_race_private (is_private)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        '''
+    )
+
+
+def _hydrate_live_room(room: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not room:
+        return None
+
+    room_id = str(room.get('id') or '').strip()
+    if room_id:
+        LIVE_RACE_ROOMS[room_id] = room
+    return room
+
+
+def _load_live_room_from_row(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not row:
+        return None
+
+    raw_room = row.get('room_data')
+    if isinstance(raw_room, (bytes, bytearray)):
+        raw_room = raw_room.decode('utf-8', errors='ignore')
+
+    try:
+        room = json.loads(str(raw_room or '{}'))
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(room, dict):
+        return None
+
+    room['inviteCode'] = str(room.get('inviteCode') or row.get('invite_code') or '').upper()
+    room['status'] = str(room.get('status') or row.get('status') or 'waiting')
+    room['isPrivate'] = bool(room.get('isPrivate') if 'isPrivate' in room else row.get('is_private'))
+    return _hydrate_live_room(room)
+
+
+def _save_live_room(cur, room: Dict[str, Any]) -> Dict[str, Any]:
+    _ensure_live_race_rooms_table(cur)
+    room_id = str(room.get('id') or '').strip()
+    if not room_id:
+        raise ValueError('Live room is missing an id.')
+
+    room_copy = dict(room)
+    room_copy['inviteCode'] = str(room_copy.get('inviteCode') or '').strip().upper()
+    payload = json.dumps(room_copy, ensure_ascii=True, separators=(',', ':'))
+    cur.execute(
+        '''
+        INSERT INTO live_race_rooms (room_id, invite_code, status, is_private, room_data)
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            invite_code = VALUES(invite_code),
+            status = VALUES(status),
+            is_private = VALUES(is_private),
+            room_data = VALUES(room_data),
+            updated_at = CURRENT_TIMESTAMP
+        ''',
+        (
+            room_id,
+            room_copy['inviteCode'],
+            str(room_copy.get('status') or 'waiting'),
+            1 if room_copy.get('isPrivate') else 0,
+            payload,
+        ),
+    )
+    return _hydrate_live_room(room_copy) or room_copy
+
+
+def _get_live_room(cur, room_id: str) -> Optional[Dict[str, Any]]:
+    normalized = str(room_id or '').strip()
+    if not normalized:
+        return None
+
+    _ensure_live_race_rooms_table(cur)
+    cur.execute('SELECT * FROM live_race_rooms WHERE room_id=%s LIMIT 1', (normalized,))
+    room = _load_live_room_from_row(cur.fetchone())
+    if room:
+        return room
+
+    cached = LIVE_RACE_ROOMS.get(normalized)
+    if cached:
+        return cached
+    return None
+
+
+def _get_live_room_by_invite(cur, invite_code: str) -> Optional[Dict[str, Any]]:
+    normalized = str(invite_code or '').strip().upper()
+    if not normalized:
+        return None
+
+    _ensure_live_race_rooms_table(cur)
+    cur.execute('SELECT * FROM live_race_rooms WHERE invite_code=%s LIMIT 1', (normalized,))
+    room = _load_live_room_from_row(cur.fetchone())
+    if room:
+        return room
+
+    cached = _find_live_room_by_invite(normalized)
+    if cached:
+        return cached
+    return None
+
+
+def _list_live_rooms(cur) -> list[Dict[str, Any]]:
+    _ensure_live_race_rooms_table(cur)
+    cur.execute(
+        '''
+        SELECT *
+        FROM live_race_rooms
+        ORDER BY updated_at DESC, created_at DESC
+        LIMIT 100
+        '''
+    )
+    rooms = []
+    for row in cur.fetchall():
+        room = _load_live_room_from_row(row)
+        if room:
+            rooms.append(room)
+    return rooms
+
+
+def _delete_live_room(cur, room_id: str) -> None:
+    normalized = str(room_id or '').strip()
+    if not normalized:
+        return
+    _ensure_live_race_rooms_table(cur)
+    cur.execute('DELETE FROM live_race_rooms WHERE room_id=%s', (normalized,))
+    LIVE_RACE_ROOMS.pop(normalized, None)
+
+
 def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
     raw_user_id = request.headers.get('X-User-Id')
     if not raw_user_id:
@@ -3281,12 +3424,17 @@ def mpesa_b2c_timeout_callback():
 def list_live_races():
     user_id_raw = request.headers.get('X-User-Id')
     viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
-    rooms = sorted(
-        (_serialize_live_room(room, viewer_user_id=viewer_user_id) for room in LIVE_RACE_ROOMS.values()),
-        key=lambda item: item.get('createdAt') or '',
-        reverse=True,
-    )
-    return jsonify(rooms[:20])
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            rooms = sorted(
+                (_serialize_live_room(room, viewer_user_id=viewer_user_id) for room in _list_live_rooms(cur)),
+                key=lambda item: item.get('createdAt') or '',
+                reverse=True,
+            )
+        return jsonify(rooms[:20])
+    finally:
+        conn.close()
 
 
 @app.post('/api/live-races/queue')
@@ -3310,6 +3458,7 @@ def queue_live_race():
             winner_prize = float(payload.get('winnerPrize') or 0)
             stake_amount = 0.0
             winner_takes_all = False
+            _ensure_live_race_rooms_table(cur)
 
             if is_private and invite_code and not user_perks.get('customInviteCodes'):
                 return jsonify({'message': 'Buy the Signature Invite Pass in the marketplace to create custom private room codes.'}), 400
@@ -3318,7 +3467,7 @@ def queue_live_race():
             player_snapshot = {'userId': user['id'], 'username': user['username'], 'progress': 0, 'currentWpm': 0}
 
             if invite_code:
-                room = _find_live_room_by_invite(invite_code)
+                room = _get_live_room_by_invite(cur, invite_code)
                 if not room and not is_private:
                     return jsonify({'message': 'Friend battle room not found.'}), 404
                 if room and room.get('password') and room.get('password') != room_password:
@@ -3330,6 +3479,7 @@ def queue_live_race():
                 if room:
                     room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
                     room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
+                    _save_live_room(cur, room)
                     conn.commit()
                     return jsonify(
                         {
@@ -3341,7 +3491,7 @@ def queue_live_race():
                     )
 
             if not is_private:
-                for room in LIVE_RACE_ROOMS.values():
+                for room in _list_live_rooms(cur):
                     if (
                         room['status'] == 'waiting'
                         and not room.get('isPrivate')
@@ -3354,6 +3504,8 @@ def queue_live_race():
                         room['players'].append(player_snapshot)
                         room['status'] = 'countdown'
                         room['startedAt'] = _now_iso()
+                        _save_live_room(cur, room)
+                        conn.commit()
                         return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True})
 
             if is_private and stake_amount > 0:
@@ -3392,7 +3544,7 @@ def queue_live_race():
                 'startedAt': None,
                 'completedAt': None,
             }
-            LIVE_RACE_ROOMS[room_id] = room
+            _save_live_room(cur, room)
             conn.commit()
             return jsonify(
                 {
@@ -3408,34 +3560,46 @@ def queue_live_race():
 
 @app.get('/api/live-races/<room_id>')
 def get_live_race(room_id: str):
-    room = LIVE_RACE_ROOMS.get(room_id)
-    if not room:
-        return jsonify({'message': 'Live race room not found.'}), 404
-    user_id_raw = request.headers.get('X-User-Id')
-    viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
-    if viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}:
-        room['spectators'] = int(room.get('spectators') or 0) + 1
-    return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            room = _get_live_room(cur, room_id)
+            if not room:
+                return jsonify({'message': 'Live race room not found.'}), 404
+            user_id_raw = request.headers.get('X-User-Id')
+            viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
+            if viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}:
+                room['spectators'] = int(room.get('spectators') or 0) + 1
+                _save_live_room(cur, room)
+                conn.commit()
+            return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
+    finally:
+        conn.close()
 
 
 @app.get('/api/live-races/invite/<invite_code>')
 def get_live_race_by_invite(invite_code: str):
-    room = _find_live_room_by_invite(invite_code)
-    if not room:
-        return jsonify({'message': 'Friend battle room not found.'}), 404
-    user_id_raw = request.headers.get('X-User-Id')
-    viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
-    return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            room = _get_live_room_by_invite(cur, invite_code)
+            if not room:
+                return jsonify({'message': 'Friend battle room not found.'}), 404
+            user_id_raw = request.headers.get('X-User-Id')
+            viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
+            return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
+    finally:
+        conn.close()
 
 
 @app.post('/api/live-races/<room_id>/cancel')
 def cancel_live_race(room_id: str):
-    room = LIVE_RACE_ROOMS.get(room_id)
-    if not room:
-        return jsonify({'message': 'Live race room not found.'}), 404
-
     conn = get_connection()
     try:
+        with conn.cursor() as cur:
+            room = _get_live_room(cur, room_id)
+            if not room:
+                return jsonify({'message': 'Live race room not found.'}), 404
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
@@ -3457,8 +3621,8 @@ def cancel_live_race(room_id: str):
                 refunded_user = cur.fetchone()
                 if refunded_user:
                     refunded_users.append(_safe_user(refunded_user))
+            _delete_live_room(cur, room_id)
         conn.commit()
-        LIVE_RACE_ROOMS.pop(room_id, None)
 
         current_user = next((item for item in refunded_users if item['id'] == user['id']), _safe_user(user))
         return jsonify(
@@ -3474,60 +3638,64 @@ def cancel_live_race(room_id: str):
 
 @app.post('/api/live-races/<room_id>/heartbeat')
 def update_live_race_progress(room_id: str):
-    room = LIVE_RACE_ROOMS.get(room_id)
-    if not room:
-        return jsonify({'message': 'Live race room not found.'}), 404
-
     conn = get_connection()
     try:
+        with conn.cursor() as cur:
+            room = _get_live_room(cur, room_id)
+            if not room:
+                return jsonify({'message': 'Live race room not found.'}), 404
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
+        payload = request.get_json(silent=True) or {}
+        for player in room.get('players', []):
+            if player['userId'] == user['id']:
+                player['progress'] = max(0, min(100, int(payload.get('progress') or 0)))
+                player['currentWpm'] = max(0, float(payload.get('currentWpm') or 0))
+                break
+        if room['status'] == 'countdown':
+            room['status'] = 'racing'
+        with conn.cursor() as cur:
+            _save_live_room(cur, room)
+        conn.commit()
+        return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
     finally:
         conn.close()
-
-    payload = request.get_json(silent=True) or {}
-    for player in room.get('players', []):
-        if player['userId'] == user['id']:
-            player['progress'] = max(0, min(100, int(payload.get('progress') or 0)))
-            player['currentWpm'] = max(0, float(payload.get('currentWpm') or 0))
-            break
-    if room['status'] == 'countdown':
-        room['status'] = 'racing'
-    return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
 
 
 @app.post('/api/live-races/<room_id>/submit')
 def submit_live_race(room_id: str):
-    room = LIVE_RACE_ROOMS.get(room_id)
-    if not room:
-        return jsonify({'message': 'Live race room not found.'}), 404
-
     payload = request.get_json(silent=True) or {}
     conn = get_connection()
     try:
+        with conn.cursor() as cur:
+            room = _get_live_room(cur, room_id)
+            if not room:
+                return jsonify({'message': 'Live race room not found.'}), 404
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
+        try:
+            wpm = float(payload.get('wpm') or 0)
+            accuracy = float(payload.get('accuracy') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'message': 'Invalid live race result.'}), 400
+
+        room.setdefault('results', {})[user['id']] = {
+            'userId': user['id'],
+            'username': user['username'],
+            'wpm': round(wpm, 1),
+            'accuracy': round(accuracy, 1),
+            'finishedAt': _now_iso(),
+            'finishedAtTs': datetime.utcnow().timestamp(),
+        }
+        _complete_live_race_if_ready(room)
+        with conn.cursor() as cur:
+            _save_live_room(cur, room)
+        conn.commit()
+        return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
     finally:
         conn.close()
-
-    try:
-        wpm = float(payload.get('wpm') or 0)
-        accuracy = float(payload.get('accuracy') or 0)
-    except (TypeError, ValueError):
-        return jsonify({'message': 'Invalid live race result.'}), 400
-
-    room.setdefault('results', {})[user['id']] = {
-        'userId': user['id'],
-        'username': user['username'],
-        'wpm': round(wpm, 1),
-        'accuracy': round(accuracy, 1),
-        'finishedAt': _now_iso(),
-        'finishedAtTs': datetime.utcnow().timestamp(),
-    }
-    _complete_live_race_if_ready(room)
-    return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
 
 
 @app.get('/api/race-content/generate')
