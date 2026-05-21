@@ -24,13 +24,25 @@ const getStoredUser = () => {
   return safeJsonParse(raw, null);
 };
 
+const syncAdminSessionFromUser = (user) => {
+  if (user?.adminToken) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, user.adminToken);
+    return;
+  }
+
+  if (!user?.isAdmin) {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  }
+};
+
 const sanitizeUser = (user) => {
   if (!user) return user;
-  const { passwordHash, ...safeUser } = user;
+  const { passwordHash, adminToken, ...safeUser } = user;
   return safeUser;
 };
 
 const setStoredUser = (user) => {
+  syncAdminSessionFromUser(user);
   localStorage.setItem('typearena_user', JSON.stringify(sanitizeUser(user)));
 };
 

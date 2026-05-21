@@ -276,6 +276,20 @@ export default function TypeProfile() {
       );
 
       applyFreshUserState(user);
+
+      if (authMode === 'login' && user?.adminToken) {
+        setShowAuthForm(false);
+        setFormData({
+          email: '',
+          password: '',
+          username: '',
+          phoneNumber: '',
+        });
+        setAuthNotice('');
+        navigate('/admin');
+        return;
+      }
+
       setShowAuthForm(false);
 
       setFormData({

@@ -68,8 +68,10 @@ STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', 'http://localhost:3000/prof
 STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', 'http://localhost:3000/profile?checkout=cancel')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
-ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
-ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
+DEFAULT_ADMIN_EMAIL = 'caleb@gmail.com'
+DEFAULT_ADMIN_PASSWORD = 'Caleb123'
+ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', DEFAULT_ADMIN_EMAIL).strip() or DEFAULT_ADMIN_EMAIL
+ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', DEFAULT_ADMIN_PASSWORD)
 ADMIN_TOKENS: set[str] = set()
 TOURNAMENT_MATCH_SIZE = 2
 TOURNAMENT_START_DELAY_SECONDS = 30
@@ -77,6 +79,17 @@ WINNER_PRIZE_SHARE = 0.60
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
+
+
+def _is_admin_email(email: str) -> bool:
+    normalized_email = str(email or '').strip().lower()
+    return bool(normalized_email and ADMIN_EMAIL and normalized_email == ADMIN_EMAIL.lower())
+
+
+def _issue_admin_token() -> str:
+    token = secrets.token_urlsafe(24)
+    ADMIN_TOKENS.add(token)
+    return token
 
 
 def _build_live_mode_passages(parts: Dict[str, list[str]]) -> list[str]:
@@ -515,8 +528,8 @@ MARKETPLACE_ITEMS = [
         'rarity': 'epic',
         'collection': 'Ladder Edge',
         'displayMark': 'SP',
-        'benefit': 'Earn 20% more season points across your profile and leaderboard progression.',
-        'description': 'A progression-focused perk for players who care about climbing the ladder faster and looking stronger on the leaderboard.',
+        'benefit': 'Earn 8% more season points across your profile and leaderboard progression.',
+        'description': 'A lighter progression edge for players who want a season boost without overpowering pure typing performance.',
     },
     {
         'id': 'perk_signature_invites',
@@ -804,7 +817,7 @@ def _tier_for_user(user: Dict[str, Any]) -> str:
 
 def _store_perks_from_owned_items(owned_items: list[str] | set[str] | tuple[str, ...]) -> Dict[str, Any]:
     owned = set(owned_items or [])
-    season_multiplier = 1.2 if 'perk_season_booster' in owned else 1.0
+    season_multiplier = 1.08 if 'perk_season_booster' in owned else 1.0
     tournament_cashback_rate = 0.1 if 'perk_tournament_cashback' in owned else 0.0
     return {
         'seasonPointsMultiplier': season_multiplier,
@@ -813,10 +826,44 @@ def _store_perks_from_owned_items(owned_items: list[str] | set[str] | tuple[str,
     }
 
 
-def _season_points_for_user(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> int:
-    base_points = (float(user.get('wpm') or 0) * 2) + (float(user.get('accuracy') or 0)) + (int(user.get('wins') or 0) * 15)
+def _competitive_season_points(
+    user: Dict[str, Any],
+    *,
+    live_races: int = 0,
+    tournament_entries: int = 0,
+    tournament_payouts: float = 0.0,
+    live_earnings: float = 0.0,
+    owned_items: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> int:
+    wpm = float(user.get('wpm') or 0)
+    accuracy = float(user.get('accuracy') or 0)
+    wins = int(user.get('wins') or 0)
+    total_races = int(user.get('total_races') or 0)
+
+    base_points = (wpm * 2.4) + (accuracy * 1.6) + (wins * 24) + (min(total_races, 120) * 0.5)
+
+    consistency_bonus = 0
+    if accuracy >= 98:
+        consistency_bonus = 45
+    elif accuracy >= 95:
+        consistency_bonus = 25
+
+    speed_bonus = 0
+    if wpm >= 120:
+        speed_bonus = 40
+    elif wpm >= 100:
+        speed_bonus = 20
+
+    activity_points = (min(max(live_races, 0), 60) * 2) + (min(max(tournament_entries, 0), 20) * 5)
+    earnings_points = min(120, round(max((tournament_payouts + live_earnings), 0.0) / 60))
+
+    subtotal = base_points + consistency_bonus + speed_bonus + activity_points + earnings_points
     perks = _store_perks_from_owned_items(owned_items or [])
-    return int(round(base_points * float(perks.get('seasonPointsMultiplier') or 1.0)))
+    return int(round(subtotal * float(perks.get('seasonPointsMultiplier') or 1.0)))
+
+
+def _season_points_for_user(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> int:
+    return _competitive_season_points(user, owned_items=owned_items)
 
 
 def _referral_code_for_user(user: Dict[str, Any]) -> str:
@@ -1631,9 +1678,9 @@ def _withdrawal_fee_for_method(amount: float, payout_method: str) -> float:
         return float(WITHDRAWAL_FEE)
 
     mpesa_fee_bands = [
-        (1, 49, 0.0),
-        (50, 100, 0.0),
-        (101, 1500, 34.0),
+        (1, 300, 0.0),
+        (301, 1000, 30.0),
+        (1001, 1500, 50.0),
         (1501, 2500, 100.0),
         (2501, 3500, 150.0),
         (3501, 5000, 200.0),
@@ -1705,10 +1752,12 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
     wins = int(user.get('wins') or 0)
     owned_items = _owned_store_items_for_user(conn, int(user.get('id') or 0)) if conn else []
     perks = _store_perks_from_owned_items(owned_items)
+    is_admin = _is_admin_email(user.get('email') or '')
     return {
         'id': user['id'],
         'username': user['username'],
         'email': user['email'],
+        'isAdmin': is_admin,
         'phoneNumber': user.get('phone_number') or '',
         'wpm': float(user.get('wpm') or 0),
         'accuracy': float(user.get('accuracy') or 0),
@@ -2507,8 +2556,7 @@ def admin_login():
     finally:
         conn.close()
 
-    token = secrets.token_urlsafe(24)
-    ADMIN_TOKENS.add(token)
+    token = _issue_admin_token()
     return jsonify({'token': token, 'adminEmail': ADMIN_EMAIL})
 
 
@@ -3016,7 +3064,11 @@ def auth_login():
             return jsonify({'message': 'Invalid email or password'}), 401
 
         conn.commit()
-        return jsonify(_safe_user(user, conn))
+        safe_user = _safe_user(user, conn)
+        if safe_user.get('isAdmin'):
+            safe_user['adminEmail'] = ADMIN_EMAIL
+            safe_user['adminToken'] = _issue_admin_token()
+        return jsonify(safe_user)
     finally:
         conn.close()
 
@@ -4661,7 +4713,6 @@ def leaderboard():
         board = []
         for idx, u in enumerate(users, start=1):
             owned_items = _owned_store_items_for_user(conn, int(u.get('id') or 0))
-            perks = _store_perks_from_owned_items(owned_items)
             row = _safe_user(u, conn)
             tournament_entries = int(u.get('tournament_entries') or 0)
             tournament_payouts = float(u.get('tournament_payouts') or 0)
@@ -4671,13 +4722,13 @@ def leaderboard():
             row['tournamentPayouts'] = tournament_payouts
             row['liveRaces'] = live_races
             row['liveEarnings'] = live_earnings
-            row['seasonPoints'] = int(
-                (
-                    row['seasonPoints']
-                + (live_races * 6)
-                + (tournament_entries * 12)
-                + round((tournament_payouts + live_earnings) / 25)
-                ) * float(perks.get('seasonPointsMultiplier') or 1.0)
+            row['seasonPoints'] = _competitive_season_points(
+                u,
+                live_races=live_races,
+                tournament_entries=tournament_entries,
+                tournament_payouts=tournament_payouts,
+                live_earnings=live_earnings,
+                owned_items=owned_items,
             )
             row['rank'] = idx
             row['weeklyRank'] = idx
