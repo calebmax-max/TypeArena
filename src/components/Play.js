@@ -470,49 +470,87 @@ const flushLiveHeartbeat = useCallback(async () => {
 
     return latestRoom;
   }, []);
+// Ensure this is defined outside the component or at the top level of the component
+const isSubmittingRef = useRef(false);
+
 const finishRace = useCallback(async () => {
-    // 1. Calculate final performance stats
-    const elapsed = Math.max(1, duration - timeLeft);
-    const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
-    const wpm = calculateWPM(typingText, elapsed);
-    const accuracy = calculateAccuracy(sourceText, typingText);
-    
-    const finalData = {
-      id: generateRaceId(),
-      wpm,
-      accuracy,
-      duration,
-      mode,
-      language,
-    };
+    // 1. EXECUTION LOCK: Stop if a submission is already in progress
+    if (isSubmittingRef.current) {
+        console.warn("Submission already in progress, ignoring duplicate call.");
+        return;
+    }
+    isSubmittingRef.current = true;
 
-    // 2. Submit local practice result
     try {
-      await submitRaceResult(finalData);
-    } catch (error) {
-      console.error('Practice race submit error:', error);
-    }
-
-    // 3. Handle Live Room Submission
-    if (liveRoom?.id) {
-      try {
-        await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
-        setPhase('waiting');
-
-        const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
-        const payload = buildRoomResultPayload(finalRoom);
+        // Calculate stats
+        const elapsed = Math.max(1, duration - timeLeft);
+        const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
+        const wpm = calculateWPM(typingText, elapsed);
+        const accuracy = calculateAccuracy(sourceText, typingText);
         
-        if (payload) {
-          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(payload));
-          setRaceResult(payload);
-          setPhase('results');
-        }
-      } catch (error) {
-        console.error('Live race submit error:', error);
-      }
-      return; // Exit here if it was a live room
-    }
+        const finalData = {
+            id: generateRaceId(),
+            wpm,
+            accuracy,
+            duration,
+            mode,
+            language,
+        };
 
+        // 2. Submit local practice result
+        // Note: You may want to wrap this in a check to ensure we aren't 
+        // submitting a practice result for a live room
+        if (!liveRoom?.id) {
+            await submitRaceResult(finalData);
+        }
+
+        // 3. Handle Live Room Submission
+        if (liveRoom?.id) {
+            try {
+                await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
+                setPhase('waiting');
+
+                const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
+                const payload = buildRoomResultPayload(finalRoom);
+                
+                if (payload) {
+                    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(payload));
+                    setRaceResult(payload);
+                    setPhase('results');
+                }
+            } catch (error) {
+                // If it's a 1062 error, it means the server already processed it, 
+                // so we can safely proceed to the results phase
+                if (error.message.includes('1062')) {
+                    setPhase('results'); 
+                } else {
+                    console.error('Live race submit error:', error);
+                }
+            }
+            return; 
+        }
+
+        // 4. Default case logic for non-live rooms
+        const resultPayload = {
+            ...finalData,
+            netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+            coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
+            replayFrames,
+            shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
+            completedAt: new Date().toISOString(),
+        };
+
+        sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
+        setRaceResult(resultPayload);
+        setPhase('results');
+
+    } catch (error) {
+        console.error('Race submission error:', error);
+    } finally {
+        // Always unlock, even if the request fails, so the user isn't permanently blocked
+        isSubmittingRef.current = false;
+    }
+}, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
     // 4. Default case: Not a live room
     const resultPayload = {
       ...finalData,
@@ -523,23 +561,27 @@ const finishRace = useCallback(async () => {
       completedAt: new Date().toISOString(),
     };
 
-    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
-    setRaceResult(resultPayload);
-    setPhase('results');
-  }, [
-    duration, 
-    timeLeft, 
-    liveRoom, 
-    generatedContent, 
-    mode, 
-    language, 
-    typingText, 
-    replayFrames,
-    setPhase, 
-    waitForCompletedLiveRoom, 
-    buildRoomResultPayload, 
-    setRaceResult
-  ]);
+    sessionStorage.setItem(
+  LATEST_RACE_RESULT_KEY,
+  JSON.stringify(resultPayload)
+);
+
+setRaceResult(resultPayload);
+setPhase('results');
+} [
+  duration,
+  timeLeft,
+  liveRoom,
+  generatedContent,
+  mode,
+  language,
+  typingText,
+  replayFrames,
+  setPhase,
+  waitForCompletedLiveRoom,
+  buildRoomResultPayload,
+  setRaceResult
+];
   const syncRoomClock = useCallback((room) => {
     // ... rest of your syncRoomClock function
     if (!room?.startedAt) {

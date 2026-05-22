@@ -26,7 +26,10 @@ from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__, static_folder=None)
-CORS(app)
+CORS(app, origins=[
+    "http://localhost:3000",
+    "https://your-frontend.onrender.com"
+])
 
 BASE_DIR = Path(__file__).resolve().parent
 BUILD_DIR = BASE_DIR / 'build'
