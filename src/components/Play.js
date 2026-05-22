@@ -725,7 +725,77 @@ const finishRace = useCallback(async () => {
     setTimeout(() => inputRef.current?.focus(), 150);
   };
 
+  const backToLobby = useCallback(() => {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (heartbeatTimerRef.current) {
+      window.clearTimeout(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
 
+    setLiveRoom(null);
+    setRaceResult(null);
+    setTypingText('');
+    setReplayFrames([]);
+    setNotice('');
+    setShowPracticeModes(false);
+    setPhase('lobby');
+
+    setTimeout(() => {
+      navigate('/play', { replace: true }); 
+    }, 50);
+  }, [navigate]);
+
+  const createFriendBattle = async () => {
+    if (!currentUser?.id) {
+      redirectToProfile();
+      return;
+    }
+
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setLiveRoom(null);
+
+    setLoadingLive(true);
+    setNotice('');
+    try {
+      const response = await queueLiveRace({
+        mode,
+        language,
+        duration,
+        isPrivate: true,
+        inviteCode: friendBattle.customInviteCode.trim(),
+        password: friendBattle.password,
+      });
+      
+      if (!response || !response.room) {
+        throw new Error("Server response missing room details.");
+      }
+
+      setLiveRoom(response.room);
+      setTypingText('');
+      setReplayFrames([]);
+      setRaceResult(null);
+      setPhase('queued');
+      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
+      setTimeLeft(Number(response.room?.duration || duration));
+      setFriendBattle((prev) => ({ ...prev, inviteCode: response.room.inviteCode || '' }));
+      setNotice(
+        response.message || `Private room created. Share invite code ${response.room.inviteCode} with your opponent so they can join.`
+      );
+      refreshFeed();
+    } catch (error) {
+      console.error("Error creating friend battle:", error);
+      setPhase('lobby'); 
+      setNotice(error.response?.data?.message || error.message || 'Could not create friend battle.');
+    } finally {
+      setLoadingLive(false);
+    }
+  };
 
   const joinFriendBattle = async () => {
     if (!currentUser?.id) {
