@@ -643,21 +643,44 @@ const finishRace = useCallback(async () => {
       return undefined;
     }
 
+    
+    useEffect(() => {
+    // 1. Structural Guard: Don't start loops if in the lobby or no room exists
+    if (!liveRoom || phase === 'lobby') {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      return;
+    }
+
+    // Run initial sync cycle
     syncRoomClock(liveRoom);
+
     timerRef.current = window.setInterval(() => {
+      // 2. Closure Guard: Prevent ticks if states mutated or cleared mid-cycle
+      if (!liveRoom?.id || phase === 'lobby') {
+        window.clearInterval(timerRef.current);
+        return;
+      }
+
       if (liveRoom?.startedAt) {
+        // Safe context: room is active, process clock updates
         syncRoomClock(liveRoom);
+        
         const startedAtMs = new Date(liveRoom.startedAt).getTime();
         const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
         const countdownSeconds = Number(liveRoom.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
         const raceRemaining = Math.max(0, Number(liveRoom.duration || duration) - Math.floor(elapsedSeconds - countdownSeconds));
+        
+        // Sync calculated value to state to keep rendering smooth
+        setTimeLeft(raceRemaining);
+
         if (raceRemaining <= 0) {
           window.clearInterval(timerRef.current);
           finishRace();
         }
-        return;
+        return; 
       }
 
+      // Local / Offline race fallback tick logic
       setTimeLeft((current) => {
         if (current <= 1) {
           window.clearInterval(timerRef.current);
@@ -702,23 +725,32 @@ const finishRace = useCallback(async () => {
     setTimeout(() => inputRef.current?.focus(), 150);
   };
 
-  const backToLobby = useCallback(() => {
-  // 1. Reset all local gameplay states first
-  setLiveRoom(null);
-  setRaceResult(null);
-  setTypingText('');
-  setReplayFrames([]);
-  setNotice('');
-  setShowPracticeModes(false);
-  setPhase('lobby');
+const backToLobby = useCallback(() => {
+    // 1. Explicitly kill the active countdown/sync intervals before wiping state
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (heartbeatTimerRef.current) {
+      window.clearTimeout(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
 
-  // 2. Defer navigation slightly to allow React to flush the state updates
-  // and prevent components on the new page from reading stale data.
-  setTimeout(() => {
-    navigate('/play', { replace: true }); 
-  }, 0);
-  
-}, [navigate]);
+    // 2. Reset all local gameplay states
+    setLiveRoom(null);
+    setRaceResult(null);
+    setTypingText('');
+    setReplayFrames([]);
+    setNotice('');
+    setShowPracticeModes(false);
+    setPhase('lobby');
+
+    // 3. Defer navigation out of the call stack loop to let state flush cleanly
+    setTimeout(() => {
+      navigate('/play', { replace: true }); 
+    }, 50);
+    
+  }, [navigate]);
 
   const startLiveRace = async () => {
     if (!currentUser?.id) {
@@ -750,12 +782,19 @@ const finishRace = useCallback(async () => {
       setLoadingLive(false);
     }
   };
-
-  const createFriendBattle = async () => {
+const createFriendBattle = async () => {
     if (!currentUser?.id) {
       redirectToProfile();
       return;
     }
+
+    // 🔴 CRITICAL FIX: Kill any lingering countdown loops from previous runs
+    // so trailing 404 responses don't fire midway through this action!
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setLiveRoom(null);
 
     setLoadingLive(true);
     setNotice('');
@@ -768,6 +807,12 @@ const finishRace = useCallback(async () => {
         inviteCode: friendBattle.customInviteCode.trim(),
         password: friendBattle.password,
       });
+      
+      // Explicit verify guard
+      if (!response || !response.room) {
+        throw new Error("Server response missing room details.");
+      }
+
       setLiveRoom(response.room);
       setTypingText('');
       setReplayFrames([]);
@@ -781,7 +826,11 @@ const finishRace = useCallback(async () => {
       );
       refreshFeed();
     } catch (error) {
-      setNotice(error.message || 'Could not create friend battle.');
+      console.error("Error creating friend battle:", error);
+      
+      // Keep the user in the lobby space instead of throwing them to Profile
+      setPhase('lobby'); 
+      setNotice(error.response?.data?.message || error.message || 'Could not create friend battle.');
     } finally {
       setLoadingLive(false);
     }
