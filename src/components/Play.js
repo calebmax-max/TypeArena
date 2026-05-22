@@ -549,7 +549,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
     setRaceResult(resultPayload);
     setPhase('results');
-  } [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom];
+  } ([buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom]);
 
   const syncRoomClock = useCallback((room) => {
     if (!room?.startedAt) {
@@ -1280,14 +1280,6 @@ const flushLiveHeartbeat = useCallback(async () => {
           </div>
         </div>
       )}
-{phase === 'waiting' && (
-  <div className="race-status-overlay">
-    <h2>Race Finished!</h2>
-    <p>Waiting for opponent to finish...</p>
-    {/* Optionally: show the live standings here if you have them */}
-  </div>
-)}
-
 
       {phase === 'results' && raceResult && (
         <div className={`race-results race-results--themed ${frameClassName} ${effectClassName}`} style={arenaStyle}>
