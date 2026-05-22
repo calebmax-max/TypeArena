@@ -703,15 +703,22 @@ const finishRace = useCallback(async () => {
   };
 
   const backToLobby = useCallback(() => {
-    setLiveRoom(null);
-    setRaceResult(null);
-    setTypingText('');
-    setReplayFrames([]);
-    setNotice('');
-    setShowPracticeModes(false);
-    setPhase('lobby');
-    navigate('/play');
-  }, [navigate]);
+  // 1. Reset all local gameplay states first
+  setLiveRoom(null);
+  setRaceResult(null);
+  setTypingText('');
+  setReplayFrames([]);
+  setNotice('');
+  setShowPracticeModes(false);
+  setPhase('lobby');
+
+  // 2. Defer navigation slightly to allow React to flush the state updates
+  // and prevent components on the new page from reading stale data.
+  setTimeout(() => {
+    navigate('/play', { replace: true }); 
+  }, 0);
+  
+}, [navigate]);
 
   const startLiveRace = async () => {
     if (!currentUser?.id) {
