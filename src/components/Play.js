@@ -499,19 +499,18 @@ const finishRace = useCallback(async () => {
         await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
         setPhase('waiting');
 
-        // Wait for the server to transition the room status to 'completed'
         const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
+        const payload = buildRoomResultPayload(finalRoom);
         
-        const finalPayload = buildRoomResultPayload(finalRoom);
-        if (finalPayload) {
-          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
-          setRaceResult(finalPayload);
+        if (payload) {
+          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(payload));
+          setRaceResult(payload);
           setPhase('results');
         }
       } catch (error) {
         console.error('Live race submit error:', error);
       }
-      return;
+      return; // Exit here if it was a live room
     }
 
     // 4. Default case: Not a live room
@@ -524,8 +523,8 @@ const finishRace = useCallback(async () => {
       completedAt: new Date().toISOString(),
     };
 
-    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
-    setRaceResult(finalPayload);
+    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
+    setRaceResult(resultPayload);
     setPhase('results');
   }, [
     duration, 
