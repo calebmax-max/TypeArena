@@ -20,7 +20,7 @@ import {
 import '../styles/Play.css';
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
-const LIVE_RACE_COUNTDOWN_FALLBACK = 5;
+const LIVE_RACE_COUNTDOWN_FALLBACK = 10;
 const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
 const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
 const KEYBOARD_LAYOUT = [
