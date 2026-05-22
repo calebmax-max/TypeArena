@@ -505,18 +505,22 @@ const flushLiveHeartbeat = useCallback(async () => {
 
                 if (isLeavingRef.current) return;
 
-                setPhase('waiting');
-
-                const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
-
-                if (isLeavingRef.current) return;
-
-                const payload = buildRoomResultPayload(finalRoom);
-                if (payload) {
-                    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(payload));
-                    setRaceResult(payload);
-                }
+                // Show results immediately with own stats — don't make the user wait for opponent
+                const immediatePayload = buildRoomResultPayload(liveRoom);
+                const ownPayload = immediatePayload || {
+                    ...finalData,
+                    netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+                    coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
+                    replayFrames,
+                    shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
+                    completedAt: new Date().toISOString(),
+                    standings: [],
+                };
+                sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(ownPayload));
+                setRaceResult(ownPayload);
                 setPhase('results');
+                // Standings will be updated automatically by the polling effect
+                // when the opponent finishes — no separate chain needed
             } catch (error) {
                 if (isLeavingRef.current) return;
                 if (error.message.includes('1062')) {
@@ -548,7 +552,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     } finally {
         isSubmittingRef.current = false;
     }
-}, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
+}, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, buildRoomResultPayload, setRaceResult]);
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
@@ -585,24 +589,30 @@ const flushLiveHeartbeat = useCallback(async () => {
   }, [phase]);
 
   useEffect(() => {
-    if (!liveRoom?.id || phase === 'lobby' || phase === 'results') {
+    if (!liveRoom?.id || phase === 'lobby' || phase === 'waiting') {
       return undefined;
     }
 
     const roomId = liveRoom.id;
+
+    // During results phase, only keep polling if standings are still incomplete
+    if (phase === 'results') {
+      const allDone = liveRoom?.players?.every((p) => Boolean(p?.result));
+      if (allDone) return undefined;
+    }
 
     const interval = window.setInterval(async () => {
       try {
         const room = await fetchLiveRaceRoom(roomId);
         if (isLeavingRef.current) return;
         setLiveRoom(room);
-        if (room.status === 'completed') {
+        if (room.status === 'completed' || phase === 'results') {
           const finalPayload = buildRoomResultPayload(room);
           if (finalPayload) {
             sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
             setRaceResult(finalPayload);
           }
-          setPhase('results');
+          if (room.status === 'completed') setPhase('results');
           return;
         }
         syncRoomClock(room);
@@ -615,12 +625,12 @@ const flushLiveHeartbeat = useCallback(async () => {
       } catch (error) {
         console.error('Live room polling error:', error);
       }
-    }, phase === 'queued' ? 1500 : 2200);
+    }, phase === 'queued' ? 1500 : phase === 'results' ? 1000 : 2200);
 
     return () => window.clearInterval(interval);
   // liveRoom.id is captured as roomId above — the full object is intentionally excluded
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildRoomResultPayload, countdownRemaining, liveRoom?.id, phase, syncRoomClock]);
+  }, [buildRoomResultPayload, countdownRemaining, liveRoom?.id, liveRoom?.players, phase, syncRoomClock]);
 
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown') {
