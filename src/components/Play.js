@@ -470,8 +470,7 @@ const flushLiveHeartbeat = useCallback(async () => {
 
     return latestRoom;
   }, []);
-
-  const finishRace = useCallback(async () => {
+const finishRace = useCallback(async () => {
     // 1. Calculate final performance stats
     const elapsed = Math.max(1, duration - timeLeft);
     const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
@@ -500,7 +499,7 @@ const flushLiveHeartbeat = useCallback(async () => {
         await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
         setPhase('waiting');
 
-        // USE THE FUNCTION HERE to wait for the server to confirm completion
+        // Wait for the server to transition the room status to 'completed'
         const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
         
         const finalPayload = buildRoomResultPayload(finalRoom);
@@ -515,8 +514,35 @@ const flushLiveHeartbeat = useCallback(async () => {
       return;
     }
 
-    // ... (Keep the rest of your default result payload logic below)
-  }, [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom]);
+    // 4. Default case: Not a live room
+    const resultPayload = {
+      ...finalData,
+      netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+      coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
+      replayFrames,
+      shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
+      completedAt: new Date().toISOString(),
+    };
+
+    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
+    setRaceResult(finalPayload);
+    setPhase('results');
+  }, [
+    duration, 
+    timeLeft, 
+    liveRoom, 
+    generatedContent, 
+    mode, 
+    language, 
+    typingText, 
+    replayFrames, 
+    submitRaceResult, 
+    submitLiveRaceResult, 
+    setPhase, 
+    waitForCompletedLiveRoom, 
+    buildRoomResultPayload, 
+    setRaceResult
+  ]);
   const syncRoomClock = useCallback((room) => {
     // ... rest of your syncRoomClock function
     if (!room?.startedAt) {
