@@ -472,6 +472,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     return latestRoom;
   }, []);
 
+  const finishRaceRef = useRef(null);
   const finishRace = useCallback(async () => {
     if (isSubmittingRef.current) {
         console.warn("Submission already in progress, ignoring duplicate call.");
@@ -502,14 +503,12 @@ const flushLiveHeartbeat = useCallback(async () => {
             try {
                 await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
 
-                // If the user left while we were submitting, stop here
                 if (isLeavingRef.current) return;
 
                 setPhase('waiting');
 
                 const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
 
-                // Check again after the long poll
                 if (isLeavingRef.current) return;
 
                 const payload = buildRoomResultPayload(finalRoom);
@@ -550,6 +549,9 @@ const flushLiveHeartbeat = useCallback(async () => {
         isSubmittingRef.current = false;
     }
 }, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
+  // Keep the ref always pointing at the latest finishRace so the timer
+  // interval can call it without being listed as a dep of the timer effect
+  finishRaceRef.current = finishRace;
   const syncRoomClock = useCallback((room) => {
     if (!room?.startedAt) {
       setCountdownRemaining(Number(room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
@@ -713,7 +715,7 @@ const flushLiveHeartbeat = useCallback(async () => {
         if (raceRemaining <= 0) {
           window.clearInterval(timerRef.current);
           setRaceOver(true);
-          finishRace();
+          finishRaceRef.current();
         }
         return;
       }
@@ -723,7 +725,7 @@ const flushLiveHeartbeat = useCallback(async () => {
         if (current <= 1) {
           window.clearInterval(timerRef.current);
           setRaceOver(true);
-          finishRace();
+          finishRaceRef.current();
           return 0;
         }
         return current - 1;
@@ -734,7 +736,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     // liveRoom intentionally excluded — use liveRoomRef.current inside the interval
     // so heartbeat updates don't restart the interval and spawn duplicates
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [duration, finishRace, liveRoom?.id, liveRoom?.startedAt, phase, syncRoomClock]);
+  }, [duration, liveRoom?.id, liveRoom?.startedAt, phase, syncRoomClock]);
 
   const refreshFeed = async () => {
     const rooms = await fetchLiveRaces().catch(() => []);
