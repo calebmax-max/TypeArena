@@ -549,7 +549,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
     setRaceResult(resultPayload);
     setPhase('results');
-  }, [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom]);
+  } [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom];
 
   const syncRoomClock = useCallback((room) => {
     if (!room?.startedAt) {
