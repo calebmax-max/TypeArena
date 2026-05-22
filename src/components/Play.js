@@ -23,8 +23,6 @@ const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const LIVE_RACE_COUNTDOWN_FALLBACK = 5;
 const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
 const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
-const LIVE_RESULT_WAIT_ATTEMPTS = 20;
-const LIVE_RESULT_WAIT_INTERVAL_MS = 500;
 const KEYBOARD_LAYOUT = [
   ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
   ['Tab', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
@@ -445,32 +443,6 @@ const flushLiveHeartbeat = useCallback(async () => {
       }
     }
   }, [liveRoom?.id, buildRoomResultPayload]);
-
-  const waitForCompletedLiveRoom = useCallback(async (roomId, initialRoom = null) => {
-    if (initialRoom?.status === 'completed') {
-      return initialRoom;
-    }
-
-    if (!roomId) {
-      return initialRoom;
-    }
-
-    let latestRoom = initialRoom;
-    for (let attempt = 0; attempt < LIVE_RESULT_WAIT_ATTEMPTS; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, LIVE_RESULT_WAIT_INTERVAL_MS));
-      try {
-        const refreshedRoom = await fetchLiveRaceRoom(roomId);
-        latestRoom = refreshedRoom;
-        if (refreshedRoom?.status === 'completed') {
-          return refreshedRoom;
-        }
-      } catch (error) {
-        console.error('Live result refresh error:', error);
-      }
-    }
-
-    return latestRoom;
-  }, []);
 
   const finishRaceRef = useRef(null);
   const finishRace = useCallback(async () => {
