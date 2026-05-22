@@ -2151,17 +2151,26 @@ def _persist_completed_live_race(room: Dict[str, Any]) -> None:
 
     player_ids = [player['userId'] for player in room.get('players', [])]
     results = room.get('results', {})
-    if not player_ids or any(player_id not in results for player_id in player_ids):
-        return
+    
+    # NEW GUARD: If the room is already 'completed', we ignore the missing results
+    # check and proceed to persist whatever we have collected so far.
+    is_completed = str(room.get('status') or '').lower() == 'completed'
+    
+    if not is_completed:
+        if not player_ids or any(player_id not in results for player_id in player_ids):
+            return
 
     winner_user_id = room.get('winnerUserId')
     winner_prize = float(room.get('winnerPrize') or 0)
+    
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             for player in room.get('players', []):
                 user_id = int(player['userId'])
+                # Use .get() safely to avoid KeyErrors if a result is missing
                 result = results.get(user_id, {})
+                
                 _apply_user_performance_update(
                     cur,
                     user_id=user_id,
@@ -2177,7 +2186,6 @@ def _persist_completed_live_race(room: Dict[str, Any]) -> None:
         room['resultsPersisted'] = True
     finally:
         conn.close()
-
 
 def _complete_live_race_if_ready(room: Dict[str, Any]) -> None:
     player_ids = [player['userId'] for player in room.get('players', [])]
@@ -2223,8 +2231,6 @@ def _complete_live_race_if_ready(room: Dict[str, Any]) -> None:
         conn.close()
 
     _persist_completed_live_race(room)
-
-
 def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
     if not room or str(room.get('status') or '').lower() == 'completed':
         return False
@@ -2243,37 +2249,45 @@ def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
     if elapsed_seconds < duration_seconds + countdown_seconds:
         return False
 
-    # === ADD THESE LINES BELOW THE TIMEOUT CHECK ===
-    # 1. Flip the status in memory so both players see the match has ended
+    # Force change memory status instantly to break stale heartbeat connections
     room['status'] = 'completed'
-    room['completedAt'] = datetime.utcnow().isoformat() + 'Z'
-
-    # 2. Persist the final rankings, distribute points, and clear stakes into your DB
-    _persist_completed_live_race(room)
-    
-    return True
-    room.setdefault('results', {})
     finished_at = _now_iso()
-    finished_at_ts = datetime.utcnow().timestamp()
+    room['completedAt'] = finished_at
+    room.setdefault('results', {})
 
+    # Gather whatever the players typed up to this absolute moment
     for player in room.get('players', []):
-      user_id = int(player.get('userId') or 0)
-      if user_id in room['results']:
-          continue
-      room['results'][user_id] = {
-          'userId': user_id,
-          'username': player.get('username') or 'Player',
-          'wpm': round(float(player.get('currentWpm') or 0), 1),
-          'accuracy': round(float(player.get('currentAccuracy') or 100), 1),
-          'finishedAt': finished_at,
-          'finishedAtTs': finished_at_ts,
-      }
+        user_id = int(player.get('userId') or 0)
+        if user_id in room['results']:
+            continue
+        room['results'][user_id] = {
+            'userId': user_id,
+            'username': player.get('username') or 'Player',
+            'wpm': round(float(player.get('currentWpm') or 0), 1),
+            'accuracy': round(float(player.get('currentAccuracy') or 100), 1),
+            'finishedAt': finished_at,
+            'finishedAtTs': datetime.utcnow().timestamp(),
+        }
 
-    _complete_live_race_if_ready(room)
-    if str(room.get('status') or '').lower() != 'completed':
-        room['status'] = 'completed'
-        room['completedAt'] = finished_at
+    # Setup standard metric winner references (Metrics only—No money involved)
+    try:
+        player_ids = [p['userId'] for p in room.get('players', [])]
+        def result_sort_key(p_id: int):
+            res = room['results'].get(p_id, {})
+            return (float(res.get('wpm') or 0), float(res.get('accuracy') or 0))
+        
+        if player_ids:
+            room['winnerUserId'] = max(player_ids, key=result_sort_key)
+            room['winnerPrize'] = 0
+    except Exception as e:
+        print(f"Error resolving metrics winner: {e}")
+
+    # Log stats directly to your historical logs safely
+    try:
         _persist_completed_live_race(room)
+    except Exception as db_err:
+        print(f"Error persisting data logs: {db_err}")
+
     return True
 
 

@@ -472,10 +472,12 @@ const flushLiveHeartbeat = useCallback(async () => {
   }, []);
 
   const finishRace = useCallback(async () => {
+    // 1. Calculate final performance stats
     const elapsed = Math.max(1, duration - timeLeft);
     const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
     const wpm = calculateWPM(typingText, elapsed);
     const accuracy = calculateAccuracy(sourceText, typingText);
+    
     const finalData = {
       id: generateRaceId(),
       wpm,
@@ -485,30 +487,46 @@ const flushLiveHeartbeat = useCallback(async () => {
       language,
     };
 
+    // 2. Submit local practice result
     try {
       await submitRaceResult(finalData);
     } catch (error) {
       console.error('Practice race submit error:', error);
     }
 
+    // 3. Handle Live Room Submission
     if (liveRoom?.id) {
       try {
-        const submittedRoom = await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
-        const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, submittedRoom);
-        if (finalRoom) {
-          setLiveRoom(finalRoom);
-          const finalPayload = buildRoomResultPayload(finalRoom);
-          if (finalPayload) {
-            sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
-            setRaceResult(finalPayload);
-            setPhase('results');
-            return;
-          }
-        }
+        // Send the result to the server
+        await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
+        
+        // Switch to the 'waiting' phase instead of jumping to results.
+        // This keeps the user in the liveRoom state so the heartbeat/polling 
+        // can detect when the server flips the room status to 'completed'.
+        setPhase('waiting');
+        
       } catch (error) {
         console.error('Live race submit error:', error);
       }
+      return; // Exit here; the polling effect will transition us to 'results'
     }
+
+    // 4. Default case: Not a live room, just show results immediately
+    const resultPayload = {
+      ...finalData,
+      netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+      coachTip: accuracy < 92 
+        ? 'Accuracy dipped. Try smoother keystrokes.' 
+        : 'Strong run. Keep your rhythm.',
+      replayFrames,
+      shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
+      completedAt: new Date().toISOString(),
+    };
+
+    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
+    setRaceResult(resultPayload);
+    setPhase('results');
+  }, [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText]);
 
     const resultPayload = {
       ...finalData,
@@ -1262,6 +1280,14 @@ const flushLiveHeartbeat = useCallback(async () => {
           </div>
         </div>
       )}
+{phase === 'waiting' && (
+  <div className="race-status-overlay">
+    <h2>Race Finished!</h2>
+    <p>Waiting for opponent to finish...</p>
+    {/* Optionally: show the live standings here if you have them */}
+  </div>
+)}
+
 
       {phase === 'results' && raceResult && (
         <div className={`race-results race-results--themed ${frameClassName} ${effectClassName}`} style={arenaStyle}>
