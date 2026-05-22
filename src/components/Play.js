@@ -620,28 +620,43 @@ const finishRace = useCallback(async () => {
   }, []);
 
   useEffect(() => {
-    if (liveRoom?.status === 'completed' && phase !== 'results') {
-      const finalPayload = buildRoomResultPayload(liveRoom);
-      if (finalPayload) {
-        sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
-        setRaceResult(finalPayload);
-      }
-      setPhase('results');
-      return;
+  if (liveRoom?.status === 'completed' && phase !== 'results') {
+    const finalPayload = buildRoomResultPayload(liveRoom);
+
+    if (finalPayload) {
+      sessionStorage.setItem(
+        LATEST_RACE_RESULT_KEY,
+        JSON.stringify(finalPayload)
+      );
+
+      setRaceResult(finalPayload);
     }
 
-    if (phase === 'queued' && liveRoom?.status === 'countdown') {
+    setPhase('results');
+    return;
+  }
+
+  if (phase === 'queued' && liveRoom?.status === 'countdown') {
+    syncRoomClock(liveRoom);
+
+    const countdownTimer = window.setInterval(() => {
       syncRoomClock(liveRoom);
-      const countdownTimer = window.setInterval(() => {
-        syncRoomClock(liveRoom);
-      }, LIVE_CLOCK_SYNC_INTERVAL_MS);
-      return () => window.clearInterval(countdownTimer);
-    }
+    }, LIVE_CLOCK_SYNC_INTERVAL_MS);
 
-    if (phase !== 'racing') {
-      window.clearInterval(timerRef.current);
-      return undefined;
-    }
+    return () => window.clearInterval(countdownTimer);
+  }
+
+  if (phase !== 'racing') {
+    window.clearInterval(timerRef.current);
+    return undefined;
+  }
+
+}, [
+  buildRoomResultPayload,
+  liveRoom,
+  phase,
+  syncRoomClock
+]);
 
     
     useEffect(() => {
