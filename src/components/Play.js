@@ -551,37 +551,6 @@ const finishRace = useCallback(async () => {
         isSubmittingRef.current = false;
     }
 }, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
-    // 4. Default case: Not a live room
-    const resultPayload = {
-      ...finalData,
-      netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
-      coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
-      replayFrames,
-      shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
-      completedAt: new Date().toISOString(),
-    };
-
-    sessionStorage.setItem(
-  LATEST_RACE_RESULT_KEY,
-  JSON.stringify(resultPayload)
-);
-
-setRaceResult(resultPayload);
-setPhase('results');
-} [
-  duration,
-  timeLeft,
-  liveRoom,
-  generatedContent,
-  mode,
-  language,
-  typingText,
-  replayFrames,
-  setPhase,
-  waitForCompletedLiveRoom,
-  buildRoomResultPayload,
-  setRaceResult
-];
   const syncRoomClock = useCallback((room) => {
     // ... rest of your syncRoomClock function
     if (!room?.startedAt) {
@@ -1487,3 +1456,4 @@ const createFriendBattle = async () => {
       )}
     </div>
   );
+}
