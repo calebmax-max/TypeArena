@@ -473,7 +473,6 @@ const flushLiveHeartbeat = useCallback(async () => {
   }, []);
 
   const finishRace = useCallback(async () => {
-    // 1. EXECUTION LOCK: Stop if a submission is already in progress
     if (isSubmittingRef.current) {
         console.warn("Submission already in progress, ignoring duplicate call.");
         return;
@@ -481,7 +480,6 @@ const flushLiveHeartbeat = useCallback(async () => {
     isSubmittingRef.current = true;
 
     try {
-        // Calculate stats
         const elapsed = Math.max(1, duration - timeLeft);
         const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
         const wpm = calculateWPM(typingText, elapsed);
@@ -496,41 +494,43 @@ const flushLiveHeartbeat = useCallback(async () => {
             language,
         };
 
-        // 2. Submit local practice result
-        // Note: You may want to wrap this in a check to ensure we aren't 
-        // submitting a practice result for a live room
         if (!liveRoom?.id) {
             await submitRaceResult(finalData);
         }
 
-        // 3. Handle Live Room Submission
         if (liveRoom?.id) {
             try {
                 await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
+
+                // If the user left while we were submitting, stop here
+                if (isLeavingRef.current) return;
+
                 setPhase('waiting');
 
                 const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
+
+                // Check again after the long poll
+                if (isLeavingRef.current) return;
+
                 const payload = buildRoomResultPayload(finalRoom);
-                
                 if (payload) {
                     sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(payload));
                     setRaceResult(payload);
                 }
-                // Always transition to results regardless of payload — never leave user stuck on waiting
                 setPhase('results');
             } catch (error) {
-                // If it's a 1062 error, it means the server already processed it, 
-                // so we can safely proceed to the results phase
+                if (isLeavingRef.current) return;
                 if (error.message.includes('1062')) {
-                    setPhase('results'); 
+                    setPhase('results');
                 } else {
                     console.error('Live race submit error:', error);
                 }
             }
-            return; 
+            return;
         }
 
-        // 4. Default case logic for non-live rooms
+        if (isLeavingRef.current) return;
+
         const resultPayload = {
             ...finalData,
             netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
@@ -547,7 +547,6 @@ const flushLiveHeartbeat = useCallback(async () => {
     } catch (error) {
         console.error('Race submission error:', error);
     } finally {
-        // Always unlock, even if the request fails, so the user isn't permanently blocked
         isSubmittingRef.current = false;
     }
 }, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
@@ -677,8 +676,13 @@ const flushLiveHeartbeat = useCallback(async () => {
 ]);
 
     
-    useEffect(() => {
-    // 1. Structural Guard: Only run the race timer during active racing
+  const liveRoomRef = useRef(liveRoom);
+  useEffect(() => {
+    liveRoomRef.current = liveRoom;
+  }, [liveRoom]);
+
+  useEffect(() => {
+    // Only run the race timer during active racing on a live room
     if (!liveRoom || phase !== 'racing') {
       if (timerRef.current) window.clearInterval(timerRef.current);
       return;
@@ -688,22 +692,22 @@ const flushLiveHeartbeat = useCallback(async () => {
     syncRoomClock(liveRoom);
 
     timerRef.current = window.setInterval(() => {
-      // 2. Closure Guard: Prevent ticks if states mutated or cleared mid-cycle
-      if (!liveRoom?.id || phase !== 'racing') {
+      // Read the latest room from the ref — not the stale closure value
+      const currentRoom = liveRoomRef.current;
+
+      if (!currentRoom?.id || phase !== 'racing') {
         window.clearInterval(timerRef.current);
         return;
       }
 
-      if (liveRoom?.startedAt) {
-        // Safe context: room is active, process clock updates
-        syncRoomClock(liveRoom);
-        
-        const startedAtMs = new Date(liveRoom.startedAt).getTime();
+      if (currentRoom?.startedAt) {
+        syncRoomClock(currentRoom);
+
+        const startedAtMs = new Date(currentRoom.startedAt).getTime();
         const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
-        const countdownSeconds = Number(liveRoom.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
-        const raceRemaining = Math.max(0, Number(liveRoom.duration || duration) - Math.floor(elapsedSeconds - countdownSeconds));
-        
-        // Sync calculated value to state to keep rendering smooth
+        const countdownSeconds = Number(currentRoom.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
+        const raceRemaining = Math.max(0, Number(currentRoom.duration || duration) - Math.floor(elapsedSeconds - countdownSeconds));
+
         setTimeLeft(raceRemaining);
 
         if (raceRemaining <= 0) {
@@ -711,7 +715,7 @@ const flushLiveHeartbeat = useCallback(async () => {
           setRaceOver(true);
           finishRace();
         }
-        return; 
+        return;
       }
 
       // Local / Offline race fallback tick logic
@@ -727,7 +731,9 @@ const flushLiveHeartbeat = useCallback(async () => {
     }, liveRoom?.startedAt ? LIVE_CLOCK_SYNC_INTERVAL_MS : LOCAL_RACE_TICK_INTERVAL_MS);
 
     return () => window.clearInterval(timerRef.current);
-  }, [buildRoomResultPayload, duration, finishRace, liveRoom, phase, syncRoomClock]);
+    // liveRoom intentionally excluded — use liveRoomRef.current inside the interval
+    // so heartbeat updates don't restart the interval and spawn duplicates
+  }, [duration, finishRace, liveRoom?.id, liveRoom?.startedAt, phase, syncRoomClock]);
 
   const refreshFeed = async () => {
     const rooms = await fetchLiveRaces().catch(() => []);
@@ -778,8 +784,9 @@ const flushLiveHeartbeat = useCallback(async () => {
   };
 
 const backToLobby = useCallback(() => {
-    // Signal all async effects to stop touching phase/room state
+    // Signal all async effects and finishRace to abort immediately
     isLeavingRef.current = true;
+    isSubmittingRef.current = false;
 
     // Kill all active timers
     if (timerRef.current) {
@@ -1548,4 +1555,4 @@ const createFriendBattle = async () => {
       )}
     </div>
   );
-}
+}c
