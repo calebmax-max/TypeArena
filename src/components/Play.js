@@ -733,6 +733,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     return () => window.clearInterval(timerRef.current);
     // liveRoom intentionally excluded — use liveRoomRef.current inside the interval
     // so heartbeat updates don't restart the interval and spawn duplicates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duration, finishRace, liveRoom?.id, liveRoom?.startedAt, phase, syncRoomClock]);
 
   const refreshFeed = async () => {
