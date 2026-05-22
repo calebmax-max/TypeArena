@@ -1,37 +1,49 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { fetchLiveRaces } from '../utils/typingApi';
 import '../styles/Home.css';
 
-const DEMO_TEXT = "The fastest typists don't just practice";
+const DEMO_SENTENCES = [
+  "Speed is nothing without accuracy behind it.",
+  "Every keystroke in the arena counts for cash.",
+  "The best racers type with rhythm, not urgency.",
+  "KES rewards go to the fastest fingers in the room.",
+  "Consistency at 120 WPM beats bursts at 160.",
+  "Train hard, race live, win real money today.",
+];
 
 function LiveTypingDemo() {
   const [displayed, setDisplayed] = useState('');
-  const [index, setIndex] = useState(0);
+  const [charIndex, setCharIndex] = useState(0);
+  const [sentenceIndex, setSentenceIndex] = useState(0);
   const [wpm, setWpm] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const currentSentence = DEMO_SENTENCES[sentenceIndex];
+
   useEffect(() => {
-    const speed = isDeleting ? 40 : 60;
+    const speed = isDeleting ? 30 : 58;
     const timer = setTimeout(() => {
       if (!isDeleting) {
-        if (index < DEMO_TEXT.length) {
-          setDisplayed(DEMO_TEXT.slice(0, index + 1));
-          setIndex(index + 1);
+        if (charIndex < currentSentence.length) {
+          setDisplayed(currentSentence.slice(0, charIndex + 1));
+          setCharIndex(charIndex + 1);
           setWpm(Math.floor(60 + Math.random() * 40));
         } else {
-          setTimeout(() => setIsDeleting(true), 1800);
+          setTimeout(() => setIsDeleting(true), 1600);
         }
       } else {
         if (displayed.length > 0) {
           setDisplayed(displayed.slice(0, -1));
         } else {
           setIsDeleting(false);
-          setIndex(0);
+          setCharIndex(0);
+          setSentenceIndex((prev) => (prev + 1) % DEMO_SENTENCES.length);
         }
       }
     }, speed);
     return () => clearTimeout(timer);
-  }, [index, isDeleting, displayed]);
+  }, [charIndex, isDeleting, displayed, currentSentence]);
 
   return (
     <div className="demo-terminal">
@@ -54,7 +66,7 @@ function LiveTypingDemo() {
         <div className="progress-bar-wrap">
           <div
             className="progress-bar-fill"
-            style={{ width: `${(displayed.length / DEMO_TEXT.length) * 100}%` }}
+            style={{ width: `${(displayed.length / currentSentence.length) * 100}%` }}
           />
         </div>
       </div>
@@ -95,8 +107,34 @@ const features = [
   },
 ];
 
+function useLivePlayerCount() {
+  const [count, setCount] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const rooms = await fetchLiveRaces();
+        if (!Array.isArray(rooms)) return;
+        const total = rooms.reduce(
+          (sum, room) => sum + (Array.isArray(room.players) ? room.players.length : 0),
+          0
+        );
+        setCount(total);
+      } catch {
+        // silently keep previous value on error
+      }
+    };
+    load();
+    const interval = window.setInterval(load, 4000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return count;
+}
+
 export default function Home() {
   const heroRef = useRef(null);
+  const liveCount = useLivePlayerCount();
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -122,9 +160,9 @@ export default function Home() {
           <div className="hero-text">
             <div className="hero-eyebrow reveal">Competitive Typing Platform</div>
             <h1 className="hero-title reveal">
-              Type Fast.<br />
-              <span className="accent">Win Real</span><br />
-              Money.
+              Where Precision<br />
+              <span className="accent">Meets</span><br />
+              Prize Money.
             </h1>
             <p className="hero-sub reveal">
               Enter paid typing tournaments, race live opponents,
@@ -144,8 +182,10 @@ export default function Home() {
 
           <div className="hero-demo reveal">
             <LiveTypingDemo />
-            <div className="floating-badge badge-1">🔥 142 live now</div>
-            <div className="floating-badge badge-2">💰 KES 48,000 in prizes</div>
+            <div className="floating-badge badge-1">
+              🔥 {liveCount === null ? '—' : liveCount} live now
+            </div>
+            
           </div>
         </div>
       </section>
@@ -153,12 +193,12 @@ export default function Home() {
       {/* ── STATS STRIP ── */}
       <section className="stats-strip reveal">
         <div className="stat-item">
-          <span className="stat-number">24k+</span>
+          <span className="stat-number">100+</span>
           <span className="stat-desc">Registered typists</span>
         </div>
         <div className="stat-divider" />
         <div className="stat-item">
-          <span className="stat-number">KES 2M</span>
+          <span className="stat-number">KES 20,000</span>
           <span className="stat-desc">Total prizes paid out</span>
         </div>
         <div className="stat-divider" />

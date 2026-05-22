@@ -195,6 +195,98 @@ const playSound = (type) => {
   } catch {}
 };
 
+// ---------------------------------------------------------------------------
+// Commentator engine — football-match-style hype announcer via Web Speech API
+// ---------------------------------------------------------------------------
+const COMMENTATOR_LINES = {
+  entry: [
+    "Welcome to TypeArena! The crowd is on their feet! Are you ready to race?",
+    "Ladies and gentlemen, a new challenger has entered the arena! Let's go!",
+    "The stage is set, the crowd is roaring — TypeArena is LIVE!",
+    "Another racer steps up! The keyboard is your weapon — use it!",
+  ],
+  raceStart: [
+    "And they're OFF! Fingers flying across the keys!",
+    "The race has BEGUN! Every keystroke counts!",
+    "GO GO GO! The clock is ticking and the pressure is ON!",
+    "It's all happening NOW! Type like you mean it!",
+  ],
+  milestone25: [
+    "Twenty-five percent in! Looking sharp out there, keep the pace!",
+    "Quarter of the way! The momentum is building — don't let up!",
+    "Good start! Twenty-five percent done, seventy-five to go!",
+  ],
+  milestone50: [
+    "HALFWAY THERE! Absolutely incredible pace! Can they hold it?",
+    "Fifty percent! Right in the thick of it — this is where champions are made!",
+    "The halfway mark! Don't slow down now, the crowd is watching!",
+  ],
+  milestone75: [
+    "Seventy-five percent! They're in the home stretch, folks!",
+    "Three quarters DONE! The finish line is in sight!",
+    "Almost there! This is where legends separate from the rest!",
+  ],
+  streak10: [
+    "TEN in a row! Flawless accuracy! The crowd goes wild!",
+    "A ten-key streak! Not a single mistake! Magnificent!",
+  ],
+  streak25: [
+    "TWENTY-FIVE PERFECT KEYSTROKES! This is absolute DOMINANCE!",
+    "Twenty-five in a row! Someone call the record books!",
+  ],
+  error: [
+    "Ooh, a slip! Shake it off, shake it off!",
+    "Mistake! But champions recover — dig in!",
+    "Not to worry! Corrections happen — push through!",
+  ],
+  finish: [
+    "AND IT'S OVER! What a race! Absolutely breathtaking performance!",
+    "THE RACE IS COMPLETE! The crowd erupts! What a finish!",
+    "DONE! Give it up for our racer! An outstanding display of speed and accuracy!",
+  ],
+  waiting: [
+    "The opponent is being located — the crowd is on the edge of their seats!",
+    "Searching for a challenger… Someone brave enough to face you today?",
+  ],
+};
+
+let _commentatorLastSpokenAt = 0;
+const _commentatorCooldownMs = 4000; // prevent overlapping lines
+
+const speakCommentary = (lines, opts = {}) => {
+  if (!window.speechSynthesis) return;
+  const { force = false } = opts;
+  const now = Date.now();
+  if (!force && now - _commentatorLastSpokenAt < _commentatorCooldownMs) return;
+  _commentatorLastSpokenAt = now;
+
+  // Cancel any current utterance so new one cuts in cleanly
+  window.speechSynthesis.cancel();
+
+  const line = lines[Math.floor(Math.random() * lines.length)];
+  const utter = new SpeechSynthesisUtterance(line);
+  utter.rate = 1.15;   // slightly faster — excited commentator energy
+  utter.pitch = 1.1;
+  utter.volume = 0.9;
+
+  // Prefer a deep male voice if available (sports commentator feel)
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = voices.find((v) =>
+    /male|guy|david|james|daniel|mark|google uk english male/i.test(v.name)
+  );
+  if (preferred) utter.voice = preferred;
+
+  window.speechSynthesis.speak(utter);
+};
+
+// Pre-load voices (Chrome requires this trigger)
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.addEventListener('voiceschanged', () => {
+    window.speechSynthesis.getVoices();
+  });
+}
+
 const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
 const KEYBOARD_LAYOUT = [
   ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
@@ -431,6 +523,8 @@ export default function Play({ practicePage = false }){
   });
   // ── new feature state ──────────────────────────────────────────────────────
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [commentatorEnabled, setCommentatorEnabled] = useState(true);
+  const commentatorMilestonesRef = useRef({ m25: false, m50: false, m75: false });
   const [focusLost, setFocusLost] = useState(false);
   const [streak, setStreak] = useState(0);
   const [wpmHistory, setWpmHistory] = useState([]);       // [{t, wpm}] for sparkline
@@ -457,6 +551,18 @@ export default function Play({ practicePage = false }){
 
   useEffect(() => {
     fetchCurrentUser().then(setCurrentUser).catch(() => {});
+  }, []);
+
+  // Commentator: hype the player when they first land on the page
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (commentatorEnabled) {
+        speakCommentary(COMMENTATOR_LINES.entry, { force: true });
+      }
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  // Run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -782,6 +888,9 @@ const flushLiveHeartbeat = useCallback(async () => {
 
         // Play finish sound
         playSound('finish');
+        if (commentatorEnabled) {
+          setTimeout(() => speakCommentary(COMMENTATOR_LINES.finish, { force: true }), 600);
+        }
 
         const resultPayload = {
             ...finalData,
@@ -1080,9 +1189,13 @@ const flushLiveHeartbeat = useCallback(async () => {
       );
     }).catch(() => {});
 
+    commentatorMilestonesRef.current = { m25: false, m50: false, m75: false };
+    if (commentatorEnabled) {
+      speakCommentary(COMMENTATOR_LINES.raceStart, { force: true });
+    }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [currentUser?.id, duration, language, mode, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser?.id, duration, language, mode, redirectToProfile, showNotice]);
 
   const startPracticeRace = useCallback(() => {
     if (!currentUser?.id) {
@@ -1104,9 +1217,13 @@ const flushLiveHeartbeat = useCallback(async () => {
     setIsNewPB(false);
     setMistakeMap({});
     setFocusLost(false);
+    commentatorMilestonesRef.current = { m25: false, m50: false, m75: false };
+    if (commentatorEnabled) {
+      speakCommentary(COMMENTATOR_LINES.raceStart, { force: true });
+    }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [currentUser?.id, duration, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser?.id, duration, redirectToProfile, showNotice]);
 
 const backToLobby = useCallback(() => {
     isLeavingRef.current = true;
@@ -1378,11 +1495,39 @@ const createFriendBattle = async () => {
       const isCorrect = typedChar === expectedChar;
       if (soundEnabled) playSound(isCorrect ? 'key' : 'error');
       if (isCorrect) {
-        setStreak((s) => s + 1);
+        setStreak((s) => {
+          const newStreak = s + 1;
+          // Commentator: streak milestones
+          if (commentatorEnabled) {
+            if (newStreak === 10) speakCommentary(COMMENTATOR_LINES.streak10);
+            else if (newStreak === 25) speakCommentary(COMMENTATOR_LINES.streak25);
+          }
+          return newStreak;
+        });
       } else {
         setStreak(0);
         if (expectedChar) {
           setMistakeMap((m) => ({ ...m, [expectedChar]: (m[expectedChar] || 0) + 1 }));
+        }
+        // Commentator: occasional error reaction (not every error — 1-in-6 chance)
+        if (commentatorEnabled && Math.random() < 0.17) {
+          speakCommentary(COMMENTATOR_LINES.error);
+        }
+      }
+
+      // Commentator: progress milestones
+      if (commentatorEnabled && src.length > 0) {
+        const pct = newLen / src.length;
+        const ms = commentatorMilestonesRef.current;
+        if (!ms.m25 && pct >= 0.25) {
+          ms.m25 = true;
+          speakCommentary(COMMENTATOR_LINES.milestone25);
+        } else if (!ms.m50 && pct >= 0.50) {
+          ms.m50 = true;
+          speakCommentary(COMMENTATOR_LINES.milestone50);
+        } else if (!ms.m75 && pct >= 0.75) {
+          ms.m75 = true;
+          speakCommentary(COMMENTATOR_LINES.milestone75);
         }
       }
     }
@@ -1568,6 +1713,20 @@ const createFriendBattle = async () => {
                 style={{ fontSize: '0.8rem' }}
               >
                 {soundEnabled ? '🔊 Sound On' : '🔇 Sound Off'}
+              </button>
+              <button
+                className={`btn btn-sm ${commentatorEnabled ? 'btn-outline-primary' : 'btn-outline-danger'}`}
+                onClick={() => {
+                  setCommentatorEnabled((c) => {
+                    const next = !c;
+                    if (!next) window.speechSynthesis?.cancel();
+                    return next;
+                  });
+                }}
+                title="Toggle live commentator"
+                style={{ fontSize: '0.8rem' }}
+              >
+                {commentatorEnabled ? '📣 Commentator On' : '🔕 Commentator Off'}
               </button>
             </div>
           </div>
