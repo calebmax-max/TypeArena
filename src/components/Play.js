@@ -585,13 +585,15 @@ const flushLiveHeartbeat = useCallback(async () => {
   }, [phase]);
 
   useEffect(() => {
-    if (!liveRoom?.id || (phase !== 'queued' && phase !== 'racing' && phase !== 'waiting' && phase !== 'results')) {
+    if (!liveRoom?.id || phase === 'lobby' || phase === 'results') {
       return undefined;
     }
 
+    const roomId = liveRoom.id;
+
     const interval = window.setInterval(async () => {
       try {
-        const room = await fetchLiveRaceRoom(liveRoom.id);
+        const room = await fetchLiveRaceRoom(roomId);
         if (isLeavingRef.current) return;
         setLiveRoom(room);
         if (room.status === 'completed') {
@@ -616,7 +618,9 @@ const flushLiveHeartbeat = useCallback(async () => {
     }, phase === 'queued' ? 1500 : 2200);
 
     return () => window.clearInterval(interval);
-  }, [buildRoomResultPayload, countdownRemaining, liveRoom, phase, syncRoomClock]);
+  // liveRoom.id is captured as roomId above — the full object is intentionally excluded
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildRoomResultPayload, countdownRemaining, liveRoom?.id, phase, syncRoomClock]);
 
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown') {
@@ -774,6 +778,8 @@ const flushLiveHeartbeat = useCallback(async () => {
       redirectToProfile();
       return;
     }
+    isLeavingRef.current = false;
+    isSubmittingRef.current = false;
 
     setLiveRoom(null);
     setTypingText('');
@@ -811,11 +817,6 @@ const backToLobby = useCallback(() => {
     setNotice('');
     setShowPracticeModes(false);
     setPhase('lobby');
-
-    // Clear the leaving flag after state has flushed
-    setTimeout(() => {
-      isLeavingRef.current = false;
-    }, 100);
   }, []);
 
   const startLiveRace = async () => {
@@ -823,6 +824,8 @@ const backToLobby = useCallback(() => {
       redirectToProfile();
       return;
     }
+    isLeavingRef.current = false;
+    isSubmittingRef.current = false;
 
     setLoadingLive(true);
     setNotice('');
@@ -855,12 +858,13 @@ const createFriendBattle = async () => {
       return;
     }
 
-    // 🔴 CRITICAL FIX: Kill any lingering countdown loops from previous runs
-    // so trailing 404 responses don't fire midway through this action!
+    // Kill any lingering countdown loops from previous runs
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    isLeavingRef.current = false;
+    isSubmittingRef.current = false;
     setLiveRoom(null);
 
     setLoadingLive(true);
@@ -909,6 +913,8 @@ const createFriendBattle = async () => {
       redirectToProfile();
       return;
     }
+    isLeavingRef.current = false;
+    isSubmittingRef.current = false;
 
     setLoadingLive(true);
     setNotice('');
