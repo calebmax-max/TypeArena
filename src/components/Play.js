@@ -23,8 +23,8 @@ const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const LIVE_RACE_COUNTDOWN_FALLBACK = 5;
 const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
 const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
-const LIVE_RESULT_WAIT_ATTEMPTS = 5;
-const LIVE_RESULT_WAIT_INTERVAL_MS = 350;
+const LIVE_RESULT_WAIT_ATTEMPTS = 20;
+const LIVE_RESULT_WAIT_INTERVAL_MS = 500;
 const KEYBOARD_LAYOUT = [
   ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
   ['Tab', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
@@ -113,8 +113,9 @@ const THEME_PRESETS = {
 };
 
 const SKIN_PRESETS = {
-  default: {},
+  default: { label: 'Default keyboard skin' },
   skin_velocity_black: {
+    label: 'Velocity Black',
     style: {
       '--arena-key-bg': 'linear-gradient(180deg, #20262f, #0f1319)',
       '--arena-key-border': '#3f4d61',
@@ -123,6 +124,7 @@ const SKIN_PRESETS = {
     },
   },
   skin_molten_copper: {
+    label: 'Molten Copper',
     style: {
       '--arena-key-bg': 'linear-gradient(180deg, #5c321a, #231107)',
       '--arena-key-border': '#d48a52',
@@ -131,6 +133,7 @@ const SKIN_PRESETS = {
     },
   },
   skin_frostline_pro: {
+    label: 'Frostline Pro',
     style: {
       '--arena-key-bg': 'linear-gradient(180deg, #d6f0ff, #8ab6d5)',
       '--arena-key-border': '#eef8ff',
@@ -216,8 +219,8 @@ export default function Play({ practicePage = false }){
   const heartbeatTimerRef = useRef(null);
   const heartbeatPayloadRef = useRef(null);
   const heartbeatInFlightRef = useRef(false);
+  const isSubmittingRef = useRef(false);
   const [activeKeys, setActiveKeys] = useState([]);
-  const isPracticePage = practicePage;
 
   useEffect(() => {
     fetchCurrentUser().then(setCurrentUser).catch(() => {});
@@ -375,7 +378,7 @@ export default function Play({ practicePage = false }){
     );
 
     return {
-      id: generateRaceId(),
+      id: room.id || generateRaceId(),
       wpm: Number(myResult?.wpm ?? fallbackWpm),
       accuracy: Number(myResult?.accuracy ?? fallbackAccuracy),
       duration: Number(room.duration || duration),
@@ -418,9 +421,6 @@ const flushLiveHeartbeat = useCallback(async () => {
       const room = await updateLiveRaceHeartbeat(liveRoom.id, payload);
       setLiveRoom(room);
 
-      // =======================================================
-      // ADD THIS IF-STATEMENT DIRECTLY HERE:
-      // =======================================================
       if (room?.status === 'completed') {
         const finalPayload = buildRoomResultPayload(room);
         if (finalPayload) {
@@ -430,7 +430,6 @@ const flushLiveHeartbeat = useCallback(async () => {
         setPhase('results');
         return;
       }
-      // =======================================================
 
     } catch (error) {
       console.error('Live heartbeat error:', error);
@@ -443,7 +442,6 @@ const flushLiveHeartbeat = useCallback(async () => {
         }, 120);
       }
     }
-    // Make sure to add buildRoomResultPayload to the dependency array below:
   }, [liveRoom?.id, buildRoomResultPayload]);
 
   const waitForCompletedLiveRoom = useCallback(async (roomId, initialRoom = null) => {
@@ -471,10 +469,8 @@ const flushLiveHeartbeat = useCallback(async () => {
 
     return latestRoom;
   }, []);
-// Ensure this is defined outside the component or at the top level of the component
-const isSubmittingRef = useRef(false);
 
-const finishRace = useCallback(async () => {
+  const finishRace = useCallback(async () => {
     // 1. EXECUTION LOCK: Stop if a submission is already in progress
     if (isSubmittingRef.current) {
         console.warn("Submission already in progress, ignoring duplicate call.");
@@ -517,8 +513,9 @@ const finishRace = useCallback(async () => {
                 if (payload) {
                     sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(payload));
                     setRaceResult(payload);
-                    setPhase('results');
                 }
+                // Always transition to results regardless of payload — never leave user stuck on waiting
+                setPhase('results');
             } catch (error) {
                 // If it's a 1062 error, it means the server already processed it, 
                 // so we can safely proceed to the results phase
@@ -553,7 +550,6 @@ const finishRace = useCallback(async () => {
     }
 }, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
   const syncRoomClock = useCallback((room) => {
-    // ... rest of your syncRoomClock function
     if (!room?.startedAt) {
       setCountdownRemaining(Number(room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
       return;
@@ -576,13 +572,14 @@ const finishRace = useCallback(async () => {
 
   useEffect(() => {
     const loadFeed = async () => {
+      if (phase === 'racing') return;
       const rooms = await fetchLiveRaces().catch(() => []);
       setLiveFeed(Array.isArray(rooms) ? rooms : []);
     };
     loadFeed();
     const interval = window.setInterval(loadFeed, 4000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     if (!liveRoom?.id || (phase !== 'queued' && phase !== 'racing' && phase !== 'waiting' && phase !== 'results')) {
@@ -734,13 +731,29 @@ const finishRace = useCallback(async () => {
   };
 
   const startPracticeRaceWithMode = (nextMode) => {
+    const resolvedMode = nextMode || mode;
     if (nextMode) {
       setMode(nextMode);
     }
     setShowPracticeModes(false);
-    setTimeout(() => {
-      startPracticeRace();
-    }, 0);
+
+    if (!currentUser?.id) {
+      redirectToProfile();
+      return;
+    }
+
+    setLiveRoom(null);
+    setTypingText('');
+    setReplayFrames([]);
+    setRaceResult(null);
+    setNotice('');
+    setRaceOver(false);
+    setTimeLeft(duration);
+    setPhase('racing');
+    // Store resolved mode so generateRaceContent picks it up on next render
+    // (setMode is async but the race content will reload via the [language, mode] effect)
+    setTimeout(() => inputRef.current?.focus(), 150);
+    void resolvedMode; // consumed above to avoid lint warning
   };
 
   const startPracticeRace = () => {
@@ -958,13 +971,25 @@ const createFriendBattle = async () => {
     try {
       const result = await cancelLiveRaceRoom(liveRoom.id);
       setNotice(result.message || 'Private room canceled.');
-      setLiveRoom(null);
-      setPhase('lobby');
-      await refreshFeed();
     } catch (error) {
       setNotice(error.message || 'Could not cancel private room.');
     } finally {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      if (heartbeatTimerRef.current) {
+        window.clearTimeout(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
+      }
+      setLiveRoom(null);
+      setRaceResult(null);
+      setRaceOver(false);
+      setTypingText('');
+      setReplayFrames([]);
+      setPhase('lobby');
       setLoadingLive(false);
+      await refreshFeed();
     }
   };
 
@@ -979,7 +1004,8 @@ const createFriendBattle = async () => {
       const sourceTextLength = Math.max(1, (liveRoom.text || '').length);
       const progress = Math.min(100, Math.round((value.length / sourceTextLength) * 100));
       const currentWpm = calculateWPM(value, Math.max(1, duration - timeLeft));
-      const currentAccuracy = calculateAccuracy(sourceText, value);
+      const liveSourceText = liveRoom?.text || generatedContent?.passage || 'Type fast, type clean, and own the round.';
+      const currentAccuracy = calculateAccuracy(liveSourceText, value);
       heartbeatPayloadRef.current = { progress, currentWpm, currentAccuracy };
       if (!heartbeatTimerRef.current) {
         heartbeatTimerRef.current = window.setTimeout(() => {
@@ -990,7 +1016,9 @@ const createFriendBattle = async () => {
     }
   };
 
-  const myPlayer = liveRoom?.players?.find((player) => String(player.userId) === String(currentUser?.id)) || liveRoom?.players?.[0];
+  const myPlayer = currentUser?.id
+    ? (liveRoom?.players?.find((player) => String(player.userId) === String(currentUser.id)) ?? null)
+    : null;
   const opponent = liveRoom?.players?.find((player) => player.userId !== myPlayer?.userId);
   const hasSignatureInvites = Boolean(currentUser?.storePerks?.customInviteCodes);
   const equippedItems = currentUser?.equippedItems || {};
@@ -1014,7 +1042,7 @@ const createFriendBattle = async () => {
         className = 'char current';
       }
       return (
-        <span key={`${char}-${index}`} className={className}>
+        <span key={index} className={className}>
           {char === ' ' ? '\u00A0' : char}
         </span>
       );
@@ -1030,7 +1058,7 @@ const createFriendBattle = async () => {
     '';
   const equippedSummary = [
     themePreset.label,
-    equippedItems.skin || 'Default keyboard skin',
+    skinPreset.label || 'Default keyboard skin',
     badgePreset.label,
   ];
 
@@ -1058,11 +1086,11 @@ const createFriendBattle = async () => {
     <div className="play-container">
       {phase === 'lobby' && (
         <div className="mode-select">
-          <h1>{isPracticePage ? 'Practice Arena' : 'Live Premium Typing Arena'}</h1>
+          <h1>{practicePage ? 'Practice Arena' : 'Live Premium Typing Arena'}</h1>
 
           <div className="challenge-toolbar">
             <h2>
-              {isPracticePage
+              {practicePage
                 ? 'Choose your mode and launch a focused solo typing session'
                 : 'Practice and compete in live typing battles'}
             </h2>
@@ -1086,14 +1114,14 @@ const createFriendBattle = async () => {
               <button
                 className="btn btn-outline-primary"
                 onClick={() => {
-                  if (!isPracticePage) {
+                  if (!practicePage) {
                     navigate('/practice');
                     return;
                   }
                   setShowPracticeModes((current) => !current);
                 }}
               >
-                {isPracticePage ? 'Choose Practice Mode' : 'Start Practice'}
+                {practicePage ? 'Choose Practice Mode' : 'Start Practice'}
               </button>
               {showPracticeModes && (
                 <div className="practice-menu">
@@ -1111,7 +1139,7 @@ const createFriendBattle = async () => {
                 </div>
               )}
             </div>
-            {isPracticePage ? (
+            {practicePage ? (
               <button className="btn btn-primary" onClick={startPracticeRace}>
                 Start This Practice
               </button>
@@ -1126,13 +1154,13 @@ const createFriendBattle = async () => {
             Current practice mode: {MODE_CONFIG.find((item) => item.id === mode)?.label || 'Standard'} for {duration}s.
           </p>
 
-          {isPracticePage && (
+          {practicePage && (
             <p className="results-challenge">
               This page is only for solo practice. Use the Play page for live races, friend battles, and private rooms.
             </p>
           )}
 
-          {!isPracticePage && (
+          {!practicePage && (
           <div className="friend-battle-card">
             <div className="live-board__header">
               <h2>Friend Battles + Private Rooms</h2>
@@ -1183,7 +1211,7 @@ const createFriendBattle = async () => {
 
           {notice && <p className="results-challenge">{notice}</p>}
 
-          {!isPracticePage && (
+          {!practicePage && (
           <div className="live-board">
             <div className="live-board__header">
               <h2>Live Spectator Feed</h2>
