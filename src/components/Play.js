@@ -205,6 +205,7 @@ export default function Play({ practicePage = false }){
   const [currentUser, setCurrentUser] = useState(null);
   const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [showPracticeModes, setShowPracticeModes] = useState(false);
+  const [raceOver, setRaceOver] = useState(false);
   const [friendBattle, setFriendBattle] = useState({
     inviteCode: '',
     password: '',
@@ -551,37 +552,6 @@ const finishRace = useCallback(async () => {
         isSubmittingRef.current = false;
     }
 }, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
-    // 4. Default case: Not a live room
-    const resultPayload = {
-      ...finalData,
-      netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
-      coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
-      replayFrames,
-      shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
-      completedAt: new Date().toISOString(),
-    };
-
-    sessionStorage.setItem(
-  LATEST_RACE_RESULT_KEY,
-  JSON.stringify(resultPayload)
-);
-
-setRaceResult(resultPayload);
-setPhase('results');
- [
-  duration,
-  timeLeft,
-  liveRoom,
-  generatedContent,
-  mode,
-  language,
-  typingText,
-  replayFrames,
-  setPhase,
-  waitForCompletedLiveRoom,
-  buildRoomResultPayload,
-  setRaceResult
-  ];
   const syncRoomClock = useCallback((room) => {
     // ... rest of your syncRoomClock function
     if (!room?.startedAt) {
@@ -732,6 +702,7 @@ setPhase('results');
 
         if (raceRemaining <= 0) {
           window.clearInterval(timerRef.current);
+          setRaceOver(true);
           finishRace();
         }
         return; 
@@ -741,6 +712,7 @@ setPhase('results');
       setTimeLeft((current) => {
         if (current <= 1) {
           window.clearInterval(timerRef.current);
+          setRaceOver(true);
           finishRace();
           return 0;
         }
@@ -777,6 +749,7 @@ setPhase('results');
     setReplayFrames([]);
     setRaceResult(null);
     setNotice('');
+    setRaceOver(false);
     setTimeLeft(duration);
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
@@ -799,6 +772,7 @@ const backToLobby = useCallback(() => {
     setTypingText('');
     setReplayFrames([]);
     setNotice('');
+    setRaceOver(false);
     setShowPracticeModes(false);
     setPhase('lobby');
 
@@ -828,6 +802,7 @@ const backToLobby = useCallback(() => {
       setTypingText('');
       setReplayFrames([]);
       setRaceResult(null);
+      setRaceOver(false);
       setPhase('queued');
       setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
       setTimeLeft(Number(response.room?.duration || duration));
@@ -874,6 +849,7 @@ const createFriendBattle = async () => {
       setTypingText('');
       setReplayFrames([]);
       setRaceResult(null);
+      setRaceOver(false);
       setPhase('queued');
       setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
       setTimeLeft(Number(response.room?.duration || duration));
@@ -909,6 +885,7 @@ const createFriendBattle = async () => {
       setLiveRoom(response.room);
       setTypingText('');
       setRaceResult(null);
+      setRaceOver(false);
       setMode(response.room.mode || mode);
       setLanguage(response.room.language || language);
       setDuration(Number(response.room.duration || duration));
@@ -1225,8 +1202,20 @@ const createFriendBattle = async () => {
 
       {phase === 'queued' && (
         <div className="race-results">
-          <h1>Queued for Live Race</h1>
-          <p className="results-challenge">{notice || 'Waiting for an opponent to join your room.'}</p>
+          {liveRoom?.status === 'countdown' || liveRoom?.status === 'racing' ? (
+            <>
+              <h1>Race Starting!</h1>
+              <div className="countdown-display" style={{ fontSize: '5rem', fontWeight: 700, color: 'var(--arena-accent, #22c55e)', margin: '1rem 0' }}>
+                {countdownRemaining > 0 ? countdownRemaining : 'GO!'}
+              </div>
+              <p className="results-challenge">Get ready — race begins in {Math.max(0, countdownRemaining)} seconds</p>
+            </>
+          ) : (
+            <>
+              <h1>Queued for Live Race</h1>
+              <p className="results-challenge">{notice || 'Waiting for an opponent to join your room.'}</p>
+            </>
+          )}
           {(liveRoom?.inviteCode || friendBattle.inviteCode) && (
             <p className="results-challenge">Invite code: {liveRoom?.inviteCode || friendBattle.inviteCode}</p>
           )}
@@ -1371,6 +1360,7 @@ const createFriendBattle = async () => {
                 spellCheck="false"
                 autoCapitalize="off"
                 autoCorrect="off"
+                disabled={raceOver}
               />
             </div>
             {!liveRoom?.text && generatedContent?.antiCheatHint && (
