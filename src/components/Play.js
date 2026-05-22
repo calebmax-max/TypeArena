@@ -404,7 +404,7 @@ export default function Play({ practicePage = false }) {
   }, [buildRoomStandings, currentUser?.id, duration, generatedContent?.passage, language, mode, replayFrames, timeLeft, typingText]);
 
 
-const flushLiveHeartbeat = useCallback(async () => {
+  const flushLiveHeartbeat = useCallback(async () => {
     if (!liveRoom?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
       return;
     }
@@ -1383,4 +1383,4 @@ const flushLiveHeartbeat = useCallback(async () => {
       )}
     </div>
   );
-
+}; // This closes the const Play = () => {
