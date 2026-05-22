@@ -725,7 +725,8 @@ const finishRace = useCallback(async () => {
     setTimeout(() => inputRef.current?.focus(), 150);
   };
 
-  const backToLobby = useCallback(() => {
+const backToLobby = useCallback(() => {
+    // 1. Explicitly kill the active countdown/sync intervals before wiping state
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
@@ -735,6 +736,7 @@ const finishRace = useCallback(async () => {
       heartbeatTimerRef.current = null;
     }
 
+    // 2. Reset all local gameplay states
     setLiveRoom(null);
     setRaceResult(null);
     setTypingText('');
@@ -743,17 +745,51 @@ const finishRace = useCallback(async () => {
     setShowPracticeModes(false);
     setPhase('lobby');
 
+    // 3. Defer navigation out of the call stack loop to let state flush cleanly
     setTimeout(() => {
       navigate('/play', { replace: true }); 
     }, 50);
+    
   }, [navigate]);
 
-  const createFriendBattle = async () => {
+  const startLiveRace = async () => {
     if (!currentUser?.id) {
       redirectToProfile();
       return;
     }
 
+    setLoadingLive(true);
+    setNotice('');
+    try {
+      const response = await queueLiveRace({
+        mode,
+        language,
+        duration,
+        winnerPrize: Math.round((duration / 60) * 150),
+      });
+      setLiveRoom(response.room);
+      setTypingText('');
+      setReplayFrames([]);
+      setRaceResult(null);
+      setPhase('queued');
+      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
+      setTimeLeft(Number(response.room?.duration || duration));
+      setNotice(response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player...');
+      refreshFeed();
+    } catch (error) {
+      setNotice(error.message || 'Could not join a live race.');
+    } finally {
+      setLoadingLive(false);
+    }
+  };
+const createFriendBattle = async () => {
+    if (!currentUser?.id) {
+      redirectToProfile();
+      return;
+    }
+
+    // 🔴 CRITICAL FIX: Kill any lingering countdown loops from previous runs
+    // so trailing 404 responses don't fire midway through this action!
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
@@ -772,6 +808,7 @@ const finishRace = useCallback(async () => {
         password: friendBattle.password,
       });
       
+      // Explicit verify guard
       if (!response || !response.room) {
         throw new Error("Server response missing room details.");
       }
@@ -790,6 +827,8 @@ const finishRace = useCallback(async () => {
       refreshFeed();
     } catch (error) {
       console.error("Error creating friend battle:", error);
+      
+      // Keep the user in the lobby space instead of throwing them to Profile
       setPhase('lobby'); 
       setNotice(error.response?.data?.message || error.message || 'Could not create friend battle.');
     } finally {
@@ -972,116 +1011,7 @@ const finishRace = useCallback(async () => {
     link.click();
     URL.revokeObjectURL(url);
   };
-  const backToLobby = useCallback(() => {
-    // 1. Explicitly kill the active countdown/sync intervals before wiping state
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (heartbeatTimerRef.current) {
-      window.clearTimeout(heartbeatTimerRef.current);
-      heartbeatTimerRef.current = null;
-    }
-
-    // 2. Reset all local gameplay states
-    setLiveRoom(null);
-    setRaceResult(null);
-    setTypingText('');
-    setReplayFrames([]);
-    setNotice('');
-    setShowPracticeModes(false);
-    setPhase('lobby');
-
-    // 3. Defer navigation out of the call stack loop to let state flush cleanly
-    setTimeout(() => {
-      navigate('/play', { replace: true }); 
-    }, 50);
-    
-  }, [navigate]);
-
-  const startLiveRace = async () => {
-    if (!currentUser?.id) {
-      redirectToProfile();
-      return;
-    }
-
-    setLoadingLive(true);
-    setNotice('');
-    try {
-      const response = await queueLiveRace({
-        mode,
-        language,
-        duration,
-        winnerPrize: Math.round((duration / 60) * 150),
-      });
-      setLiveRoom(response.room);
-      setTypingText('');
-      setReplayFrames([]);
-      setRaceResult(null);
-      setPhase('queued');
-      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
-      setTimeLeft(Number(response.room?.duration || duration));
-      setNotice(response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player...');
-      refreshFeed();
-    } catch (error) {
-      setNotice(error.message || 'Could not join a live race.');
-    } finally {
-      setLoadingLive(false);
-    }
-  };
-const createFriendBattle = async () => {
-    if (!currentUser?.id) {
-      redirectToProfile();
-      return;
-    }
-
-    // 🔴 CRITICAL FIX: Kill any lingering countdown loops from previous runs
-    // so trailing 404 responses don't fire midway through this action!
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setLiveRoom(null);
-
-    setLoadingLive(true);
-    setNotice('');
-    try {
-      const response = await queueLiveRace({
-        mode,
-        language,
-        duration,
-        isPrivate: true,
-        inviteCode: friendBattle.customInviteCode.trim(),
-        password: friendBattle.password,
-      });
-      
-      // Explicit verify guard
-      if (!response || !response.room) {
-        throw new Error("Server response missing room details.");
-      }
-
-      setLiveRoom(response.room);
-      setTypingText('');
-      setReplayFrames([]);
-      setRaceResult(null);
-      setPhase('queued');
-      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
-      setTimeLeft(Number(response.room?.duration || duration));
-      setFriendBattle((prev) => ({ ...prev, inviteCode: response.room.inviteCode || '' }));
-      setNotice(
-        response.message || `Private room created. Share invite code ${response.room.inviteCode} with your opponent so they can join.`
-      );
-      refreshFeed();
-    } catch (error) {
-      console.error("Error creating friend battle:", error);
-      
-      // Keep the user in the lobby space instead of throwing them to Profile
-      setPhase('lobby'); 
-      setNotice(error.response?.data?.message || error.message || 'Could not create friend battle.');
-    } finally {
-      setLoadingLive(false);
-    }
-  };
+  
 
   return (
     <div className="play-container">
