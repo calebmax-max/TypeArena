@@ -494,33 +494,29 @@ const flushLiveHeartbeat = useCallback(async () => {
       console.error('Practice race submit error:', error);
     }
 
- // 3. Handle Live Room Submission
+    // 3. Handle Live Room Submission
     if (liveRoom?.id) {
       try {
         await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
         setPhase('waiting');
+
+        // USE THE FUNCTION HERE to wait for the server to confirm completion
+        const finalRoom = await waitForCompletedLiveRoom(liveRoom.id, liveRoom);
+        
+        const finalPayload = buildRoomResultPayload(finalRoom);
+        if (finalPayload) {
+          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
+          setRaceResult(finalPayload);
+          setPhase('results');
+        }
       } catch (error) {
         console.error('Live race submit error:', error);
       }
       return;
     }
 
-    // 4. Default case: Not a live room
-    const resultPayload = {
-      ...finalData,
-      netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
-      coachTip: accuracy < 92 
-        ? 'Accuracy dipped. Try smoother keystrokes.' 
-        : 'Strong run. Keep your rhythm.',
-      replayFrames,
-      shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
-      completedAt: new Date().toISOString(),
-    };
-
-    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
-    setRaceResult(resultPayload);
-    setPhase('results');
-  }, [duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText]);
+    // ... (Keep the rest of your default result payload logic below)
+  }, [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom]);
   const syncRoomClock = useCallback((room) => {
     // ... rest of your syncRoomClock function
     if (!room?.startedAt) {
