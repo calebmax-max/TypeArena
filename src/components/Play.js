@@ -551,6 +551,37 @@ const finishRace = useCallback(async () => {
         isSubmittingRef.current = false;
     }
 }, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, waitForCompletedLiveRoom, buildRoomResultPayload, setRaceResult]);
+    // 4. Default case: Not a live room
+    const resultPayload = {
+      ...finalData,
+      netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+      coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
+      replayFrames,
+      shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
+      completedAt: new Date().toISOString(),
+    };
+
+    sessionStorage.setItem(
+  LATEST_RACE_RESULT_KEY,
+  JSON.stringify(resultPayload)
+);
+
+setRaceResult(resultPayload);
+setPhase('results');
+ [
+  duration,
+  timeLeft,
+  liveRoom,
+  generatedContent,
+  mode,
+  language,
+  typingText,
+  replayFrames,
+  setPhase,
+  waitForCompletedLiveRoom,
+  buildRoomResultPayload,
+  setRaceResult
+  ];
   const syncRoomClock = useCallback((room) => {
     // ... rest of your syncRoomClock function
     if (!room?.startedAt) {
@@ -584,7 +615,7 @@ const finishRace = useCallback(async () => {
   }, []);
 
   useEffect(() => {
-    if (!liveRoom?.id || (phase !== 'queued' && phase !== 'racing' && phase !== 'results')) {
+    if (!liveRoom?.id || (phase !== 'queued' && phase !== 'racing' && phase !== 'waiting' && phase !== 'results')) {
       return undefined;
     }
 
@@ -603,7 +634,7 @@ const finishRace = useCallback(async () => {
         }
         syncRoomClock(room);
         if (phase === 'queued') {
-          if (room.status !== 'waiting' && countdownRemaining <= 0) {
+          if (room.status === 'racing' || (room.status !== 'waiting' && countdownRemaining <= 0)) {
             setPhase('racing');
             setTimeout(() => inputRef.current?.focus(), 150);
           }
@@ -1212,6 +1243,37 @@ const createFriendBattle = async () => {
               Back to Lobby
             </button>
           </div>
+        </div>
+      )}
+
+      {phase === 'waiting' && (
+        <div className="race-results">
+          <h1>Result Submitted!</h1>
+          <p className="results-challenge">Waiting for your opponent to finish...</p>
+          {liveRoom?.players && (
+            <div className="results-grid" style={{ marginTop: '1.5rem' }}>
+              {liveRoom.players.map((player) => {
+                const hasSubmitted = Boolean(player?.result);
+                const isMe = String(player.userId) === String(currentUser?.id);
+                return (
+                  <div key={player.userId} className="result-card">
+                    <span className="result-label">{isMe ? 'You' : (player.username || 'Opponent')}</span>
+                    <span className="result-value" style={{ color: hasSubmitted ? 'var(--arena-accent, #22c55e)' : 'var(--arena-muted, #aaa)' }}>
+                      {hasSubmitted ? '✓ Done' : '⏳ Racing...'}
+                    </span>
+                    {hasSubmitted && player.result?.wpm != null && (
+                      <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem' }}>
+                        {Number(player.result.wpm).toFixed(1)} WPM · {Number(player.result.accuracy).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="results-challenge" style={{ marginTop: '1rem', fontSize: '0.85rem', opacity: 0.7 }}>
+            Results will appear automatically once both players finish.
+          </p>
         </div>
       )}
 
