@@ -404,7 +404,7 @@ export default function Play({ practicePage = false }) {
   }, [buildRoomStandings, currentUser?.id, duration, generatedContent?.passage, language, mode, replayFrames, timeLeft, typingText]);
 
 
-  const flushLiveHeartbeat = useCallback(async () => {
+const flushLiveHeartbeat = useCallback(async () => {
     if (!liveRoom?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
       return;
     }
@@ -494,24 +494,18 @@ export default function Play({ practicePage = false }) {
       console.error('Practice race submit error:', error);
     }
 
-    // 3. Handle Live Room Submission
+ // 3. Handle Live Room Submission
     if (liveRoom?.id) {
       try {
-        // Send the result to the server
         await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
-        
-        // Switch to the 'waiting' phase instead of jumping to results.
-        // This keeps the user in the liveRoom state so the heartbeat/polling 
-        // can detect when the server flips the room status to 'completed'.
         setPhase('waiting');
-        
       } catch (error) {
         console.error('Live race submit error:', error);
       }
-      return; // Exit here; the polling effect will transition us to 'results'
+      return;
     }
 
-    // 4. Default case: Not a live room, just show results immediately
+    // 4. Default case: Not a live room
     const resultPayload = {
       ...finalData,
       netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
@@ -526,32 +520,9 @@ export default function Play({ practicePage = false }) {
     sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
     setRaceResult(resultPayload);
     setPhase('results');
-  }, [buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText]);
-
-    const resultPayload = {
-      ...finalData,
-      netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
-      coachTip:
-        accuracy < 92
-          ? 'Accuracy dipped. Try smoother keystrokes and avoid forcing speed.'
-          : 'Strong run. Keep your rhythm and push for a faster opening burst.',
-      replayFrames,
-      shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
-      winnerPrize: Number(liveRoom?.winnerPrize || 0),
-      completedAt: new Date().toISOString(),
-      winnerUserId: liveRoom?.winnerUserId || null,
-      winnerUsername:
-        liveRoom?.winnerUsername ||
-        liveRoom?.players?.find((player) => String(player.userId) === String(liveRoom?.winnerUserId))?.username ||
-        '',
-    };
-
-    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(resultPayload));
-    setRaceResult(resultPayload);
-    setPhase('results');
-  } ([buildRoomResultPayload, duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText, waitForCompletedLiveRoom]);
-
+  }, [duration, generatedContent, language, liveRoom, mode, replayFrames, timeLeft, typingText]);
   const syncRoomClock = useCallback((room) => {
+    // ... rest of your syncRoomClock function
     if (!room?.startedAt) {
       setCountdownRemaining(Number(room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
       return;
@@ -1383,4 +1354,4 @@ export default function Play({ practicePage = false }) {
       )}
     </div>
   );
-}; // This closes the const Play = () => {
+}
