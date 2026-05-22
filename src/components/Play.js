@@ -632,7 +632,12 @@ const finishRace = useCallback(async () => {
   }, []);
 
   useEffect(() => {
-  if (liveRoom?.status === 'completed' && phase !== 'results') {
+  // Only auto-advance to results from an active game phase, never from lobby
+  if (
+    liveRoom?.status === 'completed' &&
+    phase !== 'results' &&
+    phase !== 'lobby'
+  ) {
     const finalPayload = buildRoomResultPayload(liveRoom);
 
     if (finalPayload) {
@@ -672,8 +677,8 @@ const finishRace = useCallback(async () => {
 
     
     useEffect(() => {
-    // 1. Structural Guard: Don't start loops if in the lobby or no room exists
-    if (!liveRoom || phase === 'lobby') {
+    // 1. Structural Guard: Only run the race timer during active racing
+    if (!liveRoom || phase !== 'racing') {
       if (timerRef.current) window.clearInterval(timerRef.current);
       return;
     }
@@ -683,7 +688,7 @@ const finishRace = useCallback(async () => {
 
     timerRef.current = window.setInterval(() => {
       // 2. Closure Guard: Prevent ticks if states mutated or cleared mid-cycle
-      if (!liveRoom?.id || phase === 'lobby') {
+      if (!liveRoom?.id || phase !== 'racing') {
         window.clearInterval(timerRef.current);
         return;
       }
@@ -766,13 +771,15 @@ const backToLobby = useCallback(() => {
       heartbeatTimerRef.current = null;
     }
 
-    // 2. Reset all local gameplay states
+    // 2. Reset all local gameplay states — including sessionStorage so
+    // the stale result doesn't get restored on next mount
+    sessionStorage.removeItem(LATEST_RACE_RESULT_KEY);
     setLiveRoom(null);
     setRaceResult(null);
+    setRaceOver(false);
     setTypingText('');
     setReplayFrames([]);
     setNotice('');
-    setRaceOver(false);
     setShowPracticeModes(false);
     setPhase('lobby');
 
