@@ -220,6 +220,7 @@ export default function Play({ practicePage = false }){
   const heartbeatPayloadRef = useRef(null);
   const heartbeatInFlightRef = useRef(false);
   const isSubmittingRef = useRef(false);
+  const isLeavingRef = useRef(false);
   const [activeKeys, setActiveKeys] = useState([]);
 
   useEffect(() => {
@@ -419,6 +420,7 @@ const flushLiveHeartbeat = useCallback(async () => {
 
     try {
       const room = await updateLiveRaceHeartbeat(liveRoom.id, payload);
+      if (isLeavingRef.current) return;
       setLiveRoom(room);
 
       if (room?.status === 'completed') {
@@ -589,6 +591,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     const interval = window.setInterval(async () => {
       try {
         const room = await fetchLiveRaceRoom(liveRoom.id);
+        if (isLeavingRef.current) return;
         setLiveRoom(room);
         if (room.status === 'completed') {
           const finalPayload = buildRoomResultPayload(room);
@@ -633,7 +636,8 @@ const flushLiveHeartbeat = useCallback(async () => {
   if (
     liveRoom?.status === 'completed' &&
     phase !== 'results' &&
-    phase !== 'lobby'
+    phase !== 'lobby' &&
+    !isLeavingRef.current
   ) {
     const finalPayload = buildRoomResultPayload(liveRoom);
 
@@ -774,7 +778,10 @@ const flushLiveHeartbeat = useCallback(async () => {
   };
 
 const backToLobby = useCallback(() => {
-    // 1. Explicitly kill the active countdown/sync intervals before wiping state
+    // Signal all async effects to stop touching phase/room state
+    isLeavingRef.current = true;
+
+    // Kill all active timers
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
@@ -784,8 +791,7 @@ const backToLobby = useCallback(() => {
       heartbeatTimerRef.current = null;
     }
 
-    // 2. Reset all local gameplay states — including sessionStorage so
-    // the stale result doesn't get restored on next mount
+    // Reset all gameplay state
     sessionStorage.removeItem(LATEST_RACE_RESULT_KEY);
     setLiveRoom(null);
     setRaceResult(null);
@@ -796,12 +802,11 @@ const backToLobby = useCallback(() => {
     setShowPracticeModes(false);
     setPhase('lobby');
 
-    // 3. Defer navigation out of the call stack loop to let state flush cleanly
+    // Clear the leaving flag after state has flushed
     setTimeout(() => {
-      navigate('/play', { replace: true }); 
-    }, 50);
-    
-  }, [navigate]);
+      isLeavingRef.current = false;
+    }, 100);
+  }, []);
 
   const startLiveRace = async () => {
     if (!currentUser?.id) {
