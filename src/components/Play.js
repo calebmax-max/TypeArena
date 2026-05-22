@@ -313,47 +313,7 @@ export default function Play({ practicePage = false }) {
     loadGeneratedContent();
   }, [language, mode]);
 
-const flushLiveHeartbeat = useCallback(async () => {
-    if (!liveRoom?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
-      return;
-    }
-
-    heartbeatInFlightRef.current = true;
-    const payload = heartbeatPayloadRef.current;
-    heartbeatPayloadRef.current = null;
-
-    try {
-      const room = await updateLiveRaceHeartbeat(liveRoom.id, payload);
-      setLiveRoom(room);
-
-      // =======================================================
-      // ADD THIS IF-STATEMENT DIRECTLY HERE:
-      // =======================================================
-      if (room?.status === 'completed') {
-        const finalPayload = buildRoomResultPayload(room);
-        if (finalPayload) {
-          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
-          setRaceResult(finalPayload);
-        }
-        setPhase('results');
-        return;
-      }
-      // =======================================================
-
-    } catch (error) {
-      console.error('Live heartbeat error:', error);
-    } finally {
-      heartbeatInFlightRef.current = false;
-      if (heartbeatPayloadRef.current) {
-        window.clearTimeout(heartbeatTimerRef.current);
-        heartbeatTimerRef.current = window.setTimeout(() => {
-          flushLiveHeartbeat();
-        }, 120);
-      }
-    }
-    // Make sure to add buildRoomResultPayload to the dependency array below:
-  }, [liveRoom?.id, buildRoomResultPayload]);
-
+  
   const buildRoomStandings = useCallback((room) => {
     if (!room?.players?.length) {
       return [];
@@ -442,6 +402,48 @@ const flushLiveHeartbeat = useCallback(async () => {
       standings,
     };
   }, [buildRoomStandings, currentUser?.id, duration, generatedContent?.passage, language, mode, replayFrames, timeLeft, typingText]);
+
+
+const flushLiveHeartbeat = useCallback(async () => {
+    if (!liveRoom?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
+      return;
+    }
+
+    heartbeatInFlightRef.current = true;
+    const payload = heartbeatPayloadRef.current;
+    heartbeatPayloadRef.current = null;
+
+    try {
+      const room = await updateLiveRaceHeartbeat(liveRoom.id, payload);
+      setLiveRoom(room);
+
+      // =======================================================
+      // ADD THIS IF-STATEMENT DIRECTLY HERE:
+      // =======================================================
+      if (room?.status === 'completed') {
+        const finalPayload = buildRoomResultPayload(room);
+        if (finalPayload) {
+          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
+          setRaceResult(finalPayload);
+        }
+        setPhase('results');
+        return;
+      }
+      // =======================================================
+
+    } catch (error) {
+      console.error('Live heartbeat error:', error);
+    } finally {
+      heartbeatInFlightRef.current = false;
+      if (heartbeatPayloadRef.current) {
+        window.clearTimeout(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = window.setTimeout(() => {
+          flushLiveHeartbeat();
+        }, 120);
+      }
+    }
+    // Make sure to add buildRoomResultPayload to the dependency array below:
+  }, [liveRoom?.id, buildRoomResultPayload]);
 
   const waitForCompletedLiveRoom = useCallback(async (roomId, initialRoom = null) => {
     if (initialRoom?.status === 'completed') {
