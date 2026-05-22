@@ -1555,4 +1555,4 @@ const createFriendBattle = async () => {
       )}
     </div>
   );
-}c
+}
