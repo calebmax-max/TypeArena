@@ -28,3 +28,26 @@ export const buildApiUrl = (path) => {
 
   return `${API_BASE}${normalizedPath}`;
 };
+
+/**
+ * Fetches the top competitive players from the backend database
+ * Uses buildApiUrl to automatically adapt to local or production URLs.
+ * @param {number} limit - Maximum number of profiles to request (default 100)
+ */
+export async function fetchLeaderboard(limit = 100) {
+  try {
+    const url = buildApiUrl(`/api/leaderboard?limit=${limit}`);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Server returned error status code: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data; // Returns the parsed array of player rankings
+  } catch (error) {
+    console.error("API Error fetching competitive rankings:", error);
+    // Return an empty array fallback so the user interface doesn't crash on drops
+    return []; 
+  }
+}

@@ -6,11 +6,10 @@ const ADMIN_TOKEN_KEY = 'typearena_admin_token';
 const DEFAULT_ADMIN_EMAIL = 'caleb@gmail.com';
 const DEFAULT_ADMIN_PASSWORD = 'Caleb123';
 
-const safeJsonParse = (rawValue, fallback = null) => {
-  if (!rawValue) {
-    return fallback;
-  }
+// --- Core Core Utilities ---
 
+const safeJsonParse = (rawValue, fallback = null) => {
+  if (!rawValue) return fallback;
   try {
     return JSON.parse(rawValue);
   } catch (error) {
@@ -27,6 +26,11 @@ const getStoredUser = () => {
 const syncAdminSessionFromUser = (user) => {
   if (user?.adminToken) {
     localStorage.setItem(ADMIN_TOKEN_KEY, user.adminToken);
+    return;
+  }
+  // Fallback check if your backend returns the admin token as just "token"
+  if (user?.isAdmin && user?.token) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, user.token);
     return;
   }
 
@@ -58,6 +62,18 @@ const buildHeaders = (extraHeaders = {}) => {
   }
 
   return headers;
+};
+
+const buildAdminHeaders = () => {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin session not found. Please login again.');
+  }
+  return {
+    ...buildHeaders(),
+    'X-Admin-Token': token,
+    'Authorization': `Bearer ${token}`, // Added to fix 401 Unauthorized API drops
+  };
 };
 
 const parseResponse = async (response) => {
@@ -110,17 +126,6 @@ const shouldUseLocalFallback = (error) => {
   );
 };
 
-const buildAdminHeaders = () => {
-  const token = getAdminToken();
-  if (!token) {
-    throw new Error('Admin session not found. Please login again.');
-  }
-  return {
-    ...buildHeaders(),
-    'X-Admin-Token': token,
-  };
-};
-
 const apiFetch = (url, options = {}) =>
   fetch(url, {
     credentials: 'omit',
@@ -128,22 +133,16 @@ const apiFetch = (url, options = {}) =>
   });
 
 const normalizeTournamentList = (payload) => {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (Array.isArray(payload?.tournaments)) {
-    return payload.tournaments;
-  }
-
-  if (Array.isArray(payload?.items)) {
-    return payload.items;
-  }
-
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.tournaments)) return payload.tournaments;
+  if (Array.isArray(payload?.items)) return payload.items;
   return [];
 };
 
-// User APIs
+export const getAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
+
+// --- User APIs ---
+
 export const fetchCurrentUser = async () => {
   try {
     const stored = getStoredUser();
@@ -199,7 +198,8 @@ export const signupUser = async (username, email, password, phoneNumber) => {
   }
 };
 
-// Tournament APIs
+// --- Tournament APIs ---
+
 export const fetchTournaments = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/tournaments'), {
@@ -220,11 +220,9 @@ export const joinTournament = async (tournamentId) => {
       headers: buildHeaders(),
     });
     const result = await parseResponse(response);
-
     if (result?.user) {
       setStoredUser(result.user);
     }
-
     return result;
   } catch (error) {
     console.error('Error joining tournament:', error);
@@ -232,7 +230,8 @@ export const joinTournament = async (tournamentId) => {
   }
 };
 
-// Leaderboard APIs
+// --- Leaderboard APIs ---
+
 export const fetchLeaderboard = async (limit = 100) => {
   try {
     const response = await apiFetch(buildApiUrl(`/api/leaderboard?limit=${limit}`), {
@@ -245,7 +244,8 @@ export const fetchLeaderboard = async (limit = 100) => {
   }
 };
 
-// Race/Results APIs
+// --- Race/Results APIs ---
+
 export const submitRaceResult = async (raceData) => {
   try {
     const response = await apiFetch(buildApiUrl('/api/races/submit'), {
@@ -255,12 +255,10 @@ export const submitRaceResult = async (raceData) => {
     });
     const result = await parseResponse(response);
 
-    // Refresh local user snapshot after race updates
     const refreshedUser = await fetchCurrentUser();
     if (refreshedUser) {
       setStoredUser(refreshedUser);
     }
-
     return result;
   } catch (error) {
     console.error('Error submitting race result:', error);
@@ -280,7 +278,8 @@ export const fetchRaceHistory = async (userId) => {
   }
 };
 
-// User Profile APIs
+// --- User Profile & Wallet APIs ---
+
 export const fetchUserStats = async (userId) => {
   try {
     const response = await apiFetch(buildApiUrl('/api/user/me'), {
@@ -449,6 +448,8 @@ export const sendPrizeToWinner = async ({ userId, amount, tournamentId = null })
   }
 };
 
+// --- Admin Infrastructure APIs ---
+
 export const adminLogin = async (email, password) => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/login'), {
@@ -483,8 +484,6 @@ export const adminLogin = async (email, password) => {
 export const adminLogout = () => {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
 };
-
-export const getAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
 
 export const adminCreateTournament = async (payload) => {
   try {
@@ -648,6 +647,8 @@ export const withdrawFromAdminWallet = async (amount, note = '') => {
   return await parseResponse(response);
 };
 
+// --- Live Race Mechanics & System APIs ---
+
 export const queueLiveRace = async (payload) => {
   const response = await apiFetch(buildApiUrl('/api/live-races/queue'), {
     method: 'POST',
@@ -733,6 +734,8 @@ export const generateRaceContent = async (mode, language) => {
     };
   }
 };
+
+// --- Marketplace & Store Catalog APIs ---
 
 export const fetchStoreCatalog = async () => {
   try {

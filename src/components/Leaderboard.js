@@ -1,103 +1,202 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { fetchLeaderboard } from '../utils/typingApi';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { fetchLeaderboard } from '../utils/api';
 import '../styles/Leaderboard.css';
 
 const SORTS = [
-  { id: 'wpm', label: 'Top WPM' },
-  { id: 'wins', label: 'Most Wins' },
-  { id: 'seasonPoints', label: 'Season Points' },
+  { id: 'seasonPoints', label: '🏆 Top Points' },
+  { id: 'wpm',         label: '⚡ Top WPM' },
+  { id: 'wins',        label: '🥇 Most Wins' },
 ];
 
-export default function Leaderboard() {
-  const [players, setPlayers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState('wpm');
+// Uses the tier already computed by the backend
+const getTierClass = (tier = '') => {
+  const t = tier.toLowerCase();
+  if (t === 'grandmaster') return 'grandmaster';
+  if (t === 'diamond')     return 'diamond';
+  if (t === 'gold')        return 'gold';
+  if (t === 'silver')      return 'silver';
+  return 'bronze';
+};
+
+export default function Leaderboard({ currentUserUsername = "You" }) {
+  const [players, setPlayers]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [sortBy, setSortBy]       = useState('seasonPoints');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const previousRanksRef  = useRef({});
+  const pollingIntervalRef = useRef(null);
+
+  const loadLeaderboardData = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    try {
+      const data = await fetchLeaderboard(100);
+      if (Array.isArray(data)) setPlayers(data);
+    } catch (error) {
+      console.error('Failed to fetch leaderboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const data = await fetchLeaderboard(100);
-      setPlayers(data);
-      setLoading(false);
-    };
-    load();
+    loadLeaderboardData(false);
+    pollingIntervalRef.current = setInterval(() => loadLeaderboardData(true), 5000);
+    return () => clearInterval(pollingIntervalRef.current);
   }, []);
 
-  const sortedPlayers = useMemo(() => {
+  const fullyProcessedPlayers = useMemo(() => {
     const copy = [...players];
+
     copy.sort((a, b) => {
+      if (sortBy === 'wpm')  return Number(b.wpm  || 0) - Number(a.wpm  || 0);
       if (sortBy === 'wins') return Number(b.wins || 0) - Number(a.wins || 0);
-      if (sortBy === 'seasonPoints') return Number(b.seasonPoints || 0) - Number(a.seasonPoints || 0);
-      return Number(b.wpm || 0) - Number(a.wpm || 0);
+      return Number(b.seasonPoints || 0) - Number(a.seasonPoints || 0);
     });
-    return copy.map((player, index) => ({ ...player, displayRank: index + 1 }));
-  }, [players, sortBy]);
+
+    const ranked = copy.map((player, index) => {
+      const currentRank = index + 1;
+      const uniqueKey   = player.username || player.id;
+      const prevRank    = previousRanksRef.current[uniqueKey];
+
+      let trend = 'same';
+      if (prevRank) {
+        if (prevRank > currentRank) trend = 'up';
+        else if (prevRank < currentRank) trend = 'down';
+      }
+
+      previousRanksRef.current[uniqueKey] = currentRank;
+      return { ...player, displayRank: currentRank, trend };
+    });
+
+    return ranked.filter(p =>
+      p.username?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [players, sortBy, searchQuery]);
+
+  const podiumPlayers      = useMemo(() => fullyProcessedPlayers.filter(p => p.displayRank <= 3), [fullyProcessedPlayers]);
+  const regularListPlayers = useMemo(() => fullyProcessedPlayers.filter(p => p.displayRank > 3),  [fullyProcessedPlayers]);
 
   return (
     <div className="leaderboard-container">
       <div className="leaderboard-header">
-        <h1>Season Leaderboard</h1>
-        <p>Track premium ladders, tiers, and top earning typists.</p>
+        <div className="title-row">
+          <h1>Competitive Rank Matchmaking</h1>
+          <span className="live-badge fallback">
+            <span className="pulse-dot"></span>
+        
+          </span>
+        </div>
+        <p>Real-time typing ladder.</p>
       </div>
 
-      <div className="sort-buttons">
-        {SORTS.map((sort) => (
-          <button
-            key={sort.id}
-            className={`sort-btn ${sortBy === sort.id ? 'active' : ''}`}
-            onClick={() => setSortBy(sort.id)}
-          >
-            {sort.label}
-          </button>
-        ))}
+      <div className="leaderboard-controls">
+        <div className="sort-buttons">
+          {SORTS.map((sort) => (
+            <button
+              key={sort.id}
+              className={`sort-btn ${sortBy === sort.id ? 'active' : ''}`}
+              onClick={() => setSortBy(sort.id)}
+            >
+              {sort.label}
+            </button>
+          ))}
+        </div>
+        <div className="search-wrapper">
+          <input
+            type="text"
+            placeholder="Search player..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="leaderboard-search-input"
+          />
+        </div>
       </div>
 
       {loading ? (
-        <div className="loading">Loading leaderboard...</div>
+        <div className="loading">Loading competitive ranks...</div>
       ) : (
-        <div className="leaderboard-table">
-          <div className="table-header">
-            <span className="col-rank">Rank</span>
-            <span className="col-player">Player</span>
-            <span className="col-wpm">WPM</span>
-            <span className="col-accuracy">Accuracy</span>
-            <span className="col-races">Tier</span>
-            <span className="col-wins">Wins</span>
-            <span className="col-earnings">Season</span>
-          </div>
-
-          {sortedPlayers.map((player) => (
-            <div
-              key={player.id}
-              className={`table-row ${player.displayRank <= 3 ? 'top-3' : ''}`}
-            >
-              <span className="col-rank">
-                <strong>#{player.displayRank}</strong>
-              </span>
-              <div className="col-player">
-                <div className="player-name">
-                  {player.username} {player.premium ? 'VIP' : ''}
-                </div>
-                <span className="rank-number">{player.season}</span>
-              </div>
-              <span className="col-wpm">
-                <span className="stat-badge">{Number(player.wpm || 0).toFixed(1)}</span>
-              </span>
-              <span className="col-accuracy">
-                <span className="stat-badge">{Number(player.accuracy || 0).toFixed(1)}%</span>
-              </span>
-              <span className="col-races">
-                <span className="stat-badge">{player.tier || 'Bronze'}</span>
-              </span>
-              <span className="col-wins">
-                <span className="wins-badge">{player.wins || 0}</span>
-              </span>
-              <span className="col-earnings earnings">
-                {Number(player.seasonPoints || 0).toLocaleString()} pts
-              </span>
+        <>
+          {searchQuery === '' && podiumPlayers.length > 0 && (
+            <div className="podium-section">
+              {[2, 1, 3].map(rank => {
+                const p = podiumPlayers.find(p => p.displayRank === rank);
+                if (!p) return null;
+                const tierClass = rank === 1 ? 'gold-tier apex-rank' : rank === 2 ? 'silver-tier' : 'bronze-tier';
+                return (
+                  <div key={rank} className={`podium-card ${tierClass}`}>
+                    {rank === 1 && <div className="crown-icon">👑</div>}
+                    <span className="podium-badge">#{rank}</span>
+                    <div className="podium-username">{p.username}</div>
+                    <div className="podium-stat">⭐ {p.seasonPoints || 0} pts</div>
+                    <div className="podium-substat">{Number(p.wpm || 0).toFixed(0)} WPM</div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
+          )}
+
+          <div className="leaderboard-table">
+            <div className="table-header">
+              <span className="col-rank">Rank</span>
+              <span className="col-player">Player</span>
+              <span className="col-elo">Season Points</span>
+              <span className="col-wpm">Peak WPM</span>
+              <span className="col-tier">Tier</span>
+              <span className="col-wins">Wins</span>
+            </div>
+
+            {fullyProcessedPlayers.length === 0 ? (
+              <div className="empty-leaderboard">No players found.</div>
+            ) : (
+              (searchQuery !== '' ? fullyProcessedPlayers : regularListPlayers).map((player) => {
+                const isMe = player.username === currentUserUsername;
+                return (
+                  <div
+                    key={player.id || `row-${player.username}`}
+                    className={`table-row real-time-row ${isMe ? 'highlighted-self-row' : ''}`}
+                  >
+                    <span className="col-rank">
+                      <span className={`trend-indicator trend-${player.trend}`}>
+                        {player.trend === 'up'   && '▲'}
+                        {player.trend === 'down' && '▼'}
+                        {player.trend === 'same' && '•'}
+                      </span>
+                      <strong className="rank-indicator">#{player.displayRank}</strong>
+                    </span>
+
+                    <div className="col-player">
+                      <div className="player-name-wrapper">
+                        <span className="player-name">
+                          {player.username} {isMe && <span className="self-tag">(You)</span>}
+                        </span>
+                        {player.premium && <span className="premium-tag">VIP</span>}
+                      </div>
+                    </div>
+
+                    <span className="col-elo">
+                      <span className="elo-display-badge">⭐ {player.seasonPoints || 0}</span>
+                    </span>
+
+                    <span className="col-wpm">
+                      <span className="stat-badge wpm-badge">{Number(player.wpm || 0).toFixed(1)}</span>
+                    </span>
+
+                    <span className="col-tier">
+                      <span className={`tier-badge tier-${getTierClass(player.tier)}`}>
+                        {player.tier || 'Bronze'}
+                      </span>
+                    </span>
+
+                    <span className="col-wins">
+                      <span className="wins-badge">{player.wins || 0}</span>
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </>
       )}
     </div>
   );

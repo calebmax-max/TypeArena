@@ -1,4 +1,8 @@
 from __future__ import annotations
+import os
+from flask_sock import Sock
+from dotenv import load_dotenv
+load_dotenv()
 
 import base64
 import hashlib
@@ -79,6 +83,10 @@ WINNER_PRIZE_SHARE = 0.60
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
+
+sock = Sock(app)
+# 💡 FIX: Grant explicit permission to your React port (typically 3000)
+app.config['SOCK_ALLOWED_ORIGINS'] = ['localhost:3000', 'http://localhost:3000']
 
 
 def _is_admin_email(email: str) -> bool:

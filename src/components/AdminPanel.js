@@ -432,18 +432,18 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          <div className="admin-card">
-            <h2>Top Players</h2>
-            <div className="admin-list">
-              {(analytics?.topPlayers || []).map((player) => (
-                <div key={player.username} className="admin-list-item">
-                  <strong>{player.username}</strong>
-                  <span>{player.wpm} WPM | {player.wins} wins</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
+        <div className="admin-card">
+  <h2>Top Players</h2>
+  <div className="admin-list">
+    {(analytics?.topPlayers || []).map((player, index) => (
+      /* Fix: Combining id/username with the array index guarantees a unique key */
+      <div key={player.id ? `player-${player.id}` : `player-${player.username}-${index}`} className="admin-list-item">
+        <strong>{player.username}</strong>
+        <span>{player.wpm} WPM | {player.wins} wins</span>
+      </div>
+    ))}
+  </div>
+</div>
           <div className="admin-card">
             <h2>Existing Tournaments</h2>
             <div className="admin-list">
