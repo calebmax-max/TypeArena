@@ -10,6 +10,9 @@ import AdminPanel from './components/AdminPanel';
 import Marketplace from './components/Marketplace';
 import Results from './components/Results';
 import Notfound from './components/Notfound';
+import Spectate from './components/Spectate';
+// inside your <Routes>:
+
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
 import { fetchSiteMarquee } from './utils/typingApi';
@@ -215,6 +218,7 @@ function AppLayout() {
           <Route path="/marketplace" element={<Marketplace />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/spectate/:roomId" element={<Spectate />} />
           <Route path="/results/:raceId" element={<Results />} />
           <Route path="*" element={<Notfound />} />
         </Routes>
