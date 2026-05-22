@@ -1487,4 +1487,3 @@ const createFriendBattle = async () => {
       )}
     </div>
   );
-}
