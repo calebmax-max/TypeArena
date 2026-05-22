@@ -313,7 +313,7 @@ export default function Play({ practicePage = false }) {
     loadGeneratedContent();
   }, [language, mode]);
 
-  const flushLiveHeartbeat = useCallback(async () => {
+const flushLiveHeartbeat = useCallback(async () => {
     if (!liveRoom?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
       return;
     }
@@ -325,6 +325,21 @@ export default function Play({ practicePage = false }) {
     try {
       const room = await updateLiveRaceHeartbeat(liveRoom.id, payload);
       setLiveRoom(room);
+
+      // =======================================================
+      // ADD THIS IF-STATEMENT DIRECTLY HERE:
+      // =======================================================
+      if (room?.status === 'completed') {
+        const finalPayload = buildRoomResultPayload(room);
+        if (finalPayload) {
+          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
+          setRaceResult(finalPayload);
+        }
+        setPhase('results');
+        return;
+      }
+      // =======================================================
+
     } catch (error) {
       console.error('Live heartbeat error:', error);
     } finally {
@@ -336,7 +351,8 @@ export default function Play({ practicePage = false }) {
         }, 120);
       }
     }
-  }, [liveRoom?.id]);
+    // Make sure to add buildRoomResultPayload to the dependency array below:
+  }, [liveRoom?.id, buildRoomResultPayload]);
 
   const buildRoomStandings = useCallback((room) => {
     if (!room?.players?.length) {

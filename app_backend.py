@@ -2239,9 +2239,19 @@ def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
     elapsed_seconds = (datetime.utcnow().timestamp() - started_at.timestamp())
     duration_seconds = max(1, int(room.get('duration') or 0))
     countdown_seconds = max(0, int(room.get('countdown') or LIVE_RACE_COUNTDOWN_SECONDS))
+    
     if elapsed_seconds < duration_seconds + countdown_seconds:
         return False
 
+    # === ADD THESE LINES BELOW THE TIMEOUT CHECK ===
+    # 1. Flip the status in memory so both players see the match has ended
+    room['status'] = 'completed'
+    room['completedAt'] = datetime.utcnow().isoformat() + 'Z'
+
+    # 2. Persist the final rankings, distribute points, and clear stakes into your DB
+    _persist_completed_live_race(room)
+    
+    return True
     room.setdefault('results', {})
     finished_at = _now_iso()
     finished_at_ts = datetime.utcnow().timestamp()
