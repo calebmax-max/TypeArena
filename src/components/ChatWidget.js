@@ -4,18 +4,21 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { buildApiUrl } from '../utils/api';
+import { buildHeaders } from '../utils/typingApi';
 
-const API = (path) => `/api${path}`;
-
-function makeApiFetch(userId) {
+// Uses the shared buildHeaders/buildApiUrl so ChatWidget auth stays in sync
+// with the rest of the app (same token key, X-User-Id header, etc.)
+function makeApiFetch(_userId) {
   return async function apiFetch(path, opts = {}) {
-    const token = localStorage.getItem('token');
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(userId ? { 'X-User-Id': String(userId) } : {}),
-    };
-    const res = await fetch(API(path), { headers, ...opts });
+    const { body, method, ...rest } = opts;
+    const res = await fetch(buildApiUrl(path), {
+      credentials: 'omit',
+      method: method || 'GET',
+      headers: buildHeaders(),
+      ...(body ? { body } : {}),
+      ...rest,
+    });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   };
@@ -153,7 +156,11 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
         method: 'POST',
         body: JSON.stringify({ recipientId: partner.id, body }),
       });
-      setMessages((prev) => [...prev, msg]);
+      if (msg && msg.id) {
+        setMessages((prev) => [...prev, msg]);
+      } else {
+        await loadMessages();
+      }
     } catch (_) {
       setInput(body);
     } finally {
@@ -189,10 +196,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
           <div style={{ color: 'hsl(0 0% 95%)', fontWeight: 600, fontSize: 15 }}>{partner.username}</div>
           <div style={{ color: 'hsl(145 40% 60%)', fontSize: 12 }}>online</div>
         </div>
-        {/* WhatsApp-style action icons */}
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="hsl(0 0% 93%)" strokeWidth="2" style={{ opacity: 0.8 }}>
-          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 012 1.22 2 2 0 014 .04h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z" />
-        </svg>
+
       </div>
 
       {/* Chat background pattern */}
@@ -304,24 +308,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
               <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
           </button>
-        ) : (
-          <button
-            aria-label="Voice message"
-            style={{
-              width: 48, height: 48, borderRadius: '50%',
-              background: 'hsl(145 80% 36%)', border: 'none', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="hsl(0 0% 93%)" strokeWidth="2.2">
-              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-              <path d="M19 10v2a7 7 0 01-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          </button>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -338,18 +325,18 @@ export default function ChatWidget({ currentUser }) {
 
   const isLoggedIn = Boolean(currentUser?.id);
 
-  const apiFetch = useRef(makeApiFetch(currentUser?.id));
+  const apiFetchRef = useRef(makeApiFetch(currentUser?.id));
   useEffect(() => {
-    apiFetch.current = makeApiFetch(currentUser?.id);
+    apiFetchRef.current = makeApiFetch(currentUser?.id);
   }, [currentUser?.id]);
 
-  const fetch = useCallback((path, opts) => apiFetch.current(path, opts), []);
+  const apiFetch = useCallback((path, opts) => apiFetchRef.current(path, opts), []);
 
   // Presence ping
   useEffect(() => {
     if (!isLoggedIn) return;
     let debounceTimer = null;
-    const ping = () => fetch('/presence/ping', { method: 'POST' }).catch(() => {});
+    const ping = () => apiFetch('/presence/ping', { method: 'POST' }).catch(() => {});
     const onActivity = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(ping, 500); };
     ping();
     const intervalId = setInterval(ping, 30000);
@@ -359,22 +346,22 @@ export default function ChatWidget({ currentUser }) {
       clearTimeout(debounceTimer); clearInterval(intervalId);
       events.forEach((e) => window.removeEventListener(e, onActivity));
     };
-  }, [isLoggedIn, fetch]);
+  }, [isLoggedIn, apiFetch]);
 
   // Poll online players
   useEffect(() => {
     if (!isLoggedIn) return;
-    const load = () => fetch('/presence/online').then(setPlayers).catch(() => {});
+    const load = () => apiFetch('/presence/online').then(setPlayers).catch(() => {});
     load();
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
-  }, [isLoggedIn, fetch]);
+  }, [isLoggedIn, apiFetch]);
 
   // Poll unread counts
   useEffect(() => {
     if (!isLoggedIn) return;
     const load = () =>
-      fetch('/chat/unread')
+      apiFetch('/chat/unread')
         .then((counts) => {
           setUnread(counts);
           setTotalUnread(Object.values(counts).reduce((s, n) => s + n, 0));
@@ -383,7 +370,7 @@ export default function ChatWidget({ currentUser }) {
     load();
     const id = setInterval(load, 8000);
     return () => clearInterval(id);
-  }, [isLoggedIn, fetch]);
+  }, [isLoggedIn, apiFetch]);
 
   // Clear unread for current thread
   useEffect(() => {
@@ -492,7 +479,7 @@ export default function ChatWidget({ currentUser }) {
               partner={partner}
               currentUserId={currentUser.id}
               onBack={() => setPartner(null)}
-              apiFetch={fetch}
+              apiFetch={apiFetch}
             />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
