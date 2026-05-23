@@ -55,7 +55,7 @@ const setStoredUser = (user) => {
   localStorage.setItem('typearena_user', JSON.stringify(sanitizeUser(user)));
 };
 
-const buildHeaders = (extraHeaders = {}) => {
+export const buildHeaders = (extraHeaders = {}) => {
   const headers = {
     'Content-Type': 'application/json',
     ...extraHeaders,
