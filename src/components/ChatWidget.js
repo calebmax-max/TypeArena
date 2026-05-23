@@ -4,53 +4,118 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import '../styles/ChatWidget.css';
 
 const API = (path) => `/api${path}`;
 
-async function apiFetch(path, opts = {}) {
-  const token = localStorage.getItem('token');
-  const res = await fetch(API(path), {
-    headers: {
+function makeApiFetch(userId) {
+  return async function apiFetch(path, opts = {}) {
+    const token = localStorage.getItem('token');
+    const headers = {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...opts,
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+      ...(userId ? { 'X-User-Id': String(userId) } : {}),
+    };
+    const res = await fetch(API(path), { headers, ...opts });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  };
 }
 
-// ── Online player list ───────────────────────────────────────────────────────
-function OnlineList({ players, onSelect, unread }) {
-  if (!players.length) {
-    return (
-      <div className="cw-empty">
-        <span>No other players online right now.</span>
-      </div>
-    );
-  }
+// ── Avatar ───────────────────────────────────────────────────────────────────
+function Avatar({ name, size = 40 }) {
+  const initials = name
+    ? name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+    : '?';
+  const colors = ['hsl(145 80% 36%)', 'hsl(210 70% 38%)', 'hsl(240 50% 35%)', 'hsl(175 60% 32%)', 'hsl(270 50% 38%)'];
+  const color = colors[name?.charCodeAt(0) % colors.length] || colors[0];
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      background: color, display: 'flex', alignItems: 'center',
+      justifyContent: 'center', fontSize: size * 0.38, fontWeight: 600,
+      color: 'hsl(0 0% 95%)', flexShrink: 0, userSelect: 'none',
+    }}>
+      {initials}
+    </div>
+  );
+}
+
+// ── Online / contact list ────────────────────────────────────────────────────
+function ContactList({ players, onSelect, unread, search }) {
+  const others = players.filter((p) => !p.isMe);
 
   return (
-    <ul className="cw-online-list">
-      {players
-        .filter((p) => !p.isMe)
-        .map((p) => (
-          <li key={p.id} className="cw-online-item" onClick={() => onSelect(p)}>
-            <span className="cw-dot cw-dot--online" />
-            <span className="cw-player-name">{p.username}</span>
-            <span className="cw-player-wpm">{Math.round(p.wpm)} wpm</span>
-            {unread[p.id] > 0 && (
-              <span className="cw-unread-badge">{unread[p.id]}</span>
-            )}
-          </li>
-        ))}
-    </ul>
+    <div style={{ flex: 1, overflowY: 'auto', background: 'hsl(240 12% 8%)' }}>
+      {others.length === 0 ? (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100%', gap: 12,
+          color: 'hsl(240 5% 58%)', fontSize: 14, padding: 24, textAlign: 'center',
+        }}>
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="hsl(240 5% 55%)" strokeWidth="1.2">
+            <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+          {search ? `No players matching "${search}"` : 'No other players online'}
+        </div>
+      ) : (
+        others.map((p, i) => {
+          const hasUnread = unread[p.id] > 0;
+          return (
+            <div
+              key={p.id}
+              onClick={() => onSelect(p)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '10px 16px', cursor: 'pointer',
+                borderBottom: '1px solid hsl(240 10% 14%)',
+                background: 'hsl(240 12% 8%)', transition: 'background 0.1s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'hsl(240 12% 11%)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'hsl(240 12% 8%)'}
+            >
+              <div style={{ position: 'relative' }}>
+                <Avatar name={p.username} size={49} />
+                <span style={{
+                  position: 'absolute', bottom: 1, right: 1,
+                  width: 12, height: 12, borderRadius: '50%',
+                  background: 'hsl(145 80% 42%)', border: '2px solid hsl(0 0% 95%)',
+                }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontWeight: 500, fontSize: 16, color: 'hsl(0 0% 93%)', truncate: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {p.username}
+                  </span>
+                  <span style={{ fontSize: 12, color: hasUnread ? 'hsl(145 80% 50%)' : 'hsl(240 5% 58%)', flexShrink: 0, marginLeft: 8 }}>
+                    {Math.round(p.wpm)} wpm
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                  <span style={{ fontSize: 13, color: 'hsl(240 5% 58%)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                    Online
+                  </span>
+                  {hasUnread && (
+                    <span style={{
+                      background: 'hsl(145 80% 42%)', color: 'hsl(0 0% 95%)', borderRadius: 100,
+                      fontSize: 12, fontWeight: 600, minWidth: 20, height: 20,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 6px', flexShrink: 0,
+                    }}>
+                      {unread[p.id]}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
   );
 }
 
 // ── DM thread ────────────────────────────────────────────────────────────────
-function Thread({ partner, currentUserId, onBack }) {
+function Thread({ partner, currentUserId, onBack, apiFetch }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -62,7 +127,7 @@ function Thread({ partner, currentUserId, onBack }) {
       const data = await apiFetch(`/chat/messages/${partner.id}`);
       setMessages(data);
     } catch (_) {}
-  }, [partner.id]);
+  }, [partner.id, apiFetch]);
 
   useEffect(() => {
     loadMessages();
@@ -90,71 +155,173 @@ function Thread({ partner, currentUserId, onBack }) {
       });
       setMessages((prev) => [...prev, msg]);
     } catch (_) {
-      setInput(body); // restore on failure
+      setInput(body);
     } finally {
       setSending(false);
     }
   };
 
   const onKey = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
   return (
-    <div className="cw-thread">
-      <div className="cw-thread-header">
-        <button className="cw-back-btn" onClick={onBack} aria-label="Back">
-          ‹
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'hsl(240 12% 7%)' }}>
+      {/* Header */}
+      <div style={{
+        background: 'hsl(240 12% 8%)', display: 'flex', alignItems: 'center',
+        gap: 10, padding: '10px 16px', flexShrink: 0,
+      }}>
+        <button
+          onClick={onBack}
+          aria-label="Back"
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'hsl(0 0% 95%)', padding: 4, display: 'flex', alignItems: 'center',
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
         </button>
-        <span className="cw-dot cw-dot--online" />
-        <span className="cw-thread-name">{partner.username}</span>
+        <Avatar name={partner.username} size={38} />
+        <div style={{ flex: 1 }}>
+          <div style={{ color: 'hsl(0 0% 95%)', fontWeight: 600, fontSize: 15 }}>{partner.username}</div>
+          <div style={{ color: 'hsl(145 40% 60%)', fontSize: 12 }}>online</div>
+        </div>
+        {/* WhatsApp-style action icons */}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="hsl(0 0% 93%)" strokeWidth="2" style={{ opacity: 0.8 }}>
+          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 012 1.22 2 2 0 014 .04h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z" />
+        </svg>
       </div>
 
-      <div className="cw-messages">
+      {/* Chat background pattern */}
+      <div style={{
+        flex: 1, overflowY: 'auto', padding: '8px 16px',
+        background: 'hsl(240 12% 6%)',
+      }}>
         {messages.length === 0 && (
-          <div className="cw-empty">
-            <span>Say hi to {partner.username}!</span>
+          <div style={{
+            display: 'flex', justifyContent: 'center', marginTop: 16,
+          }}>
+            <div style={{
+              background: 'hsl(240 12% 14%)', color: 'hsl(0 0% 80%)',
+              borderRadius: 8, padding: '6px 12px', fontSize: 12, textAlign: 'center',
+            }}>
+              Say hi to {partner.username}! 👋
+            </div>
           </div>
         )}
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`cw-msg ${msg.mine ? 'cw-msg--mine' : 'cw-msg--theirs'}`}
-          >
-            <span className="cw-msg-body">{msg.body}</span>
-            <span className="cw-msg-time">
-              {new Date(msg.sentAt).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
-          </div>
-        ))}
+
+        {messages.map((msg) => {
+          const mine = msg.mine;
+          return (
+            <div
+              key={msg.id}
+              style={{
+                display: 'flex',
+                justifyContent: mine ? 'flex-end' : 'flex-start',
+                marginBottom: 4,
+              }}
+            >
+              <div style={{
+                maxWidth: '72%',
+                background: mine ? 'hsl(145 80% 14%)' : 'hsl(240 12% 12%)',
+                borderRadius: mine
+                  ? '12px 12px 0 12px'
+                  : '12px 12px 12px 0',
+                padding: '6px 10px 8px',
+                boxShadow: '0 1px 1px rgba(0,0,0,0.1)',
+                position: 'relative',
+              }}>
+                <p style={{ margin: 0, fontSize: 14.5, color: 'hsl(0 0% 95%)', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                  {msg.body}
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                  <span style={{ fontSize: 11, color: 'hsl(240 5% 58%)' }}>
+                    {new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {mine && (
+                    <svg width="16" height="11" viewBox="0 0 16 11" fill="none">
+                      <path d="M1 5.5L5 9.5L15 1.5" stroke="hsl(145 80% 55%)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M5 5.5L9 9.5" stroke="hsl(145 80% 55%)" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
-      <div className="cw-composer">
+      {/* Composer */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 12px', background: 'hsl(240 12% 9%)', flexShrink: 0,
+      }}>
+        {/* Emoji icon */}
+        <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'hsl(240 5% 58%)', display: 'flex', alignItems: 'center' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <circle cx="12" cy="12" r="10" /><path d="M8 13s1.5 2 4 2 4-2 4-2" />
+            <line x1="9" y1="9" x2="9.01" y2="9" strokeLinecap="round" strokeWidth="2.5" />
+            <line x1="15" y1="9" x2="15.01" y2="9" strokeLinecap="round" strokeWidth="2.5" />
+          </svg>
+        </button>
+
         <input
           ref={inputRef}
-          className="cw-input"
-          placeholder={`Message ${partner.username}…`}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKey}
+          placeholder="Message"
           maxLength={1000}
           disabled={sending}
+          style={{
+            flex: 1, border: 'none', borderRadius: 22,
+            padding: '10px 16px', fontSize: 15, outline: 'none',
+            background: 'hsl(240 12% 8%)', color: 'hsl(0 0% 93%)',
+            fontFamily: 'inherit',
+          }}
         />
-        <button
-          className="cw-send-btn"
-          onClick={send}
-          disabled={!input.trim() || sending}
-          aria-label="Send"
-        >
-          ➤
-        </button>
+
+        {input.trim() ? (
+          <button
+            onClick={send}
+            disabled={sending}
+            aria-label="Send"
+            style={{
+              width: 48, height: 48, borderRadius: '50%',
+              background: 'hsl(145 80% 36%)', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'hsl(145 80% 42%)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'hsl(145 80% 36%)'}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="hsl(0 0% 93%)" strokeWidth="2.2">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            aria-label="Voice message"
+            style={{
+              width: 48, height: 48, borderRadius: '50%',
+              background: 'hsl(145 80% 36%)', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="hsl(0 0% 93%)" strokeWidth="2.2">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+              <path d="M19 10v2a7 7 0 01-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -167,56 +334,47 @@ export default function ChatWidget({ currentUser }) {
   const [partner, setPartner] = useState(null);
   const [unread, setUnread] = useState({});
   const [totalUnread, setTotalUnread] = useState(0);
+  const [search, setSearch] = useState('');
 
   const isLoggedIn = Boolean(currentUser?.id);
 
-  // Presence ping — fires on mount, every 30s, and on any user activity
+  const apiFetch = useRef(makeApiFetch(currentUser?.id));
+  useEffect(() => {
+    apiFetch.current = makeApiFetch(currentUser?.id);
+  }, [currentUser?.id]);
+
+  const fetch = useCallback((path, opts) => apiFetch.current(path, opts), []);
+
+  // Presence ping
   useEffect(() => {
     if (!isLoggedIn) return;
-
     let debounceTimer = null;
-
-    const ping = () => apiFetch('/presence/ping', { method: 'POST' }).catch(() => {});
-
-    const onActivity = () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(ping, 500); // debounce rapid events
-    };
-
-    // Ping immediately on mount
+    const ping = () => fetch('/presence/ping', { method: 'POST' }).catch(() => {});
+    const onActivity = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(ping, 500); };
     ping();
-
-    // Keepalive every 30s in case user is idle but still on the page
     const intervalId = setInterval(ping, 30000);
-
-    // Ping on real user activity
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'focus'];
     events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
-
     return () => {
-      clearTimeout(debounceTimer);
-      clearInterval(intervalId);
+      clearTimeout(debounceTimer); clearInterval(intervalId);
       events.forEach((e) => window.removeEventListener(e, onActivity));
     };
-  }, [isLoggedIn]);
+  }, [isLoggedIn, fetch]);
 
   // Poll online players
   useEffect(() => {
     if (!isLoggedIn) return;
-    const load = () =>
-      apiFetch('/presence/online')
-        .then(setPlayers)
-        .catch(() => {});
+    const load = () => fetch('/presence/online').then(setPlayers).catch(() => {});
     load();
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
-  }, [isLoggedIn]);
+  }, [isLoggedIn, fetch]);
 
   // Poll unread counts
   useEffect(() => {
     if (!isLoggedIn) return;
     const load = () =>
-      apiFetch('/chat/unread')
+      fetch('/chat/unread')
         .then((counts) => {
           setUnread(counts);
           setTotalUnread(Object.values(counts).reduce((s, n) => s + n, 0));
@@ -225,16 +383,12 @@ export default function ChatWidget({ currentUser }) {
     load();
     const id = setInterval(load, 8000);
     return () => clearInterval(id);
-  }, [isLoggedIn]);
+  }, [isLoggedIn, fetch]);
 
-  // Clear unread for current thread when it's open
+  // Clear unread for current thread
   useEffect(() => {
     if (partner && unread[partner.id]) {
-      setUnread((prev) => {
-        const next = { ...prev };
-        delete next[partner.id];
-        return next;
-      });
+      setUnread((prev) => { const next = { ...prev }; delete next[partner.id]; return next; });
       setTotalUnread((n) => Math.max(0, n - (unread[partner.id] || 0)));
     }
   }, [partner]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -242,57 +396,187 @@ export default function ChatWidget({ currentUser }) {
   if (!isLoggedIn) return null;
 
   const onlineCount = players.filter((p) => !p.isMe).length;
+  const filteredPlayers = players.filter((p) =>
+    !p.isMe && p.username.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className={`cw-root ${open ? 'cw-root--open' : ''}`}>
-      {/* Floating toggle button */}
+    <>
+      {/* Inline styles (scoped) */}
+      <style>{`
+        .cw-panel-wa {
+          position: fixed;
+          bottom: 100px;
+          right: 20px;
+          width: 360px;
+          height: 580px;
+          border-radius: 12px;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+          z-index: 9999;
+          font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+          animation: cw-slideup 0.2s ease;
+        }
+        @keyframes cw-slideup {
+          from { opacity: 0; transform: translateY(12px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        .cw-toggle-wa {
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          background: hsl(145 80% 36%);
+          border: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 16px hsl(145 80% 36% / 0.4);
+          z-index: 9999;
+          transition: transform 0.2s, background 0.2s;
+        }
+        .cw-toggle-wa:hover { background: hsl(145 80% 42%); transform: scale(1.06); }
+        .cw-toggle-wa:active { transform: scale(0.95); }
+        .cw-badge-wa {
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          background: #FF3B30;
+          color: #fff;
+          border-radius: 100px;
+          font-size: 11px;
+          font-weight: 700;
+          min-width: 18px;
+          height: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 5px;
+          border: 2px solid #fff;
+        }
+      `}</style>
+
+      {/* Floating button */}
       <button
-        className="cw-toggle"
-        onClick={() => {
-          setOpen((o) => !o);
-          if (!open) setPartner(null);
-        }}
+        className="cw-toggle-wa"
+        onClick={() => { setOpen((o) => !o); if (!open) setPartner(null); }}
         aria-label={open ? 'Close chat' : 'Open chat'}
       >
         {open ? (
-          <span className="cw-toggle-icon">✕</span>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="hsl(0 0% 93%)" strokeWidth="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
         ) : (
           <>
-            <span className="cw-toggle-icon">💬</span>
+            {/* Message bubble icon */}
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="hsl(0 0% 93%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            </svg>
             {totalUnread > 0 && (
-              <span className="cw-toggle-badge">{totalUnread}</span>
+              <span className="cw-badge-wa">{totalUnread}</span>
             )}
           </>
         )}
       </button>
 
-      {/* Panel */}
+      {/* Chat panel */}
       {open && (
-        <div className="cw-panel">
+        <div className="cw-panel-wa">
           {partner ? (
             <Thread
               partner={partner}
               currentUserId={currentUser.id}
               onBack={() => setPartner(null)}
+              apiFetch={fetch}
             />
           ) : (
-            <>
-              <div className="cw-panel-header">
-                <span className="cw-panel-title">Players</span>
-                <span className="cw-online-count">
-                  <span className="cw-dot cw-dot--online" />
-                  {onlineCount} online
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {/* WhatsApp-style header */}
+              <div style={{
+                background: 'hsl(240 12% 8%)',
+                padding: '16px 16px 12px',
+                flexShrink: 0,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      onClick={() => window.history.back()}
+                      aria-label="Go back"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'hsl(145 40% 60%)', padding: 4, display: 'flex', alignItems: 'center',
+                        borderRadius: 6,
+                      }}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M15 18l-6-6 6-6" />
+                      </svg>
+                    </button>
+                    <span style={{ color: 'hsl(0 0% 95%)', fontSize: 20, fontWeight: 700 }}>Players</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, color: 'hsl(145 40% 60%)' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                  </div>
+                </div>
+                <div style={{
+                  background: 'hsl(240 12% 11%)', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8DBBB6" strokeWidth="2" style={{ flexShrink: 0 }}>
+                    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search or start new chat"
+                    style={{
+                      background: 'none', border: 'none', outline: 'none',
+                      color: 'hsl(0 0% 90%)', fontSize: 14, width: '100%',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                  {search && (
+                    <button
+                      onClick={() => setSearch('')}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'hsl(145 40% 55%)', padding: 0, display: 'flex', alignItems: 'center' }}
+                      aria-label="Clear search"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Online status bar */}
+              <div style={{
+                background: 'hsl(145 80% 42%)', padding: '6px 16px',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'hsl(240 12% 8%)', display: 'inline-block' }} />
+                <span style={{ color: 'hsl(0 0% 95%)', fontSize: 12, fontWeight: 500 }}>
+                  {onlineCount} player{onlineCount !== 1 ? 's' : ''} online
                 </span>
               </div>
-              <OnlineList
-                players={players}
+
+              <ContactList
+                players={filteredPlayers}
                 onSelect={setPartner}
                 unread={unread}
+                search={search}
               />
-            </>
+            </div>
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }
