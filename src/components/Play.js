@@ -1227,7 +1227,7 @@ export default function Play({ practicePage = false }){
     };
     loadGeneratedContent();
     return () => { cancelled = true; };
-  }, [language, mode, phase, contentLoading]);
+  }, [language, mode, phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   
   // Refs that mirror fast-changing state so useCallback dependencies stay stable
