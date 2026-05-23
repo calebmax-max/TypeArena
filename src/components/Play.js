@@ -1845,7 +1845,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, generatedContent.contentId, generatedContent.id, generatedContent.totalContentCount, language, mode, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, language, mode, redirectToProfile, showNotice]);
 
   const startPracticeRace = useCallback(() => {
     if (!currentUser?.id) {
@@ -1892,7 +1892,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, generatedContent.contentId, generatedContent.id, generatedContent.totalContentCount, language, mode, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, language, mode, redirectToProfile, showNotice]);
 
   // ── NEW #E: inject ghost cursor blink animation once ──────────────────────
   useEffect(() => {
