@@ -525,6 +525,44 @@ export const adminDeleteAllTournaments = async () => {
   }
 };
 
+export const adminUpdateTournament = async (tournamentId, payload) => {
+  try {
+    const response = await apiFetch(buildApiUrl(`/api/admin/tournaments/${tournamentId}`), {
+      method: 'PUT',
+      headers: buildAdminHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Admin update tournament error:', error);
+    throw error;
+  }
+};
+
+export const fetchTournamentParticipants = async (tournamentId) => {
+  try {
+    const response = await apiFetch(buildApiUrl(`/api/admin/tournaments/${tournamentId}/participants`), {
+      headers: buildAdminHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Error fetching tournament participants:', error);
+    return [];
+  }
+};
+
+export const fetchTournamentWinner = async (tournamentId) => {
+  try {
+    const response = await apiFetch(buildApiUrl(`/api/tournaments/${tournamentId}/winner`), {
+      headers: buildHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Error fetching tournament winner:', error);
+    return null;
+  }
+};
+
 export const fetchAdminAnalytics = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/analytics'), {

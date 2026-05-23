@@ -929,7 +929,7 @@ def _computed_tournament_status(row: Dict[str, Any]) -> str:
     if start_time > now_dt:
         return 'upcoming'
 
-    duration_seconds = _duration_to_seconds(row.get('duration'))
+    duration_seconds = int(row.get('match_duration_mins') or 10) * 60
     end_time = start_time + timedelta(seconds=duration_seconds)
     if now_dt >= end_time:
         return 'completed'
@@ -937,7 +937,7 @@ def _computed_tournament_status(row: Dict[str, Any]) -> str:
 
 
 def _sync_tournament_statuses(cur) -> None:
-    cur.execute('SELECT id, start_time, duration, status FROM tournaments')
+    cur.execute('SELECT id, start_time, duration, status, match_duration_mins FROM tournaments')
     rows = cur.fetchall()
     for row in rows:
         next_status = _computed_tournament_status(row)
@@ -1043,6 +1043,18 @@ def _owned_store_items_for_user(conn, user_id: int) -> list[str]:
         )
         rows = cur.fetchall()
     return [str(row.get('item_id') or '') for row in rows if row.get('item_id')]
+
+
+def _ensure_tournament_duration_column(cur) -> None:
+    cur.execute("SHOW COLUMNS FROM tournaments LIKE 'match_duration_mins'")
+    if not cur.fetchone():
+        cur.execute('ALTER TABLE tournaments ADD COLUMN match_duration_mins INT NOT NULL DEFAULT 10 AFTER duration')
+
+
+def _ensure_tournament_prize_paid_column(cur) -> None:
+    cur.execute("SHOW COLUMNS FROM tournament_joins LIKE 'prize_paid'")
+    if not cur.fetchone():
+        cur.execute('ALTER TABLE tournament_joins ADD COLUMN prize_paid DECIMAL(12,2) NOT NULL DEFAULT 0')
 
 
 def _ensure_user_equipped_columns(cur) -> None:
@@ -1801,7 +1813,7 @@ def _serialize_tournament(row: Dict[str, Any], user_owned_items: list[str] | set
     winner_share = WINNER_PRIZE_SHARE
     status = _computed_tournament_status(row)
     start_time = row.get('start_time')
-    end_time = start_time + timedelta(seconds=_duration_to_seconds(row.get('duration'))) if start_time else None
+    end_time = start_time + timedelta(minutes=int(row.get('match_duration_mins') or 10)) if start_time else None
     perks = _store_perks_from_owned_items(user_owned_items or [])
     cashback_rate = float(perks.get('tournamentCashbackRate') or 0)
     savings = round(entry_fee * cashback_rate, 2)
@@ -1828,6 +1840,7 @@ def _serialize_tournament(row: Dict[str, Any], user_owned_items: list[str] | set
         'duration': row.get('duration') or '60s',
         'image': row.get('image') or '??',
         'cashbackRate': cashback_rate,
+        'matchDurationMins': int(row.get('match_duration_mins') or 10),
     }
 
 
@@ -2612,8 +2625,9 @@ def admin_create_tournament():
         entry_fee = float(payload.get('entryFee', 0))
         prize_pool = float(payload.get('prizePool', 0))
         max_participants = max(TOURNAMENT_MATCH_SIZE, int(payload.get('maxParticipants', 0)))
+        match_duration_mins = max(1, int(payload.get('matchDurationMins', 10)))
     except (TypeError, ValueError):
-        return jsonify({'message': 'entryFee, prizePool and maxParticipants must be valid numbers.'}), 400
+        return jsonify({'message': 'entryFee, prizePool, maxParticipants and matchDurationMins must be valid numbers.'}), 400
 
     if not name:
         return jsonify({'message': 'Tournament name is required.'}), 400
@@ -2632,13 +2646,14 @@ def admin_create_tournament():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            _ensure_tournament_duration_column(cur)
             cur.execute(
                 '''
                 INSERT INTO tournaments
-                (name, description, entry_fee, prize_pool, participants, max_participants, status, start_time, duration, image)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (name, description, entry_fee, prize_pool, participants, max_participants, status, start_time, duration, image, match_duration_mins)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ''',
-                (name, description, entry_fee, prize_pool, 0, max_participants, status, start_time, duration, image),
+                (name, description, entry_fee, prize_pool, 0, max_participants, status, start_time, duration, image, match_duration_mins),
             )
             tournament_id = cur.lastrowid
             tournament = _fetch_tournament_with_counts(cur, tournament_id)
@@ -2701,6 +2716,286 @@ def admin_delete_all_tournaments():
             cur.execute('DELETE FROM tournaments')
         conn.commit()
         return jsonify({'message': f'Cleared {total_deleted} tournament{"s" if total_deleted != 1 else ""}.', 'deletedCount': total_deleted})
+    finally:
+        conn.close()
+
+
+@app.put('/api/admin/tournaments/<int:tournament_id>')
+def admin_update_tournament(tournament_id: int):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get('name', '')).strip()
+    image = str(payload.get('image', '')).strip()
+    status = str(payload.get('status', '')).strip().lower()
+    start_time_raw = str(payload.get('startTime', '')).strip()
+
+    try:
+        entry_fee = float(payload.get('entryFee', 0))
+        prize_pool = float(payload.get('prizePool', 0))
+        max_participants = max(TOURNAMENT_MATCH_SIZE, int(payload.get('maxParticipants', 0)))
+        match_duration_mins = max(1, int(payload.get('matchDurationMins', 10)))
+    except (TypeError, ValueError):
+        return jsonify({'message': 'entryFee, prizePool, maxParticipants and matchDurationMins must be valid numbers.'}), 400
+
+    if not name:
+        return jsonify({'message': 'Tournament name is required.'}), 400
+    if status and status not in {'upcoming', 'active', 'completed'}:
+        return jsonify({'message': 'Invalid status.'}), 400
+
+    start_time = None
+    if start_time_raw:
+        try:
+            start_time = datetime.fromisoformat(start_time_raw.replace('Z', ''))
+        except ValueError:
+            start_time = None
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_tournament_duration_column(cur)
+            tournament = _fetch_tournament_with_counts(cur, tournament_id, lock=True)
+            if not tournament:
+                return jsonify({'message': 'Tournament not found.'}), 404
+
+            fields = ['name=%s', 'entry_fee=%s', 'prize_pool=%s', 'max_participants=%s', 'match_duration_mins=%s']
+            values = [name, entry_fee, prize_pool, max_participants, match_duration_mins]
+
+            if image:
+                fields.append('image=%s')
+                values.append(image)
+            if start_time is not None:
+                fields.append('start_time=%s')
+                values.append(start_time)
+            if status:
+                fields.append('status=%s')
+                values.append(status)
+
+            values.append(tournament_id)
+            cur.execute(f'UPDATE tournaments SET {", ".join(fields)} WHERE id=%s', values)
+            updated = _fetch_tournament_with_counts(cur, tournament_id)
+        conn.commit()
+        return jsonify({'message': 'Tournament updated successfully.', 'tournament': _serialize_tournament(updated)})
+    finally:
+        conn.close()
+
+
+@app.get('/api/admin/tournaments/<int:tournament_id>/participants')
+def admin_tournament_participants(tournament_id: int):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT id FROM tournaments WHERE id=%s', (tournament_id,))
+            if not cur.fetchone():
+                return jsonify({'message': 'Tournament not found.'}), 404
+
+            cur.execute(
+                '''
+                SELECT
+                    u.id, u.username, u.email, u.wpm,
+                    tj.joined_at, tj.paid_amount
+                FROM tournament_joins tj
+                JOIN users u ON u.id = tj.user_id
+                WHERE tj.tournament_id = %s
+                ORDER BY tj.joined_at ASC
+                ''',
+                (tournament_id,),
+            )
+            rows = cur.fetchall()
+
+        participants = [
+            {
+                'id': row['id'],
+                'username': row['username'],
+                'email': row['email'],
+                'wpm': float(row['wpm'] or 0),
+                'paidAmount': float(row['paid_amount'] or 0),
+                'joinedAt': row['joined_at'].isoformat() + 'Z' if row.get('joined_at') else None,
+            }
+            for row in rows
+        ]
+        return jsonify(participants)
+    finally:
+        conn.close()
+
+
+@app.post('/api/admin/tournaments/<int:tournament_id>/force-start')
+def admin_force_start_tournament(tournament_id: int):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT * FROM tournaments WHERE id = %s', (tournament_id,))
+            tournament = cur.fetchone()
+            if not tournament:
+                return jsonify({'message': 'Tournament not found.'}), 404
+
+            t_status = str(tournament.get('status') or '').lower()
+            if t_status == 'completed':
+                return jsonify({'message': 'Tournament already completed.'}), 400
+
+            # Gather joined players (paid or waiting)
+            cur.execute(
+                '''
+                SELECT tj.user_id, tj.paid_amount
+                FROM tournament_joins tj
+                WHERE tj.tournament_id = %s
+                ORDER BY tj.joined_at ASC, tj.id ASC
+                FOR UPDATE
+                ''',
+                (tournament_id,),
+            )
+            joins = cur.fetchall()
+            actual_count = len(joins)
+
+            if actual_count < 2:
+                return jsonify({'message': f'Cannot force-start: only {actual_count} player(s) in the lobby. Need at least 2.'}), 400
+
+            entry_fee = float(tournament.get('entry_fee') or 0)
+
+            # Charge any players who joined but haven't been charged yet
+            insufficient_user_ids: list[int] = []
+            for join_row in joins:
+                uid = int(join_row['user_id'])
+                if float(join_row.get('paid_amount') or 0) == 0:
+                    cur.execute('SELECT id, balance FROM users WHERE id = %s FOR UPDATE', (uid,))
+                    u = cur.fetchone()
+                    if not u or float(u.get('balance') or 0) < entry_fee:
+                        insufficient_user_ids.append(uid)
+
+            if insufficient_user_ids:
+                placeholders = ', '.join(['%s'] * len(insufficient_user_ids))
+                cur.execute(
+                    f'DELETE FROM tournament_joins WHERE tournament_id = %s AND user_id IN ({placeholders})',
+                    (tournament_id, *insufficient_user_ids),
+                )
+                # Re-fetch after removing broke players
+                cur.execute(
+                    'SELECT tj.user_id, tj.paid_amount FROM tournament_joins tj WHERE tj.tournament_id = %s FOR UPDATE',
+                    (tournament_id,),
+                )
+                joins = cur.fetchall()
+                actual_count = len(joins)
+                if actual_count < 2:
+                    conn.commit()
+                    return jsonify({'message': f'After removing players with insufficient funds, only {actual_count} remain. Need at least 2.'}), 400
+
+            # Charge uncharged players
+            for join_row in joins:
+                uid = int(join_row['user_id'])
+                if float(join_row.get('paid_amount') or 0) == 0:
+                    cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (entry_fee, uid))
+
+            cur.execute(
+                'UPDATE tournament_joins SET paid_amount = %s WHERE tournament_id = %s AND paid_amount = 0',
+                (entry_fee, tournament_id),
+            )
+
+            # Start with actual player count (prize pool = actual collected fees)
+            cur.execute(
+                'UPDATE tournaments SET participants = %s, status = %s, start_time = %s WHERE id = %s',
+                (actual_count, 'upcoming', datetime.utcnow() + timedelta(seconds=TOURNAMENT_START_DELAY_SECONDS), tournament_id),
+            )
+
+        conn.commit()
+        return jsonify({
+            'message': f'Tournament force-started with {actual_count} player(s). Starts in {TOURNAMENT_START_DELAY_SECONDS}s.',
+            'participants': actual_count,
+            'prizePool': round(entry_fee * actual_count * WINNER_PRIZE_SHARE, 2),
+        })
+    finally:
+        conn.close()
+
+
+@app.post('/api/admin/tournaments/<int:tournament_id>/cancel')
+def admin_cancel_tournament(tournament_id: int):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT * FROM tournaments WHERE id = %s', (tournament_id,))
+            tournament = cur.fetchone()
+            if not tournament:
+                return jsonify({'message': 'Tournament not found.'}), 404
+
+            if str(tournament.get('status') or '').lower() == 'completed':
+                return jsonify({'message': 'Cannot cancel a completed tournament.'}), 400
+
+            # Refund all players who were charged
+            cur.execute(
+                'SELECT user_id, paid_amount FROM tournament_joins WHERE tournament_id = %s AND paid_amount > 0',
+                (tournament_id,),
+            )
+            paid_joins = cur.fetchall()
+
+            refunded_count = 0
+            for join_row in paid_joins:
+                uid = int(join_row['user_id'])
+                refund = float(join_row['paid_amount'] or 0)
+                if refund > 0:
+                    cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (refund, uid))
+                    refunded_count += 1
+
+            # Remove all join records and mark tournament cancelled
+            cur.execute('DELETE FROM tournament_joins WHERE tournament_id = %s', (tournament_id,))
+            cur.execute(
+                "UPDATE tournaments SET status = 'cancelled', participants = 0 WHERE id = %s",
+                (tournament_id,),
+            )
+
+        conn.commit()
+        return jsonify({
+            'message': f'Tournament cancelled. {refunded_count} player(s) refunded.',
+            'refundedPlayers': refunded_count,
+        })
+    finally:
+        conn.close()
+
+
+@app.get('/api/tournaments/<int:tournament_id>/winner')
+def tournament_winner(tournament_id: int):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_tournament_prize_paid_column(cur)
+            cur.execute('SELECT id, status FROM tournaments WHERE id=%s', (tournament_id,))
+            tournament = cur.fetchone()
+            if not tournament:
+                return jsonify({'message': 'Tournament not found.'}), 404
+
+            cur.execute(
+                '''
+                SELECT
+                    u.id, u.username,
+                    tj.paid_amount, tj.prize_paid
+                FROM tournament_joins tj
+                JOIN users u ON u.id = tj.user_id
+                WHERE tj.tournament_id = %s AND tj.paid_amount > 0
+                ORDER BY tj.prize_paid DESC, tj.joined_at ASC
+                LIMIT 1
+                ''',
+                (tournament_id,),
+            )
+            winner_row = cur.fetchone()
+
+        if not winner_row:
+            return jsonify({'winner': None})
+
+        return jsonify({
+            'winner': {
+                'id': winner_row['id'],
+                'username': winner_row['username'],
+                'prize': float(winner_row['prize_paid'] or 0),
+            }
+        })
     finally:
         conn.close()
 
@@ -3851,6 +4146,19 @@ def payout_prize_to_winner():
             if amount_value <= 0:
                 return jsonify({'message': 'Amount must be greater than zero.'}), 400
 
+            # ── Double-payout guard ──────────────────────────────────────────
+            if tournament_id is not None:
+                cur.execute(
+                    '''
+                    SELECT id FROM prize_payouts
+                    WHERE user_id = %s AND tournament_id = %s AND status = 'completed'
+                    LIMIT 1
+                    ''',
+                    (user_id_int, tournament_id),
+                )
+                if cur.fetchone():
+                    return jsonify({'message': 'Prize already paid for this tournament.'}), 409
+
             cur.execute(
                 '''
                 INSERT INTO prize_payouts
@@ -3868,8 +4176,16 @@ def payout_prize_to_winner():
                 ),
             )
             cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, user_id_int))
+
+            # ── Write prize_paid so the winners list shows the correct amount ──
             if tournament:
+                _ensure_tournament_prize_paid_column(cur)
+                cur.execute(
+                    'UPDATE tournament_joins SET prize_paid = %s WHERE tournament_id = %s AND user_id = %s',
+                    (amount_value, tournament_id, user_id_int),
+                )
                 admin_share = _credit_admin_tournament_share(cur, tournament=tournament)
+
             cur.execute('SELECT * FROM users WHERE id = %s', (user_id_int,))
             updated_user = cur.fetchone()
             conn.commit()
@@ -4504,6 +4820,7 @@ def get_tournaments():
         user = _get_user_from_header(conn)
         owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0))) if user else set()
         with conn.cursor() as cur:
+            _ensure_tournament_duration_column(cur)
             _sync_tournament_statuses(cur)
             rows = _fetch_all_tournaments(cur)
         conn.commit()

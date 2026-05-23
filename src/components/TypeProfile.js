@@ -779,9 +779,9 @@ export default function TypeProfile() {
                     </div>
                   </div>
                   {/* <button type="submit" className="tp-btn tp-btn--primary">Add Funds</button> */}
-                  <button type="submit" className="tp-btn tp-btn--primary" disabled={topUpLoading}>
+                  {/* <button type="submit" className="tp-btn tp-btn--primary" disabled={topUpLoading}>
                     {topUpLoading ? 'Processing…' : 'Add Funds'}
-                  </button>
+                  </button> */}
                 </form>
               )}
 
@@ -811,9 +811,9 @@ export default function TypeProfile() {
                     </div>
                   </div>
                   {/* <button type="submit" className="tp-btn tp-btn--outline">Withdraw</button> */}
-                  <button type="submit" className="tp-btn tp-btn--outline" disabled={withdrawLoading}>
+                  {/* <button type="submit" className="tp-btn tp-btn--outline" disabled={withdrawLoading}>
                     {withdrawLoading ? 'Processing…' : 'Withdraw'}
-                  </button>
+                  </button> */}
                 </form>
               )}
 

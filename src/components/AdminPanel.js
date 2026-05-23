@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   addFundsToAdminWallet,
   adminCreateTournament,
+  adminUpdateTournament,
   adminDeleteAllTournaments,
   adminDeleteTournament,
   adminLogout,
@@ -10,6 +11,7 @@ import {
   fetchAdminAiSettings,
   fetchAdminSiteMarquee,
   fetchAdminWallet,
+  fetchTournamentParticipants,
   fetchTournaments,
   getAdminToken,
   updateAdminAiSettings,
@@ -44,7 +46,7 @@ const NAV_ITEMS = [
 export default function AdminPanel() {
   const [token, setToken] = useState(getAdminToken());
   const [activeSection, setActiveSection] = useState('overview');
-  const [formData, setFormData] = useState({ name: '', entryFee: '', maxParticipants: '2', status: 'upcoming', image: 'TT' });
+  const [formData, setFormData] = useState({ name: '', entryFee: '', maxParticipants: '2', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
   const [notice, setNotice] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [tournaments, setTournaments] = useState([]);
@@ -54,6 +56,12 @@ export default function AdminPanel() {
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
   const [deletingTournamentId, setDeletingTournamentId] = useState(null);
   const [clearingTournaments, setClearingTournaments] = useState(false);
+  const [editingTournament, setEditingTournament] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', entryFee: '', maxParticipants: '2', image: '', startDate: '', startTime: '', matchDurationMins: '10' });
+  const [savingEditId, setSavingEditId] = useState(null);
+  const [viewingParticipantsId, setViewingParticipantsId] = useState(null);
+  const [participants, setParticipants] = useState({});
+  const [loadingParticipantsId, setLoadingParticipantsId] = useState(null);
 
   // Music
   const musicState = useMusicState();
@@ -77,14 +85,34 @@ export default function AdminPanel() {
 
   const showNotice = (msg) => { setNotice(msg); setTimeout(() => setNotice(''), 4000); };
 
+  const computeStatus = (startDate, startTime) => {
+    if (!startDate || !startTime) return 'upcoming';
+    const start = new Date(`${startDate}T${startTime}`);
+    return isNaN(start.getTime()) ? 'upcoming' : (Date.now() >= start.getTime() ? 'active' : 'upcoming');
+  };
+
   const handleCreateTournament = async (e) => {
     e.preventDefault();
     try {
       const entryFee = Number(formData.entryFee || 0);
       const maxParticipants = Math.max(2, Number(formData.maxParticipants || 2));
-      const result = await adminCreateTournament({ ...formData, description: '', entryFee, prizePool: entryFee * maxParticipants, maxParticipants, duration: '5d' });
+      const startTime = (formData.startDate && formData.startTime)
+        ? new Date(`${formData.startDate}T${formData.startTime}`).toISOString()
+        : null;
+      const status = computeStatus(formData.startDate, formData.startTime);
+      const result = await adminCreateTournament({
+        ...formData,
+        description: '',
+        entryFee,
+        prizePool: entryFee * maxParticipants,
+        maxParticipants,
+        matchDurationMins: Math.max(1, Number(formData.matchDurationMins || 10)),
+        duration: '5d',
+        startTime,
+        status,
+      });
       showNotice(result.message || 'Tournament created.');
-      setFormData({ name: '', entryFee: '', maxParticipants: '2', status: 'upcoming', image: 'TT' });
+      setFormData({ name: '', entryFee: '', maxParticipants: '2', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
       await loadAdminData();
     } catch (err) { showNotice(err.message || 'Could not create tournament.'); }
   };
@@ -141,6 +169,65 @@ export default function AdminPanel() {
       showNotice(result.message || 'Tournament deleted.');
     } catch (err) { showNotice(err.message || 'Could not delete.'); }
     finally { setDeletingTournamentId(null); }
+  };
+
+  const openEditTournament = (t) => {
+    const existingStart = t.startTime ? new Date(t.startTime) : null;
+    const startDate = existingStart ? existingStart.toISOString().slice(0, 10) : '';
+    const startTime = existingStart ? existingStart.toTimeString().slice(0, 5) : '';
+    setEditForm({
+      name: t.name || '',
+      entryFee: String(t.entryFee || ''),
+      maxParticipants: String(t.matchSize || t.maxParticipants || 2),
+      image: t.image || '',
+      startDate,
+      startTime,
+      matchDurationMins: String(t.matchDurationMins || 10),
+    });
+    setEditingTournament(t);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTournament) return;
+    setSavingEditId(editingTournament.id);
+    try {
+      const entryFee = Number(editForm.entryFee || 0);
+      const maxParticipants = Math.max(2, Number(editForm.maxParticipants || 2));
+      const startTime = (editForm.startDate && editForm.startTime)
+        ? new Date(`${editForm.startDate}T${editForm.startTime}`).toISOString()
+        : null;
+      const status = computeStatus(editForm.startDate, editForm.startTime);
+      const result = await adminUpdateTournament(editingTournament.id, {
+        name: editForm.name,
+        entryFee,
+        maxParticipants,
+        image: editForm.image,
+        prizePool: entryFee * maxParticipants,
+        matchDurationMins: Math.max(1, Number(editForm.matchDurationMins || 10)),
+        startTime,
+        status,
+      });
+      setTournaments(prev => normalizeTournamentList(prev).map(t =>
+        t.id === editingTournament.id ? (result.tournament || { ...t, ...editForm, startTime, status }) : t
+      ));
+      showNotice(result.message || 'Tournament updated.');
+      setEditingTournament(null);
+    } catch (err) { showNotice(err.message || 'Could not update tournament.'); }
+    finally { setSavingEditId(null); }
+  };
+
+  const handleViewParticipants = async (t) => {
+    if (viewingParticipantsId === t.id) { setViewingParticipantsId(null); return; }
+    setViewingParticipantsId(t.id);
+    if (participants[t.id]) return; // already loaded
+    setLoadingParticipantsId(t.id);
+    try {
+      const data = await fetchTournamentParticipants(t.id);
+      setParticipants(prev => ({ ...prev, [t.id]: Array.isArray(data) ? data : (data.participants || []) }));
+    } catch (err) {
+      setParticipants(prev => ({ ...prev, [t.id]: [] }));
+      showNotice(err.message || 'Could not load participants.');
+    } finally { setLoadingParticipantsId(null); }
   };
 
   const handleClearAllTournaments = async () => {
@@ -964,12 +1051,24 @@ export default function AdminPanel() {
                       <input className="ap-input" type="text" placeholder="🏆" value={formData.image} onChange={e => setFormData(p => ({ ...p, image: e.target.value }))} />
                     </div>
                     <div className="ap-field">
-                      <label className="ap-label">Status</label>
-                      <select className="ap-select" value={formData.status} onChange={e => setFormData(p => ({ ...p, status: e.target.value }))}>
-                        <option value="upcoming">Upcoming</option>
-                        <option value="active">Active</option>
-                        <option value="completed">Completed</option>
-                      </select>
+                      <label className="ap-label">Start Date</label>
+                      <input className="ap-input" type="date" value={formData.startDate} onChange={e => setFormData(p => ({ ...p, startDate: e.target.value }))} />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Start Time</label>
+                      <input className="ap-input" type="time" value={formData.startTime} onChange={e => setFormData(p => ({ ...p, startTime: e.target.value }))} />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Match Duration (minutes)</label>
+                      <input className="ap-input" type="number" min="1" max="120" placeholder="10" value={formData.matchDurationMins} onChange={e => setFormData(p => ({ ...p, matchDurationMins: e.target.value }))} />
+                    </div>
+                    <div className="ap-field" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <div style={{ background: 'var(--ap-bg)', border: '1px solid var(--ap-border2)', borderRadius: 8, padding: '10px 14px', fontSize: '0.78rem', width: '100%', boxSizing: 'border-box' }}>
+                        <span style={{ color: 'var(--ap-muted)', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 4 }}>Status (auto)</span>
+                        <span style={{ color: computeStatus(formData.startDate, formData.startTime) === 'active' ? 'var(--ap-gold)' : 'var(--ap-accent)', fontWeight: 500 }}>
+                          {computeStatus(formData.startDate, formData.startTime).toUpperCase()}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div className="ap-summary-bar">
@@ -984,21 +1083,118 @@ export default function AdminPanel() {
                   <p className="ap-card-title">Active Tournaments ({tournaments.length})</p>
                   {tournaments.length ? (
                     <div className="ap-tourney-list">
-                      {tournaments.map(t => (
-                        <div key={t.id} className="ap-tourney-item">
-                          <span className="ap-tourney-icon">{t.image || '🏆'}</span>
-                          <div className="ap-tourney-info">
-                            <div className="ap-tourney-name">{t.name}</div>
-                            <div className="ap-tourney-meta">
-                              KES {Number(t.entryFee || 0).toLocaleString()} entry · {Number(t.matchSize || t.maxParticipants || 2)} players · Pot KES {Number(t.totalPlayerStake || 0).toLocaleString()} · Winner KES {Number(t.winnerPrize || 0).toLocaleString()}
+                      {tournaments.map(t => {
+                        const liveStatus = t.startTime && Date.now() >= new Date(t.startTime).getTime() ? 'active' : (t.status || 'upcoming');
+                        const startLabel = t.startTime ? new Date(t.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'No start time set';
+                        const isEditing = editingTournament?.id === t.id;
+                        return (
+                        <div key={t.id} className="ap-tourney-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+                          {/* Row summary */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                            <span className="ap-tourney-icon">{t.image || '🏆'}</span>
+                            <div className="ap-tourney-info">
+                              <div className="ap-tourney-name">{t.name}</div>
+                              <div className="ap-tourney-meta">
+                                KES {Number(t.entryFee || 0).toLocaleString()} entry · {Number(t.matchSize || t.maxParticipants || 2)} players · Pot KES {Number(t.totalPlayerStake || 0).toLocaleString()} · Winner KES {Number(t.winnerPrize || 0).toLocaleString()} · {Number(t.matchDurationMins || 10)} min match
+                              </div>
+                              <div className="ap-tourney-meta" style={{ marginTop: 3 }}>⏰ {startLabel}</div>
                             </div>
+                            <span className={`ap-status-badge ${liveStatus}`}>{liveStatus}</span>
+                            <button
+                              className="ap-btn ap-btn-ghost ap-btn-sm"
+                              onClick={() => isEditing ? setEditingTournament(null) : openEditTournament(t)}
+                            >
+                              {isEditing ? 'Cancel' : 'Edit'}
+                            </button>
+                            <button
+                              className="ap-btn ap-btn-ghost ap-btn-sm"
+                              onClick={() => handleViewParticipants(t)}
+                            >
+                              {viewingParticipantsId === t.id ? 'Hide Players' : 'Players'}
+                            </button>
+                            <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleDeleteTournament(t)} disabled={deletingTournamentId === t.id}>
+                              {deletingTournamentId === t.id ? '…' : 'Delete'}
+                            </button>
                           </div>
-                          <span className={`ap-status-badge ${t.status}`}>{t.status}</span>
-                          <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleDeleteTournament(t)} disabled={deletingTournamentId === t.id}>
-                            {deletingTournamentId === t.id ? '…' : 'Delete'}
-                          </button>
+
+                          {/* Participants drawer */}
+                          {viewingParticipantsId === t.id && (
+                            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--ap-border)' }}>
+                              <p className="ap-card-title" style={{ margin: '0 0 12px' }}>
+                                Players ({(participants[t.id] || []).length} / {Number(t.matchSize || t.maxParticipants || 2)})
+                              </p>
+                              {loadingParticipantsId === t.id ? (
+                                <div style={{ fontSize: '0.78rem', color: 'var(--ap-muted)' }}>Loading…</div>
+                              ) : (participants[t.id] || []).length === 0 ? (
+                                <div className="ap-empty" style={{ padding: '20px' }}>No players have joined yet.</div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  {(participants[t.id] || []).map((p, i) => (
+                                    <div key={p.id || p.userId || i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 12px', background: 'var(--ap-bg)', border: '1px solid var(--ap-border)', borderRadius: 8 }}>
+                                      <span style={{ fontSize: '0.68rem', color: 'var(--ap-muted)', minWidth: 20, textAlign: 'right' }}>{String(i + 1).padStart(2, '0')}</span>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ fontFamily: 'var(--ap-font-head)', fontWeight: 700, fontSize: '0.85rem' }}>{p.username || p.name || 'Unknown'}</div>
+                                        {p.email && <div style={{ fontSize: '0.68rem', color: 'var(--ap-muted)', marginTop: 2 }}>{p.email}</div>}
+                                      </div>
+                                      {p.wpm && <span style={{ fontSize: '0.75rem', color: 'var(--ap-accent)' }}>{p.wpm} wpm</span>}
+                                      <span style={{ fontSize: '0.68rem', color: 'var(--ap-muted)' }}>
+                                        {p.joinedAt ? new Date(p.joinedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Inline edit form */}
+                          {isEditing && (
+                            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--ap-border)' }}>
+                              <div className="ap-two-col">
+                                <div className="ap-field" style={{ margin: 0 }}>
+                                  <label className="ap-label">Tournament Name</label>
+                                  <input className="ap-input" type="text" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} />
+                                </div>
+                                <div className="ap-field" style={{ margin: 0 }}>
+                                  <label className="ap-label">Icon / Emoji</label>
+                                  <input className="ap-input" type="text" value={editForm.image} onChange={e => setEditForm(p => ({ ...p, image: e.target.value }))} />
+                                </div>
+                                <div className="ap-field" style={{ margin: 0 }}>
+                                  <label className="ap-label">Entry Fee (KES)</label>
+                                  <input className="ap-input" type="number" min="0" value={editForm.entryFee} onChange={e => setEditForm(p => ({ ...p, entryFee: e.target.value }))} />
+                                </div>
+                                <div className="ap-field" style={{ margin: 0 }}>
+                                  <label className="ap-label">Players Required</label>
+                                  <input className="ap-input" type="number" min="2" value={editForm.maxParticipants} onChange={e => setEditForm(p => ({ ...p, maxParticipants: e.target.value }))} />
+                                </div>
+                                <div className="ap-field" style={{ margin: 0 }}>
+                                  <label className="ap-label">Start Date</label>
+                                  <input className="ap-input" type="date" value={editForm.startDate} onChange={e => setEditForm(p => ({ ...p, startDate: e.target.value }))} />
+                                </div>
+                                <div className="ap-field" style={{ margin: 0 }}>
+                                  <label className="ap-label">Start Time</label>
+                                  <input className="ap-input" type="time" value={editForm.startTime} onChange={e => setEditForm(p => ({ ...p, startTime: e.target.value }))} />
+                                </div>
+                                <div className="ap-field" style={{ margin: 0 }}>
+                                  <label className="ap-label">Match Duration (minutes)</label>
+                                  <input className="ap-input" type="number" min="1" max="120" value={editForm.matchDurationMins} onChange={e => setEditForm(p => ({ ...p, matchDurationMins: e.target.value }))} />
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
+                                <button className="ap-btn ap-btn-sm" onClick={handleSaveEdit} disabled={savingEditId === t.id}>
+                                  {savingEditId === t.id ? 'Saving…' : 'Save Changes'}
+                                </button>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--ap-muted)' }}>
+                                  Status will be: <strong style={{ color: computeStatus(editForm.startDate, editForm.startTime) === 'active' ? 'var(--ap-gold)' : 'var(--ap-accent)' }}>
+                                    {computeStatus(editForm.startDate, editForm.startTime).toUpperCase()}
+                                  </strong>
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : <div className="ap-empty">No tournaments yet. Create one above.</div>}
                 </div>
