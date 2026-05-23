@@ -1402,51 +1402,49 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     normalized_mode = str(mode or 'business').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
 
+    # Use /chat/completions — the standard OpenAI endpoint.
+    # The previous /responses endpoint does not exist and caused every AI call
+    # to silently time out after 20 s before falling back to local passages.
     response = _http_json(
         'POST',
-        f'{OPENAI_BASE_URL}/responses',
+        f'{OPENAI_BASE_URL}/chat/completions',
         payload={
             'model': model_name,
-            'input': [
+            'max_tokens': 400,
+            'response_format': {'type': 'json_object'},
+            'messages': [
                 {
                     'role': 'system',
-                    'content': 'You create fresh anti-cheat typing passages for competitive live races.',
+                    'content': (
+                        'You create fresh anti-cheat typing passages for competitive live races. '
+                        'Always respond with valid JSON only — no markdown, no extra text. '
+                        'JSON must have exactly these keys: title, passage, antiCheatHint.'
+                    ),
                 },
                 {
                     'role': 'user',
                     'content': (
                         'Generate one fresh typing race passage. '
                         f'Mode: {normalized_mode}. Language: {normalized_language}. '
-                        'Passage must be a large single paragraph between 110 and 170 words, natural, competitive, and hard to memorize. '
+                        'Passage must be a single paragraph between 110 and 170 words, natural, competitive, and hard to memorize. '
                         'It must include numbers and symbols such as %, #, /, :, ;, brackets, or quotes. '
-                        'Include a short anti-cheat hint.'
+                        'Include a short anti-cheat hint. '
+                        'Respond with JSON only: {"title": "...", "passage": "...", "antiCheatHint": "..."}'
                     ),
                 },
             ],
-            'text': {
-                'format': {
-                    'type': 'json_schema',
-                    'name': 'typing_passage',
-                    'strict': True,
-                    'schema': {
-                        'type': 'object',
-                        'additionalProperties': False,
-                        'properties': {
-                            'title': {'type': 'string'},
-                            'passage': {'type': 'string'},
-                            'antiCheatHint': {'type': 'string'},
-                        },
-                        'required': ['title', 'passage', 'antiCheatHint'],
-                    },
-                }
-            },
         },
         headers={'Authorization': f'Bearer {OPENAI_API_KEY}'},
     )
 
-    output_text = str(response.get('output_text') or '').strip()
+    # Parse standard chat/completions response shape: choices[0].message.content
+    try:
+        output_text = str(response['choices'][0]['message']['content']).strip()
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError(f'Unexpected OpenAI response shape: {response}') from exc
+
     if not output_text:
-        raise ValueError('OpenAI returned no output_text.')
+        raise ValueError('OpenAI returned empty content.')
 
     try:
         parsed = json.loads(output_text)

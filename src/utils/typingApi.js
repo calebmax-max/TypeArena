@@ -771,20 +771,47 @@ export const submitLiveRaceResult = async (roomId, payload) => {
   return data;
 };
 
+const FALLBACK_PASSAGES = [
+  {
+    title: 'Business Sprint',
+    passage: 'Premium typing rooms reward accuracy, focus, and consistency across every high-pressure round.',
+    antiCheatHint: 'Fresh passages reduce repetition.',
+  },
+  {
+    title: 'Digital Age',
+    passage: 'Technology transforms how we communicate, collaborate, and compete in an increasingly connected world.',
+    antiCheatHint: 'Stay focused on each word.',
+  },
+  {
+    title: 'Sharp Focus',
+    passage: 'Speed and precision define the best typists. Train daily, track your progress, and push your limits.',
+    antiCheatHint: 'Accuracy beats raw speed.',
+  },
+  {
+    title: 'Code Runner',
+    passage: 'Clean code is easy to read, simple to maintain, and efficient to run across every modern platform.',
+    antiCheatHint: 'Consistency is key.',
+  },
+];
+
 export const generateRaceContent = async (mode, language) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
     const response = await apiFetch(
       buildApiUrl(`/api/race-content/generate?mode=${encodeURIComponent(mode)}&language=${encodeURIComponent(language)}`),
-      { headers: buildHeaders() }
+      { headers: buildHeaders(), signal: controller.signal }
     );
+    clearTimeout(timeoutId);
     return await parseResponse(response);
   } catch (error) {
-    console.error('Error generating race content:', error);
-    return {
-      title: 'Business Sprint',
-      passage: 'Premium typing rooms reward accuracy, focus, and consistency across every high-pressure round.',
-      antiCheatHint: 'Fresh passages reduce repetition.',
-    };
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.warn('generateRaceContent timed out — using fallback passage.');
+    } else {
+      console.error('Error generating race content:', error);
+    }
+    return FALLBACK_PASSAGES[Math.floor(Math.random() * FALLBACK_PASSAGES.length)];
   }
 };
 
