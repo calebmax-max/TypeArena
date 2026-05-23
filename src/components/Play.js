@@ -1208,6 +1208,8 @@ export default function Play({ practicePage = false }){
     }
     let cancelled = false;
     const loadGeneratedContent = async () => {
+      // Guard: don't fire a second fetch if one is already in flight
+      if (contentLoading) return;
       setContentLoading(true);
       try {
         const excludeContentIds = getUsedContentIds(mode, language);
@@ -1822,18 +1824,16 @@ const flushLiveHeartbeat = useCallback(async () => {
     setRaceOver(false);
     setTimeLeft(duration);
 
-    // generateRaceContent will be triggered by the mode/phase change automatically;
-    // we pre-fetch with the resolved mode so there is no stale-mode window.
-    const excludeContentIds = getUsedContentIds(resolvedMode, language);
-    generateRaceContent(resolvedMode, language, { excludeContentIds }).then((content) => {
-      setGeneratedContent(content);
+    // The lobby useEffect already pre-loads generatedContent; reuse it and
+    // just record the ID so the rotation pool advances correctly.
+    if (generatedContent?.id || generatedContent?.contentId) {
       recordUsedContentId(
-        content?.id ?? content?.contentId,
+        generatedContent.id ?? generatedContent.contentId,
         resolvedMode,
         language,
-        content?.totalContentCount || 0
+        generatedContent.totalContentCount || 0
       );
-    }).catch(() => {});
+    }
 
     commentatorMilestonesRef.current = { m25: false, m50: false, m75: false };
     if (commentatorEnabled) {
@@ -1872,6 +1872,16 @@ const flushLiveHeartbeat = useCallback(async () => {
     setGhostFrames(Array.isArray(pbEntry?.frames) ? pbEntry.frames : []);
     setGhostIndex(0);
     window.clearInterval(ghostIntervalRef.current);
+    // Record the current passage as used so the next race gets a fresh one.
+    // The lobby useEffect already loaded generatedContent; no extra fetch needed.
+    if (generatedContent?.id || generatedContent?.contentId) {
+      recordUsedContentId(
+        generatedContent.id ?? generatedContent.contentId,
+        mode,
+        language,
+        generatedContent.totalContentCount || 0
+      );
+    }
     commentatorMilestonesRef.current = { m25: false, m50: false, m75: false };
     if (commentatorEnabled) {
       const _racerName = currentUser?.username || currentUser?.name || null;
