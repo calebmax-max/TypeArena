@@ -2065,7 +2065,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       setLoadingLive(false);
     }
   };
-const createFriendBattle = async () => {
+
+  const createFriendBattle = async () => {
     if (!currentUser?.id) {
       redirectToProfile();
       return;
@@ -2122,8 +2123,14 @@ const createFriendBattle = async () => {
       refreshFeed();
     } catch (error) {
       console.error("Error creating friend battle:", error);
-      setPhase('lobby'); 
-      showNotice(error.response?.data?.message || error.message || 'Could not create friend battle.', 'error');
+      setPhase('lobby');
+      showNotice(
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        'Could not create friend battle.',
+        'error'
+      );
     } finally {
       setLoadingLive(false);
     }
@@ -2779,7 +2786,7 @@ const createFriendBattle = async () => {
               />
             </div>
             <div className="results-actions">
-              <button className="btn btn-primary" onClick={createFriendBattle} disabled={loadingLive}>
+              <button className="btn btn-primary" onClick={createFriendBattle} disabled={loadingLive || !currentUser?.id}>
                 Create Private Room
               </button>
               <button className="btn btn-outline-primary" onClick={joinFriendBattle} disabled={loadingLive || !friendBattle.inviteCode.trim()}>
