@@ -9,7 +9,6 @@ import Profile from './components/TypeProfile';
 import AdminPanel from './components/AdminPanel';
 import Marketplace from './components/Marketplace';
 import Results from './components/Results';
-import MusicBar from './components/MusicBar';
 
 import Notfound from './components/Notfound';
 import Spectate from './components/Spectate';
@@ -213,7 +212,7 @@ function AppLayout() {
         </div>
       </div>
 
-      <MusicBar /> 
+      
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
