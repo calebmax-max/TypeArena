@@ -127,42 +127,47 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
   const lastIdRef = useRef(0);
   const activeRef = useRef(true);
 
-  // Load full history on open
+  // Load full history on open, then start long-poll from the latest id
   const loadMessages = useCallback(async () => {
     try {
       const data = await apiFetch(`/api/chat/messages/${partner.id}`);
       if (Array.isArray(data) && data.length > 0) {
         lastIdRef.current = Math.max(...data.map((m) => m.id));
       }
-      setMessages(data);
-    } catch (_) {}
+      setMessages(Array.isArray(data) ? data : []);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }, [partner.id, apiFetch]);
 
-  // Long-poll loop — runs continuously, each call blocks up to 25s on server
-  // then returns immediately with any new messages
+  // Long-poll loop — starts AFTER history is loaded so since= is correct
   useEffect(() => {
     activeRef.current = true;
-    loadMessages();
 
     const poll = async () => {
+      // Load history first, set lastIdRef, then start polling from that id
+      await loadMessages();
+
       while (activeRef.current) {
         try {
           const newMsgs = await apiFetch(
             `/api/chat/poll/${partner.id}?since=${lastIdRef.current}`
           );
-          if (activeRef.current && Array.isArray(newMsgs) && newMsgs.length > 0) {
+          if (!activeRef.current) break;
+          if (Array.isArray(newMsgs) && newMsgs.length > 0) {
             lastIdRef.current = Math.max(...newMsgs.map((m) => m.id));
             setMessages((prev) => {
               const existingIds = new Set(prev.map((m) => String(m.id)));
               const fresh = newMsgs.filter((m) => !existingIds.has(String(m.id)));
-              // Also replace any temp optimistic messages matched by body+mine
               if (fresh.length === 0) return prev;
               return [...prev, ...fresh];
             });
           }
         } catch (_) {
-          // On error wait 2s before retrying to avoid hammering server
-          await new Promise((r) => setTimeout(r, 2000));
+          if (!activeRef.current) break;
+          // Brief pause on error before retrying
+          await new Promise((r) => setTimeout(r, 1000));
         }
       }
     };

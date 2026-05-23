@@ -20,7 +20,7 @@ from urllib import parse as urlparse
 from urllib import request as urlrequest
 
 import pymysql
-from flask import Flask, jsonify, request, send_from_directory, Response
+from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -5289,6 +5289,27 @@ def chat_get_messages(other_user_id: int):
         conn.close()
 
 
+# ── Long-poll infrastructure (must be defined BEFORE chat_send_message) ──────
+import threading as _threading
+_chat_events: dict = {}
+_chat_events_lock = _threading.Lock()
+
+
+def _get_or_create_event(user_id: int) -> _threading.Event:
+    with _chat_events_lock:
+        if user_id not in _chat_events:
+            _chat_events[user_id] = _threading.Event()
+        return _chat_events[user_id]
+
+
+def _notify_user(user_id: int) -> None:
+    """Wake up any long-poll request waiting for user_id."""
+    with _chat_events_lock:
+        ev = _chat_events.get(user_id)
+    if ev:
+        ev.set()
+
+
 @app.post('/api/chat/messages')
 def chat_send_message():
     payload = request.get_json(silent=True) or {}
@@ -5333,7 +5354,7 @@ def chat_send_message():
             'mine': True,
             'read': False,
         }
-        # Wake up any long-poll requests waiting for either user
+        # Wake up long-poll requests for both users instantly
         _notify_user(recipient_id_int)
         _notify_user(me)
         return jsonify(msg_payload), 201
@@ -5341,35 +5362,12 @@ def chat_send_message():
         conn.close()
 
 
-# ── Long-poll chat ───────────────────────────────────────────────────────────
-# In-memory queue: maps user_id -> threading.Event so waiting requests
-# wake up the moment a new message arrives for that user.
-import threading as _threading
-_chat_events: dict = {}
-_chat_events_lock = _threading.Lock()
-
-
-def _get_or_create_event(user_id: int) -> _threading.Event:
-    with _chat_events_lock:
-        if user_id not in _chat_events:
-            _chat_events[user_id] = _threading.Event()
-        return _chat_events[user_id]
-
-
-def _notify_user(user_id: int):
-    """Wake up any long-poll request waiting for user_id."""
-    with _chat_events_lock:
-        ev = _chat_events.get(user_id)
-    if ev:
-        ev.set()
-
-
 @app.get('/api/chat/poll/<int:other_user_id>')
 def chat_long_poll(other_user_id: int):
     """
-    Long-poll endpoint. Client sends its newest message id as ?since=<id>.
-    We check DB immediately; if no new messages we wait up to 25s for a
-    _notify_user signal, then check again and return whatever we find.
+    Long-poll endpoint. The client sends ?since=<last_msg_id>.
+    Returns immediately if new messages exist, otherwise holds the
+    connection open for up to 25 s waiting for _notify_user() to fire.
     """
     conn = get_connection()
     try:
@@ -5407,7 +5405,8 @@ def chat_long_poll(other_user_id: int):
                     cur.execute(
                         '''
                         UPDATE chat_messages SET read_at = %s
-                        WHERE sender_id = %s AND recipient_id = %s AND read_at IS NULL AND id > %s
+                        WHERE sender_id = %s AND recipient_id = %s
+                          AND read_at IS NULL AND id > %s
                         ''',
                         (_now_db(), other_user_id, me, since_id),
                     )
@@ -5427,18 +5426,17 @@ def chat_long_poll(other_user_id: int):
         finally:
             c.close()
 
-    # Check immediately first
+    # Check immediately — return right away if there's already something new
     msgs = fetch_new()
     if msgs:
         return jsonify(msgs)
 
-    # Nothing yet — wait for a push notification (max 25s)
+    # Nothing yet — park the request until _notify_user fires or 25 s pass
     ev = _get_or_create_event(me)
     ev.clear()
-    ev.wait(timeout=25)
+    ev.wait(timeout=20)
 
-    msgs = fetch_new()
-    return jsonify(msgs)
+    return jsonify(fetch_new())
 
 
 @app.get('/api/chat/unread')
