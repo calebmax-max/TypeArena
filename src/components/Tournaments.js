@@ -65,7 +65,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
     fetchTournamentWinner(tournament.id)
       .then((data) => setWinner(data?.winner || data || null))
       .catch(() => {});
-  }, [tournament.id, tournament.status]);
+  }, [tournament.id, tournament.status, winner]);
 
   const requiredPlayers = Number(tournament.matchSize || tournament.maxParticipants || 2);
   const joinedPlayers =

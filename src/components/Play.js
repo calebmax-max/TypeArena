@@ -612,6 +612,7 @@ const speakSequence = (sentences, opts = {}) => {
 };
 
 // Convenience: single random line from a pool (legacy call sites)
+// eslint-disable-next-line no-unused-vars
 const speakCommentary = (lines, opts = {}) => {
   speakSequence([_pick(lines)], opts);
 };
@@ -1844,7 +1845,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser?.id, duration, language, mode, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, language, mode, redirectToProfile, showNotice]);
 
   const startPracticeRace = useCallback(() => {
     if (!currentUser?.id) {
@@ -1881,7 +1882,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser?.id, duration, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, redirectToProfile, showNotice]);
 
   // ── NEW #E: inject ghost cursor blink animation once ──────────────────────
   useEffect(() => {
