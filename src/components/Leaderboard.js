@@ -206,15 +206,23 @@ const ErrorState = ({ onRetry }) => (
 
 export default function Leaderboard({ currentUserUsername }) {
   // ── State ──────────────────────────────────────────────────────────────────
-  const [players,     setPlayers]     = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState(false);
-  const [sortBy,      setSortBy]      = useState('seasonPoints');
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [tierFilter,  setTierFilter]  = useState('All');
-  const [page,        setPage]        = useState(1);
-  const [selected,    setSelected]    = useState(null);
+  const [players,       setPlayers]       = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState(false);
+  const [sortBy,        setSortBy]        = useState('seasonPoints');
+  const [searchInput,   setSearchInput]   = useState('');
+  const [searchQuery,   setSearchQuery]   = useState('');
+  const [tierFilter,    setTierFilter]    = useState('All');
+  const [page,          setPage]          = useState(1);
+  const [selected,      setSelected]      = useState(null);
+  const [activeTab,     setActiveTab]     = useState('live');   // 'live' | 'past'
+  const [pastSeasons,   setPastSeasons]   = useState([]);
+  const [pastLoading,   setPastLoading]   = useState(false);
+  const [pastSeason,    setPastSeason]    = useState('');       // selected past season filter
+  const [seasonName,    setSeasonName]    = useState(() => {
+    const now = new Date();
+    return now.toLocaleString('default', { month: 'long' }) + ' ' + now.getFullYear();
+  });
 
   // ── Refs (no stale cache at module level) ──────────────────────────────────
   const cachedPlayersRef   = useRef(null);
@@ -232,6 +240,8 @@ export default function Leaderboard({ currentUserUsername }) {
       if (Array.isArray(data)) {
         cachedPlayersRef.current = data;
         setPlayers(data);
+        // Extract current season name from first player row if available
+        if (data[0]?.season) setSeasonName(data[0].season);
       }
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
@@ -240,6 +250,24 @@ export default function Leaderboard({ currentUserUsername }) {
       setLoading(false);
     }
   }, []);
+
+  const loadPastSeasons = useCallback(async () => {
+    setPastLoading(true);
+    try {
+      const url = `/api/season/snapshots${pastSeason ? `?season=${encodeURIComponent(pastSeason)}` : ''}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (Array.isArray(data)) setPastSeasons(data);
+    } catch (err) {
+      console.error('Failed to fetch past seasons:', err);
+    } finally {
+      setPastLoading(false);
+    }
+  }, [pastSeason]);
+
+  useEffect(() => {
+    if (activeTab === 'past') loadPastSeasons();
+  }, [activeTab, loadPastSeasons]);
 
   // Initial load + visibility-aware polling
   useEffect(() => {
@@ -354,8 +382,11 @@ export default function Leaderboard({ currentUserUsername }) {
             <span className="pulse-dot" />
             LIVE
           </span>
+          <span className="season-badge" style={{ marginLeft: '0.75rem', fontSize: '0.78rem', padding: '0.25rem 0.75rem', borderRadius: '999px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)', fontWeight: 500, letterSpacing: '0.02em' }}>
+            📅 {seasonName} Season
+          </span>
         </div>
-        <p>Real-time typing ladder — updated every 30 seconds.</p>
+        <p>Real-time typing ladder — updated every 30 seconds. Season resets at end of month.</p>
       </div>
 
       {/* Controls */}
@@ -405,10 +436,90 @@ export default function Leaderboard({ currentUserUsername }) {
         </div>
       </div>
 
+      {/* Tab switcher */}
+      <div className="lb-tab-row" role="tablist" style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0 0.5rem' }}>
+        <button
+          className={`sort-btn ${activeTab === 'live' ? 'active' : ''}`}
+          onClick={() => setActiveTab('live')}
+          role="tab"
+          aria-selected={activeTab === 'live'}
+        >🏆 Live Standings</button>
+        <button
+          className={`sort-btn ${activeTab === 'past' ? 'active' : ''}`}
+          onClick={() => setActiveTab('past')}
+          role="tab"
+          aria-selected={activeTab === 'past'}
+        >📜 Past Seasons</button>
+      </div>
+
+      {/* Past Seasons Panel */}
+      {activeTab === 'past' && (
+        <div className="past-seasons-panel" style={{ marginTop: '0.5rem' }}>
+          <div className="past-seasons-filter" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+            <input
+              type="text"
+              className="leaderboard-search-input"
+              placeholder="Filter by season e.g. April 2026"
+              value={pastSeason}
+              onChange={(e) => setPastSeason(e.target.value)}
+              aria-label="Filter past season"
+            />
+            <button className="retry-btn" onClick={loadPastSeasons}>Search</button>
+          </div>
+          {pastLoading ? (
+            <div className="leaderboard-table">{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}</div>
+          ) : pastSeasons.length === 0 ? (
+            <div className="empty-leaderboard">
+              <span className="empty-icon">📜</span>
+              <p>No past season archives yet. They appear here after each monthly reset.</p>
+            </div>
+          ) : (
+            <>
+              {/* Group by season name */}
+              {(() => {
+                const seasons = [...new Set(pastSeasons.map(r => r.seasonName))];
+                return seasons.map(sName => {
+                  const rows = pastSeasons.filter(r => r.seasonName === sName);
+                  return (
+                    <div key={sName} className="past-season-block" style={{ marginBottom: '1.5rem' }}>
+                      <h3 className="past-season-title" style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem', opacity: 0.85 }}>📅 {sName}</h3>
+                      <div className="leaderboard-table" role="table">
+                        <div className="table-header" role="row">
+                          <span className="col-rank" role="columnheader">Rank</span>
+                          <span className="col-player" role="columnheader">Player</span>
+                          <span className="col-elo" role="columnheader">Season Pts</span>
+                          <span className="col-tier" role="columnheader">Final Tier</span>
+                        </div>
+                        {rows.map(r => (
+                          <div key={r.userId + sName} className="table-row real-time-row">
+                            <span className="col-rank"><strong className="rank-indicator">#{r.rank}</strong></span>
+                            <div className="col-player">
+                              <span className="player-name">{r.username}</span>
+                            </div>
+                            <span className="col-elo">
+                              <span className="elo-display-badge">⭐ {r.seasonPoints}</span>
+                            </span>
+                            <span className="col-tier">
+                              <span className={`tier-badge tier-${getTierClass(r.tier)}`}>
+                                {getTierIcon(r.tier)} {r.tier}
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Body */}
-      {error ? (
+      {activeTab === 'live' && error ? (
         <ErrorState onRetry={() => loadLeaderboardData(false)} />
-      ) : (
+      ) : activeTab === 'live' && (
         <>
           {/* Podium — only when no filter/search active */}
           {!loading && searchQuery === '' && tierFilter === 'All' && podiumPlayers.length > 0 && (

@@ -811,11 +811,21 @@ PASSAGE_DECORATORS = [
 
 
 def _season_name() -> str:
-    now = datetime.utcnow()
-    return f'{now.strftime("%B")} {now.year}'
+    return _get_current_season_name()
 
 
 def _tier_for_user(user: Dict[str, Any]) -> str:
+    """
+    Tier is now season-points-based (with Grandmaster for rank 1-5).
+    Falls back to WPM-based tiers for users with no season activity.
+    The leaderboard passes rank explicitly; profile calls without rank
+    use season_points_stored for threshold matching only.
+    """
+    season_pts = int(user.get('season_points_stored') or user.get('seasonPoints') or 0)
+    rank = int(user.get('_season_rank') or 9999)
+    if season_pts > 0:
+        return _tier_for_season_points(season_pts, rank)
+    # Fallback: WPM-based (users who haven't played this season yet)
     wpm = float(user.get('wpm') or 0)
     if wpm >= 120:
         return 'Diamond'
@@ -1076,6 +1086,195 @@ def _ensure_user_equipped_columns(cur) -> None:
     cur.execute("SHOW COLUMNS FROM users LIKE 'equipped_frame'")
     if not cur.fetchone():
         cur.execute("ALTER TABLE users ADD COLUMN equipped_frame VARCHAR(80) NULL AFTER equipped_effect")
+
+
+# ── Season reset helpers ──────────────────────────────────────────────────────
+
+def _ensure_season_tables(cur) -> None:
+    """Create season_snapshots table and add season tracking columns to users."""
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS season_snapshots (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            season_name   VARCHAR(40) NOT NULL,
+            user_id       INT NOT NULL,
+            username      VARCHAR(120) NOT NULL,
+            season_points INT NOT NULL DEFAULT 0,
+            tier          VARCHAR(40) NOT NULL DEFAULT 'Bronze',
+            rank_position INT NOT NULL DEFAULT 0,
+            snapshotted_at DATETIME NOT NULL,
+            INDEX idx_season_name (season_name),
+            INDEX idx_user_id     (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+    cur.execute("SHOW COLUMNS FROM users LIKE 'season_name'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN season_name VARCHAR(40) NULL AFTER accuracy"
+        )
+    cur.execute("SHOW COLUMNS FROM users LIKE 'season_points_stored'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN season_points_stored INT NOT NULL DEFAULT 0 AFTER season_name"
+        )
+    cur.execute("SHOW COLUMNS FROM users LIKE 'season_races'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN season_races INT NOT NULL DEFAULT 0 AFTER season_points_stored"
+        )
+    cur.execute("SHOW COLUMNS FROM users LIKE 'season_wins'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN season_wins INT NOT NULL DEFAULT 0 AFTER season_races"
+        )
+    cur.execute("SHOW COLUMNS FROM users LIKE 'season_earnings'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN season_earnings DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER season_wins"
+        )
+
+
+def _get_current_season_name() -> str:
+    """Returns e.g. 'May 2026'. Matches _season_name() but used server-side."""
+    now = datetime.utcnow()
+    return f'{now.strftime("%B")} {now.year}'
+
+
+def _ensure_season_reset(conn) -> None:
+    """
+    Called on leaderboard load and profile load.
+    If the calendar month has rolled over since the last recorded season on any
+    user, snapshot the final standings and zero out all season counters.
+    This is idempotent — safe to call on every request.
+    """
+    current_season = _get_current_season_name()
+    with conn.cursor() as cur:
+        _ensure_season_tables(cur)
+        # Check whether any user still has a stale season_name
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE season_name IS NOT NULL AND season_name != %s LIMIT 1",
+            (current_season,),
+        )
+        row = cur.fetchone()
+        needs_reset = bool(row and int(row.get('n') or 0) > 0)
+
+        # Also handle first-ever run: users whose season_name is NULL
+        if not needs_reset:
+            cur.execute("SELECT COUNT(*) AS n FROM users WHERE season_name IS NULL LIMIT 1")
+            row = cur.fetchone()
+            needs_reset = bool(row and int(row.get('n') or 0) > 0)
+
+        if not needs_reset:
+            return
+
+        # ── Snapshot the ending season before reset ────────────────────────
+        cur.execute(
+            """
+            SELECT id, username, season_name, season_points_stored, season_races, season_wins, season_earnings
+            FROM users
+            WHERE season_name IS NOT NULL AND season_name != %s AND season_points_stored > 0
+            ORDER BY season_points_stored DESC
+            """,
+            (current_season,),
+        )
+        ending_players = cur.fetchall()
+        now_dt = datetime.utcnow()
+        for rank_idx, player in enumerate(ending_players, start=1):
+            old_season = player.get('season_name') or 'Unknown'
+            tier = _tier_for_season_points(int(player.get('season_points_stored') or 0), rank_idx)
+            cur.execute(
+                """
+                INSERT INTO season_snapshots
+                (season_name, user_id, username, season_points, tier, rank_position, snapshotted_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    season_points  = VALUES(season_points),
+                    tier           = VALUES(tier),
+                    rank_position  = VALUES(rank_position),
+                    snapshotted_at = VALUES(snapshotted_at)
+                """,
+                (
+                    old_season,
+                    int(player['id']),
+                    str(player['username']),
+                    int(player.get('season_points_stored') or 0),
+                    tier,
+                    rank_idx,
+                    now_dt,
+                ),
+            )
+
+        # ── Reset all users to the new season ─────────────────────────────
+        cur.execute(
+            """
+            UPDATE users
+            SET season_name          = %s,
+                season_points_stored = 0,
+                season_races         = 0,
+                season_wins          = 0,
+                season_earnings      = 0
+            """,
+            (current_season,),
+        )
+    conn.commit()
+
+
+def _increment_season_stats(cur, *, user_id: int, wpm: float, accuracy: float, earnings: float, did_win: bool) -> None:
+    """Accumulate per-season counters on every race submission."""
+    current_season = _get_current_season_name()
+    cur.execute(
+        """
+        UPDATE users
+        SET season_name     = %s,
+            season_races    = season_races + 1,
+            season_wins     = season_wins + %s,
+            season_earnings = season_earnings + %s
+        WHERE id = %s
+        """,
+        (current_season, 1 if did_win else 0, max(0.0, earnings), user_id),
+    )
+
+
+def _refresh_season_points_for_user(cur, user: dict) -> int:
+    """
+    Recompute and persist season_points_stored for a single user based on
+    their current-season counters, then return the new value.
+    """
+    owned = _owned_store_items_for_user(cur.connection if hasattr(cur, 'connection') else None, int(user.get('id') or 0))
+    pts = _competitive_season_points(
+        user,
+        live_races=int(user.get('season_races') or 0),
+        tournament_entries=0,
+        tournament_payouts=float(user.get('season_earnings') or 0),
+        live_earnings=0.0,
+        owned_items=owned,
+    )
+    cur.execute(
+        "UPDATE users SET season_points_stored = %s WHERE id = %s",
+        (pts, int(user.get('id') or 0)),
+    )
+    return pts
+
+
+def _tier_for_season_points(season_points: int, rank: int) -> str:
+    """
+    Determines tier from season points and rank.
+    Grandmaster: top 5 players with at least 500 season points.
+    Diamond:     >= 1200 pts
+    Gold:        >= 700 pts
+    Silver:      >= 350 pts
+    Bronze:      everyone else
+    """
+    if rank <= 5 and season_points >= 500:
+        return 'Grandmaster'
+    if season_points >= 1200:
+        return 'Diamond'
+    if season_points >= 700:
+        return 'Gold'
+    if season_points >= 350:
+        return 'Silver'
+    return 'Bronze'
 
 
 def _equip_field_for_category(category: str) -> str | None:
@@ -2158,7 +2357,17 @@ def _apply_user_performance_update(
         ),
     )
     cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
-    return cur.fetchone()
+    updated_user = cur.fetchone()
+    # Accumulate per-season counters so season_points_stored stays current
+    _increment_season_stats(
+        cur,
+        user_id=user_id,
+        wpm=wpm,
+        accuracy=accuracy,
+        earnings=earnings,
+        did_win=did_win,
+    )
+    return updated_user
 
 
 def _persist_completed_live_race(room: Dict[str, Any]) -> None:
@@ -5070,6 +5279,50 @@ def join_tournament(tournament_id: int):
         conn.close()
 
 
+@app.get('/api/season/snapshots')
+def season_snapshots():
+    """Return archived standings for past seasons, newest first."""
+    season = request.args.get('season', '').strip()  # optional filter
+    conn = get_connection()
+    try:
+        _ensure_season_reset(conn)
+        with conn.cursor() as cur:
+            _ensure_season_tables(cur)
+            if season:
+                cur.execute(
+                    """
+                    SELECT * FROM season_snapshots
+                    WHERE season_name = %s
+                    ORDER BY rank_position ASC
+                    """,
+                    (season,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT * FROM season_snapshots
+                    ORDER BY snapshotted_at DESC, rank_position ASC
+                    LIMIT 500
+                    """
+                )
+            rows = cur.fetchall()
+        data = [
+            {
+                'seasonName':    row['season_name'],
+                'userId':        row['user_id'],
+                'username':      row['username'],
+                'seasonPoints':  row['season_points'],
+                'tier':          row['tier'],
+                'rank':          row['rank_position'],
+                'snapshottedAt': row['snapshotted_at'].isoformat() + 'Z' if row.get('snapshotted_at') else None,
+            }
+            for row in rows
+        ]
+        return jsonify(data)
+    finally:
+        conn.close()
+
+
 @app.get('/api/leaderboard')
 def leaderboard():
     limit_raw = request.args.get('limit', '100')
@@ -5080,6 +5333,8 @@ def leaderboard():
 
     conn = get_connection()
     try:
+        # Trigger season rollover if the month has changed
+        _ensure_season_reset(conn)
         with conn.cursor() as cur:
             cur.execute(
                 '''
@@ -5121,10 +5376,50 @@ def leaderboard():
             )
             users = cur.fetchall()
 
+        # Recompute season_points_stored for all users pulled into the board
+        # so the stored value stays fresh on every leaderboard load.
+        for u in users:
+            with conn.cursor() as refresh_cur:
+                _refresh_season_points_for_user(refresh_cur, u)
+        conn.commit()
+
+        # Re-fetch with updated season_points_stored so sorting is accurate
+        with conn.cursor() as cur2:
+            cur2.execute(
+                """
+                SELECT
+                    u.*,
+                    COALESCE(rh.live_races, 0) AS live_races,
+                    COALESCE(rh.live_earnings, 0) AS live_earnings,
+                    COALESCE(tj.tournament_entries, 0) AS tournament_entries,
+                    COALESCE(pp.tournament_payouts, 0) AS tournament_payouts
+                FROM users u
+                LEFT JOIN (
+                    SELECT user_id, COUNT(*) AS live_races, COALESCE(SUM(earnings), 0) AS live_earnings
+                    FROM race_history GROUP BY user_id
+                ) rh ON rh.user_id = u.id
+                LEFT JOIN (
+                    SELECT user_id, COUNT(*) AS tournament_entries
+                    FROM tournament_joins WHERE paid_amount > 0 GROUP BY user_id
+                ) tj ON tj.user_id = u.id
+                LEFT JOIN (
+                    SELECT user_id, COALESCE(SUM(amount), 0) AS tournament_payouts
+                    FROM prize_payouts WHERE status = 'completed' AND tournament_id IS NOT NULL GROUP BY user_id
+                ) pp ON pp.user_id = u.id
+                ORDER BY u.season_points_stored DESC, u.wins DESC, u.wpm DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            users = cur2.fetchall()
+
         board = []
         for idx, u in enumerate(users, start=1):
             owned_items = _owned_store_items_for_user(conn, int(u.get('id') or 0))
-            row = _safe_user(u, conn)
+            # Inject rank so _tier_for_user can assign Grandmaster to top-5
+            u_with_rank = dict(u)
+            u_with_rank['_season_rank'] = idx
+            row = _safe_user(u_with_rank, conn)
             tournament_entries = int(u.get('tournament_entries') or 0)
             tournament_payouts = float(u.get('tournament_payouts') or 0)
             live_races = int(u.get('live_races') or 0)
@@ -5133,14 +5428,7 @@ def leaderboard():
             row['tournamentPayouts'] = tournament_payouts
             row['liveRaces'] = live_races
             row['liveEarnings'] = live_earnings
-            row['seasonPoints'] = _competitive_season_points(
-                u,
-                live_races=live_races,
-                tournament_entries=tournament_entries,
-                tournament_payouts=tournament_payouts,
-                live_earnings=live_earnings,
-                owned_items=owned_items,
-            )
+            row['seasonPoints'] = int(u.get('season_points_stored') or 0)
             row['rank'] = idx
             row['weeklyRank'] = idx
             board.append(row)
@@ -5511,6 +5799,16 @@ def submit_race():
                 (total_races, wins, next_wpm, next_accuracy, earnings, user['id']),
             )
 
+        with conn.cursor() as season_cur:
+            _increment_season_stats(
+                season_cur,
+                user_id=user['id'],
+                wpm=wpm,
+                accuracy=accuracy,
+                earnings=float(earnings),
+                did_win=(place == 1),
+            )
+
         conn.commit()
 
         return jsonify(
@@ -5654,6 +5952,8 @@ def _bootstrap_db() -> None:
                 _ensure_admin_wallet_transactions_table(cur)
                 _ensure_live_race_rooms_table(cur)
                 _ensure_auth_token_column(cur)
+                _ensure_user_equipped_columns(cur)
+                _ensure_season_tables(cur)
             conn.commit()
         finally:
             conn.close()
