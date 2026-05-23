@@ -127,7 +127,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
 
   const loadMessages = useCallback(async () => {
     try {
-      const data = await apiFetch(`/chat/messages/${partner.id}`);
+      const data = await apiFetch(`/api/chat/messages/${partner.id}`);
       setMessages(data);
     } catch (_) {}
   }, [partner.id, apiFetch]);
@@ -152,7 +152,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
     setSending(true);
     setInput('');
     try {
-      const msg = await apiFetch('/chat/messages', {
+      const msg = await apiFetch('/api/chat/messages', {
         method: 'POST',
         body: JSON.stringify({ recipientId: partner.id, body }),
       });
@@ -336,7 +336,7 @@ export default function ChatWidget({ currentUser }) {
   useEffect(() => {
     if (!isLoggedIn) return;
     let debounceTimer = null;
-    const ping = () => apiFetch('/presence/ping', { method: 'POST' }).catch(() => {});
+    const ping = () => apiFetch('/api/presence/ping', { method: 'POST' }).catch(() => {});
     const onActivity = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(ping, 500); };
     ping();
     const intervalId = setInterval(ping, 30000);
@@ -351,7 +351,7 @@ export default function ChatWidget({ currentUser }) {
   // Poll online players
   useEffect(() => {
     if (!isLoggedIn) return;
-    const load = () => apiFetch('/presence/online').then(setPlayers).catch(() => {});
+    const load = () => apiFetch('/api/presence/online').then(setPlayers).catch(() => {});
     load();
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
@@ -361,7 +361,7 @@ export default function ChatWidget({ currentUser }) {
   useEffect(() => {
     if (!isLoggedIn) return;
     const load = () =>
-      apiFetch('/chat/unread')
+      apiFetch('/api/chat/unread')
         .then((counts) => {
           setUnread(counts);
           setTotalUnread(Object.values(counts).reduce((s, n) => s + n, 0));
