@@ -3,7 +3,7 @@ services:
     name: typearena-api
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-class gthread --threads 4 --timeout 120 --graceful-timeout 30 --keep-alive 5 wsgi:application
+    startCommand: gunicorn --worker-class gevent --worker-connections 100 --workers 1 --timeout 120 --graceful-timeout 30 --keep-alive 5 wsgi:application
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
