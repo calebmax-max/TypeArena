@@ -5091,6 +5091,219 @@ def leaderboard():
         conn.close()
 
 
+
+# ── Chat & Presence ──────────────────────────────────────────────────────────
+
+def _ensure_chat_tables(cur) -> None:
+    cur.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS user_presence (
+            user_id INT PRIMARY KEY,
+            last_seen DATETIME NOT NULL,
+            CONSTRAINT fk_presence_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        '''
+    )
+    cur.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            sender_id INT NOT NULL,
+            recipient_id INT NOT NULL,
+            body TEXT NOT NULL,
+            sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            read_at DATETIME NULL,
+            KEY idx_chat_thread (sender_id, recipient_id),
+            KEY idx_chat_recipient (recipient_id),
+            CONSTRAINT fk_chat_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+            CONSTRAINT fk_chat_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        '''
+    )
+
+
+@app.post('/api/presence/ping')
+def presence_ping():
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
+            cur.execute(
+                '''
+                INSERT INTO user_presence (user_id, last_seen)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE last_seen = VALUES(last_seen)
+                ''',
+                (int(user['id']), _now_db()),
+            )
+        conn.commit()
+        return jsonify({'ok': True})
+    finally:
+        conn.close()
+
+
+@app.get('/api/presence/online')
+def presence_online():
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        cutoff = (datetime.utcnow() - timedelta(seconds=45)).strftime('%Y-%m-%d %H:%M:%S')
+        with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
+            cur.execute(
+                '''
+                SELECT u.id, u.username, u.wpm, p.last_seen
+                FROM user_presence p
+                JOIN users u ON u.id = p.user_id
+                WHERE p.last_seen >= %s
+                ORDER BY u.username ASC
+                ''',
+                (cutoff,),
+            )
+            rows = cur.fetchall()
+        online = [
+            {
+                'id': row['id'],
+                'username': row['username'],
+                'wpm': float(row['wpm'] or 0),
+                'lastSeen': row['last_seen'].isoformat() + 'Z' if row.get('last_seen') else None,
+                'isMe': int(row['id']) == int(user['id']),
+            }
+            for row in rows
+        ]
+        return jsonify(online)
+    finally:
+        conn.close()
+
+
+@app.get('/api/chat/messages/<int:other_user_id>')
+def chat_get_messages(other_user_id: int):
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        me = int(user['id'])
+        with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
+            cur.execute(
+                '''
+                SELECT id, sender_id, recipient_id, body, sent_at, read_at
+                FROM chat_messages
+                WHERE (sender_id = %s AND recipient_id = %s)
+                   OR (sender_id = %s AND recipient_id = %s)
+                ORDER BY sent_at ASC
+                LIMIT 200
+                ''',
+                (me, other_user_id, other_user_id, me),
+            )
+            rows = cur.fetchall()
+            # Mark unread messages as read
+            cur.execute(
+                '''
+                UPDATE chat_messages
+                SET read_at = %s
+                WHERE sender_id = %s AND recipient_id = %s AND read_at IS NULL
+                ''',
+                (_now_db(), other_user_id, me),
+            )
+        conn.commit()
+        messages = [
+            {
+                'id': row['id'],
+                'senderId': row['sender_id'],
+                'recipientId': row['recipient_id'],
+                'body': row['body'],
+                'sentAt': row['sent_at'].isoformat() + 'Z' if row.get('sent_at') else None,
+                'read': row['read_at'] is not None,
+                'mine': int(row['sender_id']) == me,
+            }
+            for row in rows
+        ]
+        return jsonify(messages)
+    finally:
+        conn.close()
+
+
+@app.post('/api/chat/messages')
+def chat_send_message():
+    payload = request.get_json(silent=True) or {}
+    recipient_id = payload.get('recipientId')
+    body = str(payload.get('body') or '').strip()
+
+    if not body:
+        return jsonify({'message': 'Message body is required.'}), 400
+    if len(body) > 1000:
+        return jsonify({'message': 'Message too long (max 1000 chars).'}), 400
+
+    try:
+        recipient_id_int = int(recipient_id)
+    except (TypeError, ValueError):
+        return jsonify({'message': 'Valid recipientId is required.'}), 400
+
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        me = int(user['id'])
+        if me == recipient_id_int:
+            return jsonify({'message': 'Cannot message yourself.'}), 400
+        with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
+            cur.execute('SELECT id FROM users WHERE id = %s', (recipient_id_int,))
+            if not cur.fetchone():
+                return jsonify({'message': 'Recipient not found.'}), 404
+            cur.execute(
+                'INSERT INTO chat_messages (sender_id, recipient_id, body, sent_at) VALUES (%s, %s, %s, %s)',
+                (me, recipient_id_int, body, _now_db()),
+            )
+            msg_id = cur.lastrowid
+        conn.commit()
+        return jsonify({
+            'id': msg_id,
+            'senderId': me,
+            'recipientId': recipient_id_int,
+            'body': body,
+            'sentAt': _now_iso(),
+            'mine': True,
+            'read': False,
+        }), 201
+    finally:
+        conn.close()
+
+
+@app.get('/api/chat/unread')
+def chat_unread_counts():
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        me = int(user['id'])
+        with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
+            cur.execute(
+                '''
+                SELECT sender_id, COUNT(*) AS cnt
+                FROM chat_messages
+                WHERE recipient_id = %s AND read_at IS NULL
+                GROUP BY sender_id
+                ''',
+                (me,),
+            )
+            rows = cur.fetchall()
+        counts = {int(row['sender_id']): int(row['cnt']) for row in rows}
+        return jsonify(counts)
+    finally:
+        conn.close()
+
+
 @app.post('/api/races/submit')
 def submit_race():
     payload = request.get_json(silent=True) or {}

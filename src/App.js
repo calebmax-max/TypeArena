@@ -9,6 +9,10 @@ import Profile from './components/TypeProfile';
 import AdminPanel from './components/AdminPanel';
 import Marketplace from './components/Marketplace';
 import Results from './components/Results';
+import ChatWidget from './components/ChatWidget';
+
+// Inside your layout/App component, pass in currentUser:
+
 
 import Notfound from './components/Notfound';
 import Spectate from './components/Spectate';
@@ -214,6 +218,7 @@ function AppLayout() {
 
       
       <main>
+        <ChatWidget currentUser={currentUser} />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/play" element={<Play />} />

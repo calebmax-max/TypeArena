@@ -1,0 +1,381 @@
+/* ============================================================
+   ChatWidget.css — TypeArena
+   Floating bottom-right DM widget.
+   Tokens mirror Home.css / Play.css exactly.
+   ============================================================ */
+
+/* ── Root positioning ───────────────────────────────────────── */
+.cw-root {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+/* ── Toggle button ──────────────────────────────────────────── */
+.cw-toggle {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: hsl(145 80% 42%);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px hsl(145 80% 42% / 0.4), 0 4px 16px rgba(0,0,0,0.5);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  flex-shrink: 0;
+}
+
+.cw-toggle:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 28px hsl(145 80% 42% / 0.6), 0 6px 20px rgba(0,0,0,0.5);
+}
+
+.cw-toggle-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+  color: #050a10;
+}
+
+.cw-toggle-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 99px;
+  background: hsl(0 80% 65%);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 2px solid hsl(240 12% 7%);
+  letter-spacing: 0;
+}
+
+/* ── Panel ──────────────────────────────────────────────────── */
+.cw-panel {
+  width: 300px;
+  max-height: 440px;
+  background: hsl(240 12% 7% / 0.97);
+  border: 1px solid hsl(240 10% 19%);
+  border-radius: 16px;
+  box-shadow:
+    0 0 40px rgba(0,0,0,0.6),
+    0 0 0 1px hsl(145 80% 42% / 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+  animation: cwSlideUp 0.2s ease;
+}
+
+@keyframes cwSlideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Panel header ───────────────────────────────────────────── */
+.cw-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem 0.7rem;
+  border-bottom: 1px solid hsl(240 10% 19%);
+  flex-shrink: 0;
+}
+
+.cw-panel-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: hsl(0 0% 95%);
+  text-transform: uppercase;
+}
+
+.cw-online-count {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: hsl(240 5% 60%);
+}
+
+/* ── Online dot ─────────────────────────────────────────────── */
+.cw-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cw-dot--online {
+  background: hsl(145 80% 42%);
+  box-shadow: 0 0 5px hsl(145 80% 42% / 0.7);
+  animation: cwDotPulse 2s ease-in-out infinite;
+}
+
+@keyframes cwDotPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* ── Online player list ─────────────────────────────────────── */
+.cw-online-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cw-online-list::-webkit-scrollbar { width: 4px; }
+.cw-online-list::-webkit-scrollbar-track { background: transparent; }
+.cw-online-list::-webkit-scrollbar-thumb { background: hsl(240 10% 22%); border-radius: 99px; }
+
+.cw-online-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.cw-online-item:hover {
+  background: hsl(145 80% 42% / 0.07);
+}
+
+.cw-player-name {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: hsl(0 0% 95%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cw-player-wpm {
+  font-size: 0.65rem;
+  color: hsl(240 5% 60%);
+  flex-shrink: 0;
+}
+
+.cw-unread-badge {
+  min-width: 16px;
+  height: 16px;
+  border-radius: 99px;
+  background: hsl(145 80% 42%);
+  color: #050a10;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+/* ── Empty state ────────────────────────────────────────────── */
+.cw-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 1.5rem 1rem;
+  color: hsl(240 5% 60%);
+  font-size: 0.72rem;
+  text-align: center;
+  font-style: italic;
+}
+
+/* ── Thread ─────────────────────────────────────────────────── */
+.cw-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.cw-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid hsl(240 10% 19%);
+  flex-shrink: 0;
+}
+
+.cw-back-btn {
+  background: none;
+  border: none;
+  color: hsl(145 80% 42%);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.cw-back-btn:hover { opacity: 0.7; }
+
+.cw-thread-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: hsl(0 0% 95%);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Messages area ──────────────────────────────────────────── */
+.cw-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 0;
+}
+
+.cw-messages::-webkit-scrollbar { width: 4px; }
+.cw-messages::-webkit-scrollbar-track { background: transparent; }
+.cw-messages::-webkit-scrollbar-thumb { background: hsl(240 10% 22%); border-radius: 99px; }
+
+/* ── Individual message ─────────────────────────────────────── */
+.cw-msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+  gap: 0.15rem;
+}
+
+.cw-msg--mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.cw-msg--theirs {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.cw-msg-body {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.cw-msg--mine .cw-msg-body {
+  background: hsl(145 80% 42%);
+  color: #050a10;
+  border-bottom-right-radius: 3px;
+}
+
+.cw-msg--theirs .cw-msg-body {
+  background: hsl(240 12% 14%);
+  color: hsl(0 0% 92%);
+  border: 1px solid hsl(240 10% 22%);
+  border-bottom-left-radius: 3px;
+}
+
+.cw-msg-time {
+  font-size: 0.58rem;
+  color: hsl(240 5% 50%);
+  padding: 0 0.2rem;
+}
+
+/* ── Composer ───────────────────────────────────────────────── */
+.cw-composer {
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem;
+  border-top: 1px solid hsl(240 10% 19%);
+  flex-shrink: 0;
+}
+
+.cw-input {
+  flex: 1;
+  background: hsl(240 12% 11%);
+  border: 1px solid hsl(240 10% 22%);
+  border-radius: 8px;
+  color: hsl(0 0% 95%);
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  outline: none;
+  transition: border-color 0.18s;
+}
+
+.cw-input:focus {
+  border-color: hsl(145 80% 42% / 0.5);
+  box-shadow: 0 0 0 2px hsl(145 80% 42% / 0.12);
+}
+
+.cw-input::placeholder {
+  color: hsl(240 5% 45%);
+}
+
+.cw-send-btn {
+  background: hsl(145 80% 42%);
+  border: none;
+  border-radius: 8px;
+  color: #050a10;
+  font-size: 0.85rem;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.cw-send-btn:hover:not(:disabled) {
+  opacity: 0.85;
+  transform: scale(1.05);
+}
+
+.cw-send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Mobile: full width panel ───────────────────────────────── */
+@media (max-width: 480px) {
+  .cw-root {
+    bottom: 1rem;
+    right: 1rem;
+  }
+
+  .cw-panel {
+    width: calc(100vw - 2rem);
+    max-height: 60vh;
+  }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .cw-panel { animation: none; }
+  .cw-dot--online { animation: none; }
+}
