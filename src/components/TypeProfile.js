@@ -285,7 +285,7 @@ export default function TypeProfile() {
     window.dispatchEvent(new Event(USER_CHANGE_EVENT));
   }, []);
 
-  const loadWalletConfig = useCallback(async () => {
+  const _loadWalletConfig = useCallback(async () => {
     const data = await fetchWalletConfig();
     const cfg = data || { topUpMethods: [], withdrawMethods: [] };
     setWalletConfig(cfg);
