@@ -20,7 +20,7 @@ from urllib import parse as urlparse
 from urllib import request as urlrequest
 
 import pymysql
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, Response
 from werkzeug.exceptions import HTTPException
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -5333,78 +5333,112 @@ def chat_send_message():
             'mine': True,
             'read': False,
         }
-        # Push to recipient (mine=False) and sender (mine=True) instantly
-        _ws_push(recipient_id_int, {**msg_payload, 'mine': False})
-        _ws_push(me, {**msg_payload, 'mine': True})
+        # Wake up any long-poll requests waiting for either user
+        _notify_user(recipient_id_int)
+        _notify_user(me)
         return jsonify(msg_payload), 201
     finally:
         conn.close()
 
 
-# ── WebSocket chat ───────────────────────────────────────────────────────────
-# Registry: maps user_id -> set of open WebSocket connections for that user
+# ── Long-poll chat ───────────────────────────────────────────────────────────
+# In-memory queue: maps user_id -> threading.Event so waiting requests
+# wake up the moment a new message arrives for that user.
 import threading as _threading
-_chat_clients: dict = {}
-_chat_clients_lock = _threading.Lock()
+_chat_events: dict = {}
+_chat_events_lock = _threading.Lock()
 
 
-def _ws_register(user_id: int, ws):
-    with _chat_clients_lock:
-        if user_id not in _chat_clients:
-            _chat_clients[user_id] = set()
-        _chat_clients[user_id].add(ws)
+def _get_or_create_event(user_id: int) -> _threading.Event:
+    with _chat_events_lock:
+        if user_id not in _chat_events:
+            _chat_events[user_id] = _threading.Event()
+        return _chat_events[user_id]
 
 
-def _ws_unregister(user_id: int, ws):
-    with _chat_clients_lock:
-        if user_id in _chat_clients:
-            _chat_clients[user_id].discard(ws)
-            if not _chat_clients[user_id]:
-                del _chat_clients[user_id]
+def _notify_user(user_id: int):
+    """Wake up any long-poll request waiting for user_id."""
+    with _chat_events_lock:
+        ev = _chat_events.get(user_id)
+    if ev:
+        ev.set()
 
 
-def _ws_push(user_id: int, payload: dict):
-    """Push a JSON message to all open sockets for user_id."""
-    import json as _json
-    with _chat_clients_lock:
-        sockets = set(_chat_clients.get(user_id, set()))
-    dead = set()
-    for ws in sockets:
-        try:
-            ws.send(_json.dumps(payload))
-        except Exception:
-            dead.add(ws)
-    if dead:
-        with _chat_clients_lock:
-            if user_id in _chat_clients:
-                _chat_clients[user_id] -= dead
-
-
-@sock.route('/api/chat/ws/<int:other_user_id>')
-def chat_ws(ws, other_user_id: int):
+@app.get('/api/chat/poll/<int:other_user_id>')
+def chat_long_poll(other_user_id: int):
+    """
+    Long-poll endpoint. Client sends its newest message id as ?since=<id>.
+    We check DB immediately; if no new messages we wait up to 25s for a
+    _notify_user signal, then check again and return whatever we find.
+    """
     conn = get_connection()
     try:
         user = _get_user_from_header(conn)
         if not user:
-            ws.send('{"error":"Unauthorized"}')
-            return
+            return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
     finally:
         conn.close()
 
-    _ws_register(me, ws)
     try:
-        # Keep the socket alive; client sends pings as plain "ping" strings
-        while True:
-            msg = ws.receive(timeout=30)
-            if msg is None:
-                break
-            if msg == 'ping':
-                ws.send('pong')
-    except Exception:
-        pass
-    finally:
-        _ws_unregister(me, ws)
+        since_id = int(request.args.get('since', 0))
+    except (TypeError, ValueError):
+        since_id = 0
+
+    def fetch_new():
+        c = get_connection()
+        try:
+            with c.cursor() as cur:
+                _ensure_chat_tables(cur)
+                cur.execute(
+                    '''
+                    SELECT id, sender_id, recipient_id, body, sent_at, read_at
+                    FROM chat_messages
+                    WHERE id > %s
+                      AND ((sender_id = %s AND recipient_id = %s)
+                        OR (sender_id = %s AND recipient_id = %s))
+                    ORDER BY sent_at ASC
+                    LIMIT 50
+                    ''',
+                    (since_id, me, other_user_id, other_user_id, me),
+                )
+                rows = cur.fetchall()
+                if rows:
+                    cur.execute(
+                        '''
+                        UPDATE chat_messages SET read_at = %s
+                        WHERE sender_id = %s AND recipient_id = %s AND read_at IS NULL AND id > %s
+                        ''',
+                        (_now_db(), other_user_id, me, since_id),
+                    )
+                    c.commit()
+            return [
+                {
+                    'id': r['id'],
+                    'senderId': r['sender_id'],
+                    'recipientId': r['recipient_id'],
+                    'body': r['body'],
+                    'sentAt': r['sent_at'].isoformat() + 'Z' if r.get('sent_at') else None,
+                    'read': r['read_at'] is not None,
+                    'mine': int(r['sender_id']) == me,
+                }
+                for r in rows
+            ]
+        finally:
+            c.close()
+
+    # Check immediately first
+    msgs = fetch_new()
+    if msgs:
+        return jsonify(msgs)
+
+    # Nothing yet — wait for a push notification (max 25s)
+    ev = _get_or_create_event(me)
+    ev.clear()
+    ev.wait(timeout=25)
+
+    msgs = fetch_new()
+    return jsonify(msgs)
 
 
 @app.get('/api/chat/unread')

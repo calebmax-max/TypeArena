@@ -124,55 +124,53 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
-  const wsRef = useRef(null);
-  const pingRef = useRef(null);
+  const lastIdRef = useRef(0);
+  const activeRef = useRef(true);
 
-  // Load message history on open
+  // Load full history on open
   const loadMessages = useCallback(async () => {
     try {
       const data = await apiFetch(`/api/chat/messages/${partner.id}`);
+      if (Array.isArray(data) && data.length > 0) {
+        lastIdRef.current = Math.max(...data.map((m) => m.id));
+      }
       setMessages(data);
     } catch (_) {}
   }, [partner.id, apiFetch]);
 
-  // WebSocket for instant incoming messages
+  // Long-poll loop — runs continuously, each call blocks up to 25s on server
+  // then returns immediately with any new messages
   useEffect(() => {
+    activeRef.current = true;
     loadMessages();
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${proto}://${window.location.host}/api/chat/ws/${partner.id}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg && msg.id) {
-          setMessages((prev) => {
-            // Avoid duplicates (optimistic msg already added for sender)
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
+    const poll = async () => {
+      while (activeRef.current) {
+        try {
+          const newMsgs = await apiFetch(
+            `/api/chat/poll/${partner.id}?since=${lastIdRef.current}`
+          );
+          if (activeRef.current && Array.isArray(newMsgs) && newMsgs.length > 0) {
+            lastIdRef.current = Math.max(...newMsgs.map((m) => m.id));
+            setMessages((prev) => {
+              const existingIds = new Set(prev.map((m) => String(m.id)));
+              const fresh = newMsgs.filter((m) => !existingIds.has(String(m.id)));
+              // Also replace any temp optimistic messages matched by body+mine
+              if (fresh.length === 0) return prev;
+              return [...prev, ...fresh];
+            });
+          }
+        } catch (_) {
+          // On error wait 2s before retrying to avoid hammering server
+          await new Promise((r) => setTimeout(r, 2000));
         }
-      } catch (_) {}
+      }
     };
 
-    ws.onopen = () => {
-      // Keep-alive ping every 20s
-      pingRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-      }, 20000);
-    };
-
-    ws.onclose = () => {
-      clearInterval(pingRef.current);
-      // Fallback: reload messages if socket drops
-      loadMessages();
-    };
+    poll();
 
     return () => {
-      clearInterval(pingRef.current);
-      ws.close();
+      activeRef.current = false;
     };
   }, [partner.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -209,11 +207,12 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
         body: JSON.stringify({ recipientId: partner.id, body }),
       });
       if (msg && msg.id) {
-        // Replace temp optimistic message with real confirmed one
+        // Update lastId so long-poll doesn't re-add this message
+        lastIdRef.current = Math.max(lastIdRef.current, msg.id);
+        // Replace temp with confirmed message
         setMessages((prev) => prev.map((m) => m.id === tempId ? msg : m));
       }
     } catch (_) {
-      // Roll back on failure and restore input
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setInput(body);
     } finally {
