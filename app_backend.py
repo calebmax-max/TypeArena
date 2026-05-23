@@ -5130,7 +5130,6 @@ def presence_ping():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 INSERT INTO user_presence (user_id, last_seen)
@@ -5154,7 +5153,6 @@ def presence_online():
             return jsonify({'message': 'Unauthorized'}), 401
         cutoff = (datetime.utcnow() - timedelta(seconds=45)).strftime('%Y-%m-%d %H:%M:%S')
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT u.id, u.username, u.wpm, p.last_seen
@@ -5190,7 +5188,6 @@ def chat_get_messages(other_user_id: int):
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT id, sender_id, recipient_id, body, sent_at, read_at
@@ -5255,7 +5252,6 @@ def chat_send_message():
         if me == recipient_id_int:
             return jsonify({'message': 'Cannot message yourself.'}), 400
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute('SELECT id FROM users WHERE id = %s', (recipient_id_int,))
             if not cur.fetchone():
                 return jsonify({'message': 'Recipient not found.'}), 404
@@ -5287,7 +5283,6 @@ def chat_unread_counts():
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT sender_id, COUNT(*) AS cnt
@@ -5481,5 +5476,24 @@ def frontend_routes(path: str):
     return _frontend_file_response(path)
 
 
+
+
+def _bootstrap_db() -> None:
+    """Create all required tables once at startup so per-request DDL is never needed."""
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                _ensure_chat_tables(cur)
+                _ensure_store_purchase_table(cur)
+                _ensure_marketplace_revenue_table(cur)
+                _ensure_admin_wallet_transactions_table(cur)
+                _ensure_live_race_rooms_table(cur)
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning('Bootstrap DB warning (non-fatal): %s', exc)
 if __name__ == '__main__':
+    _bootstrap_db()
     app.run(host=APP_HOST, port=APP_PORT, debug=False)
