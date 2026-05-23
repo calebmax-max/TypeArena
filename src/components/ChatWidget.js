@@ -124,7 +124,10 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const wsRef = useRef(null);
+  const pingRef = useRef(null);
 
+  // Load message history on open
   const loadMessages = useCallback(async () => {
     try {
       const data = await apiFetch(`/api/chat/messages/${partner.id}`);
@@ -132,11 +135,46 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
     } catch (_) {}
   }, [partner.id, apiFetch]);
 
+  // WebSocket for instant incoming messages
   useEffect(() => {
     loadMessages();
-    const id = setInterval(loadMessages, 3000);
-    return () => clearInterval(id);
-  }, [loadMessages]);
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${proto}://${window.location.host}/api/chat/ws/${partner.id}`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg && msg.id) {
+          setMessages((prev) => {
+            // Avoid duplicates (optimistic msg already added for sender)
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        }
+      } catch (_) {}
+    };
+
+    ws.onopen = () => {
+      // Keep-alive ping every 20s
+      pingRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+      }, 20000);
+    };
+
+    ws.onclose = () => {
+      clearInterval(pingRef.current);
+      // Fallback: reload messages if socket drops
+      loadMessages();
+    };
+
+    return () => {
+      clearInterval(pingRef.current);
+      ws.close();
+    };
+  }, [partner.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -151,17 +189,32 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
     if (!body || sending) return;
     setSending(true);
     setInput('');
+
+    // Optimistic: show message immediately with a temp id
+    const tempId = `tmp_${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      senderId: currentUserId,
+      recipientId: partner.id,
+      body,
+      sentAt: new Date().toISOString(),
+      mine: true,
+      read: false,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+
     try {
       const msg = await apiFetch('/api/chat/messages', {
         method: 'POST',
         body: JSON.stringify({ recipientId: partner.id, body }),
       });
       if (msg && msg.id) {
-        setMessages((prev) => [...prev, msg]);
-      } else {
-        await loadMessages();
+        // Replace temp optimistic message with real confirmed one
+        setMessages((prev) => prev.map((m) => m.id === tempId ? msg : m));
       }
     } catch (_) {
+      // Roll back on failure and restore input
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setInput(body);
     } finally {
       setSending(false);

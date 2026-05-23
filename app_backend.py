@@ -5324,7 +5324,7 @@ def chat_send_message():
             )
             msg_id = cur.lastrowid
         conn.commit()
-        return jsonify({
+        msg_payload = {
             'id': msg_id,
             'senderId': me,
             'recipientId': recipient_id_int,
@@ -5332,9 +5332,79 @@ def chat_send_message():
             'sentAt': _now_iso(),
             'mine': True,
             'read': False,
-        }), 201
+        }
+        # Push to recipient (mine=False) and sender (mine=True) instantly
+        _ws_push(recipient_id_int, {**msg_payload, 'mine': False})
+        _ws_push(me, {**msg_payload, 'mine': True})
+        return jsonify(msg_payload), 201
     finally:
         conn.close()
+
+
+# ── WebSocket chat ───────────────────────────────────────────────────────────
+# Registry: maps user_id -> set of open WebSocket connections for that user
+import threading as _threading
+_chat_clients: dict = {}
+_chat_clients_lock = _threading.Lock()
+
+
+def _ws_register(user_id: int, ws):
+    with _chat_clients_lock:
+        if user_id not in _chat_clients:
+            _chat_clients[user_id] = set()
+        _chat_clients[user_id].add(ws)
+
+
+def _ws_unregister(user_id: int, ws):
+    with _chat_clients_lock:
+        if user_id in _chat_clients:
+            _chat_clients[user_id].discard(ws)
+            if not _chat_clients[user_id]:
+                del _chat_clients[user_id]
+
+
+def _ws_push(user_id: int, payload: dict):
+    """Push a JSON message to all open sockets for user_id."""
+    import json as _json
+    with _chat_clients_lock:
+        sockets = set(_chat_clients.get(user_id, set()))
+    dead = set()
+    for ws in sockets:
+        try:
+            ws.send(_json.dumps(payload))
+        except Exception:
+            dead.add(ws)
+    if dead:
+        with _chat_clients_lock:
+            if user_id in _chat_clients:
+                _chat_clients[user_id] -= dead
+
+
+@sock.route('/api/chat/ws/<int:other_user_id>')
+def chat_ws(ws, other_user_id: int):
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            ws.send('{"error":"Unauthorized"}')
+            return
+        me = int(user['id'])
+    finally:
+        conn.close()
+
+    _ws_register(me, ws)
+    try:
+        # Keep the socket alive; client sends pings as plain "ping" strings
+        while True:
+            msg = ws.receive(timeout=30)
+            if msg is None:
+                break
+            if msg == 'ping':
+                ws.send('pong')
+    except Exception:
+        pass
+    finally:
+        _ws_unregister(me, ws)
 
 
 @app.get('/api/chat/unread')
