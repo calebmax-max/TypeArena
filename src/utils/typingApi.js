@@ -47,6 +47,11 @@ const sanitizeUser = (user) => {
 
 const setStoredUser = (user) => {
   syncAdminSessionFromUser(user);
+  // Save the auth token separately so ChatWidget and other fetch calls
+  // can send it as Authorization: Bearer <token>
+  if (user?.token) {
+    localStorage.setItem('token', user.token);
+  }
   localStorage.setItem('typearena_user', JSON.stringify(sanitizeUser(user)));
 };
 
@@ -59,6 +64,12 @@ const buildHeaders = (extraHeaders = {}) => {
   const user = getStoredUser();
   if (user?.id) {
     headers['X-User-Id'] = String(user.id);
+  }
+
+  // Attach Bearer token so the backend can authenticate via either mechanism
+  const token = localStorage.getItem('token');
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   return headers;
@@ -152,6 +163,10 @@ export const fetchCurrentUser = async () => {
       headers: buildHeaders(),
     });
     const user = await parseResponse(response);
+    // /api/user/me returns a fresh token on every call — persist it immediately
+    if (user?.token) {
+      localStorage.setItem('token', user.token);
+    }
     setStoredUser(user);
     return user;
   } catch (error) {
