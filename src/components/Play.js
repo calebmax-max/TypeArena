@@ -1882,7 +1882,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, language, mode, redirectToProfile, showNotice]);
 
   // ── NEW #E: inject ghost cursor blink animation once ──────────────────────
   useEffect(() => {
