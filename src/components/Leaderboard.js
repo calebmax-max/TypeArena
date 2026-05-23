@@ -386,7 +386,7 @@ export default function Leaderboard({ currentUserUsername }) {
             📅 {seasonName} Season
           </span>
         </div>
-        <p>Real-time typing ladder — updated every 30 seconds. Season resets at end of month.</p>
+        <p>Real-time typing ladder. Season resets at end of month.</p>
       </div>
 
       {/* Controls */}
