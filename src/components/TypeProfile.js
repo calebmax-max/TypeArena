@@ -21,6 +21,7 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   useRef,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -105,9 +106,25 @@ function AvatarBadge({ initials = 'TA', size = 96 }) {
 
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const dataUrl = ev.target.result;
-      setImgSrc(dataUrl);
-      saveBadgeImage(dataUrl);
+      // Resize to max 200×200 and compress to JPEG 0.75 before storing.
+      // This keeps the localStorage entry well under 50 KB and prevents the
+      // synchronous write from blocking the main thread on large photos.
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 200;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+        setImgSrc(dataUrl);
+        saveBadgeImage(dataUrl);
+      };
+      img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
     // Reset input so re-selecting the same file still fires onChange
@@ -240,6 +257,26 @@ export default function TypeProfile() {
   const [showPassword,  setShowPassword]   = useState(false);
   const [activeTab,     setActiveTab]      = useState('wallet');
   const [walletSection, setWalletSection]  = useState('topup'); // 'topup' | 'withdraw'
+  const [topUpLoading,     setTopUpLoading]     = useState(false);
+  const [withdrawLoading,  setWithdrawLoading]  = useState(false);
+
+  // ── Audio / experience settings (persisted in localStorage, read by Play) ──
+  const [soundEnabled,       setSoundEnabled]       = useState(() => localStorage.getItem('typearena_sound')       !== 'false');
+  const [musicEnabled,       setMusicEnabled]       = useState(() => localStorage.getItem('typearena_music')       !== 'false');
+  const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
+
+  const toggleSetting = (key, setter) => {
+    setter((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(key, String(next));
+        // Dispatch a StorageEvent so same-tab listeners (Play) react immediately.
+        // The native 'storage' event only fires in other tabs.
+        window.dispatchEvent(new StorageEvent('storage', { key, newValue: String(next) }));
+      } catch {}
+      return next;
+    });
+  };
 
   const simulatedPaymentsEnabled = Boolean(walletConfig.simulatedPaymentsEnabled);
 
@@ -339,15 +376,19 @@ export default function TypeProfile() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     try {
-      try {
-        const adminResult = await adminLogin(formData.email, formData.password);
-        if (adminResult?.token) {
-          setAuthNotice('');
-          setFormData({ email: '', password: '', username: '', phoneNumber: '' });
-          navigate('/admin');
-          return;
-        }
-      } catch { /* not admin */ }
+      // Only attempt the admin endpoint when logging in (not signing up).
+      // This avoids an extra network round-trip for every regular sign-in.
+      if (authMode === 'login') {
+        try {
+          const adminResult = await adminLogin(formData.email, formData.password);
+          if (adminResult?.token) {
+            setAuthNotice('');
+            setFormData({ email: '', password: '', username: '', phoneNumber: '' });
+            navigate('/admin');
+            return;
+          }
+        } catch { /* not an admin account — fall through to normal login */ }
+      }
 
       const user = authMode === 'login'
         ? await loginUser(formData.email, formData.password)
@@ -375,11 +416,18 @@ export default function TypeProfile() {
     }
   };
 
+  // Cancellation flag: flipped to true when the component unmounts so any
+  // in-flight M-Pesa or withdrawal polling loop stops updating state.
+  const pollCancelledRef = useRef(false);
+  useEffect(() => () => { pollCancelledRef.current = true; }, []);
+
   // ── M-Pesa polling ────────────────────────────────────────────────────────
   const watchMpesaTopupStatus = useCallback(async (checkoutRequestId) => {
     for (let i = 0; i < TOPUP_STATUS_POLL_MAX_ATTEMPTS; i++) {
       await new Promise((r) => window.setTimeout(r, TOPUP_STATUS_POLL_INTERVAL_MS));
+      if (pollCancelledRef.current) return false;
       const status = await fetchWalletTopupStatus(checkoutRequestId);
+      if (pollCancelledRef.current) return false;
       if (status?.status === 'completed' && status?.user) {
         applyFreshUserState(status.user);
         setWalletNotice(status.resultDescription || 'Payment confirmed and funds added to your wallet.');
@@ -399,7 +447,9 @@ export default function TypeProfile() {
   const watchWithdrawalStatus = useCallback(async (payoutCode) => {
     for (let i = 0; i < WITHDRAW_STATUS_POLL_MAX_ATTEMPTS; i++) {
       await new Promise((r) => window.setTimeout(r, WITHDRAW_STATUS_POLL_INTERVAL_MS));
+      if (pollCancelledRef.current) return false;
       const status = await fetchWalletWithdrawStatus(payoutCode);
+      if (pollCancelledRef.current) return false;
       if (status?.status === 'completed' && status?.user) {
         applyFreshUserState(status.user);
         setWalletNotice(status.resultDescription || 'Withdrawal confirmed successfully.');
@@ -420,6 +470,8 @@ export default function TypeProfile() {
   // ── Wallet actions ────────────────────────────────────────────────────────
   const handleAddFunds = async (e) => {
     e.preventDefault();
+    if (topUpLoading) return;
+    setTopUpLoading(true);
     try {
       const result = await addFundsToWallet(topUpAmount, topUpAccount, topUpMethod, topUpMethod === 'mpesa' ? 'KES' : 'USD');
       if (result?.checkoutUrl) {
@@ -439,11 +491,15 @@ export default function TypeProfile() {
       await loadProfile();
     } catch (err) {
       setWalletNotice(err.message || 'Top-up failed.');
+    } finally {
+      setTopUpLoading(false);
     }
   };
 
   const handleWithdraw = async (e) => {
     e.preventDefault();
+    if (withdrawLoading) return;
+    setWithdrawLoading(true);
     try {
       const cfg = await loadWalletConfig();
       if (!cfg.withdrawMethods?.length) { setWalletNotice('Withdrawal is not enabled yet.'); return; }
@@ -460,6 +516,8 @@ export default function TypeProfile() {
       await loadProfile();
     } catch (err) {
       setWalletNotice(err.message || 'Withdrawal failed.');
+    } finally {
+      setWithdrawLoading(false);
     }
   };
 
@@ -480,9 +538,12 @@ export default function TypeProfile() {
     ? currentUser.username.slice(0, 2).toUpperCase()
     : 'TA';
 
-  const winRate = currentUser?.totalRaces
-    ? Math.round((currentUser.wins / currentUser.totalRaces) * 100)
-    : 0;
+  const winRate = useMemo(
+    () => currentUser?.totalRaces
+      ? Math.round((currentUser.wins / currentUser.totalRaces) * 100)
+      : 0,
+    [currentUser?.wins, currentUser?.totalRaces]
+  );
 
   // ── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
@@ -718,6 +779,9 @@ export default function TypeProfile() {
                     </div>
                   </div>
                   {/* <button type="submit" className="tp-btn tp-btn--primary">Add Funds</button> */}
+                  <button type="submit" className="tp-btn tp-btn--primary" disabled={topUpLoading}>
+                    {topUpLoading ? 'Processing…' : 'Add Funds'}
+                  </button>
                 </form>
               )}
 
@@ -747,6 +811,9 @@ export default function TypeProfile() {
                     </div>
                   </div>
                   {/* <button type="submit" className="tp-btn tp-btn--outline">Withdraw</button> */}
+                  <button type="submit" className="tp-btn tp-btn--outline" disabled={withdrawLoading}>
+                    {withdrawLoading ? 'Processing…' : 'Withdraw'}
+                  </button>
                 </form>
               )}
 
@@ -848,6 +915,52 @@ export default function TypeProfile() {
                 <AvatarBadge initials={initials} size={110} />
                 <div className="tp-badge-editor__hint">
                   <p>Click the badge to upload a custom photo.<br />Supports JPG, PNG, WebP. Stored locally on this device.</p>
+                </div>
+              </div>
+
+              <div className="tp-section-head" style={{ marginTop: '2rem' }}>
+                <h3>Arena Experience</h3>
+                <span className="tp-section-head__sub">These settings apply every time you enter the arena</span>
+              </div>
+              <div className="tp-audio-settings">
+                <div className="tp-audio-row">
+                  <div className="tp-audio-row__info">
+                    <span className="tp-audio-row__label">🔊 Typing Sounds</span>
+                    <span className="tp-audio-row__desc">Key click and error sounds while you type</span>
+                  </div>
+                  <button
+                    className={`tp-toggle ${soundEnabled ? 'tp-toggle--on' : ''}`}
+                    onClick={() => toggleSetting('typearena_sound', setSoundEnabled)}
+                    aria-pressed={soundEnabled}
+                  >
+                    <span className="tp-toggle__knob" />
+                  </button>
+                </div>
+                <div className="tp-audio-row">
+                  <div className="tp-audio-row__info">
+                    <span className="tp-audio-row__label">🎵 Background Music</span>
+                    <span className="tp-audio-row__desc">Orchestral arena music during lobby and races</span>
+                  </div>
+                  <button
+                    className={`tp-toggle ${musicEnabled ? 'tp-toggle--on' : ''}`}
+                    onClick={() => toggleSetting('typearena_music', setMusicEnabled)}
+                    aria-pressed={musicEnabled}
+                  >
+                    <span className="tp-toggle__knob" />
+                  </button>
+                </div>
+                <div className="tp-audio-row">
+                  <div className="tp-audio-row__info">
+                    <span className="tp-audio-row__label">📣 Live Commentator</span>
+                    <span className="tp-audio-row__desc">Spoken commentary on milestones, streaks and finish</span>
+                  </div>
+                  <button
+                    className={`tp-toggle ${commentatorEnabled ? 'tp-toggle--on' : ''}`}
+                    onClick={() => toggleSetting('typearena_commentator', setCommentatorEnabled)}
+                    aria-pressed={commentatorEnabled}
+                  >
+                    <span className="tp-toggle__knob" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -1576,4 +1689,55 @@ const STYLES = `
     .tp-main { padding: 1.25rem; }
     .tp-badge-editor { flex-direction: column; align-items: flex-start; }
   }
+
+  /* ── Audio settings ── */
+  .tp-audio-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid var(--tp-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .tp-audio-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1.1rem;
+    background: var(--tp-surface-2);
+    border-bottom: 1px solid var(--tp-border);
+    gap: 1rem;
+  }
+  .tp-audio-row:last-child { border-bottom: none; }
+  .tp-audio-row__info { display: flex; flex-direction: column; gap: 0.2rem; }
+  .tp-audio-row__label { font-size: 0.88rem; font-weight: 600; color: var(--tp-text); }
+  .tp-audio-row__desc  { font-size: 0.76rem; color: var(--tp-muted); }
+
+  /* ── Toggle switch ── */
+  .tp-toggle {
+    flex-shrink: 0;
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: var(--tp-border-2);
+    border: none;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+    padding: 0;
+  }
+  .tp-toggle--on { background: var(--tp-accent); }
+  .tp-toggle__knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s;
+    display: block;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  }
+  .tp-toggle--on .tp-toggle__knob { transform: translateX(20px); }
 `;

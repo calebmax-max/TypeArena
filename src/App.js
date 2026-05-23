@@ -9,6 +9,8 @@ import Profile from './components/TypeProfile';
 import AdminPanel from './components/AdminPanel';
 import Marketplace from './components/Marketplace';
 import Results from './components/Results';
+import MusicBar from './components/MusicBar';
+
 import Notfound from './components/Notfound';
 import Spectate from './components/Spectate';
 // inside your <Routes>:
@@ -16,6 +18,9 @@ import Spectate from './components/Spectate';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
 import { fetchSiteMarquee } from './utils/typingApi';
+
+
+
 
 const USER_STORAGE_KEY = 'typearena_user';
 const USER_CHANGE_EVENT = 'typearena-user-changed';
@@ -208,6 +213,7 @@ function AppLayout() {
         </div>
       </div>
 
+      <MusicBar /> 
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
