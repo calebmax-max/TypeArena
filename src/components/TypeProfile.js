@@ -296,9 +296,14 @@ export default function TypeProfile() {
     try {
       const user = await fetchCurrentUser();
       setCurrentUser(user);
+      // Unblock the loading spinner as soon as the user identity is known.
+      // Wallet config, race history, and wallet history then load in the
+      // background so the profile shell renders immediately rather than
+      // waiting for all three secondary API calls to complete.
+      setLoading(false);
       if (user?.id) {
         const [cfg, history, wallet] = await Promise.all([
-          loadWalletConfig(),
+          fetchWalletConfig(),
           fetchRaceHistory(user.id),
           fetchWalletHistory(),
         ]);
@@ -312,10 +317,9 @@ export default function TypeProfile() {
       }
     } catch (err) {
       console.error('Failed to load profile:', err);
-    } finally {
       setLoading(false);
     }
-  }, [loadWalletConfig]);
+  }, []);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
@@ -501,7 +505,8 @@ export default function TypeProfile() {
     if (withdrawLoading) return;
     setWithdrawLoading(true);
     try {
-      const cfg = await loadWalletConfig();
+      const cfg = await fetchWalletConfig();
+      setWalletConfig(cfg || { topUpMethods: [], withdrawMethods: [] });
       if (!cfg.withdrawMethods?.length) { setWalletNotice('Withdrawal is not enabled yet.'); return; }
       const activeMethod = cfg.withdrawMethods.includes(withdrawMethod) ? withdrawMethod : cfg.withdrawMethods[0];
       setWithdrawMethod(activeMethod);
