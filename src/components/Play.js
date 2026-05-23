@@ -1484,7 +1484,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     } finally {
         isSubmittingRef.current = false;
     }
-}, [duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, buildRoomResultPayload, setRaceResult]);
+}, [commentatorEnabled, currentUser?.name, currentUser?.username, duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, buildRoomResultPayload, setRaceResult]);
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
