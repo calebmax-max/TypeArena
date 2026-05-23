@@ -2519,18 +2519,42 @@ def _delete_live_room(cur, room_id: str) -> None:
     LIVE_RACE_ROOMS.pop(normalized, None)
 
 
-def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
-    raw_user_id = request.headers.get('X-User-Id')
-    if not raw_user_id:
-        return None
-    try:
-        user_id = int(raw_user_id)
-    except ValueError:
-        return None
+def _ensure_auth_token_column(cur) -> None:
+    cur.execute("SHOW COLUMNS FROM users LIKE 'auth_token'")
+    if not cur.fetchone():
+        cur.execute(
+            'ALTER TABLE users ADD COLUMN auth_token VARCHAR(64) NULL UNIQUE AFTER password'
+        )
 
-    with conn.cursor() as cur:
-        cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
-        return cur.fetchone()
+
+def _issue_user_token(cur, user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    cur.execute('UPDATE users SET auth_token=%s WHERE id=%s', (token, user_id))
+    return token
+
+
+def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
+    # 1. Legacy internal header (WebSocket / server-side calls)
+    raw_user_id = request.headers.get('X-User-Id')
+    if raw_user_id:
+        try:
+            user_id = int(raw_user_id)
+        except ValueError:
+            return None
+        with conn.cursor() as cur:
+            cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+            return cur.fetchone()
+
+    # 2. Bearer token issued at login / signup
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth[7:].strip()
+        if token:
+            with conn.cursor() as cur:
+                cur.execute('SELECT * FROM users WHERE auth_token = %s', (token,))
+                return cur.fetchone()
+
+    return None
 
 
 def _is_admin_request() -> bool:
@@ -3354,10 +3378,14 @@ def auth_signup():
                 (username, email, hashed_password, phone_number),
             )
             user_id = cur.lastrowid
+            _ensure_auth_token_column(cur)
+            token = _issue_user_token(cur, user_id)
             cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
             user = cur.fetchone()
         conn.commit()
-        return jsonify(_safe_user(user, conn)), 201
+        response = _safe_user(user, conn)
+        response['token'] = token
+        return jsonify(response), 201
     finally:
         conn.close()
 
@@ -3393,8 +3421,12 @@ def auth_login():
         if not valid:
             return jsonify({'message': 'Invalid email or password'}), 401
 
+        with conn.cursor() as cur:
+            _ensure_auth_token_column(cur)
+            token = _issue_user_token(cur, user['id'])
         conn.commit()
         safe_user = _safe_user(user, conn)
+        safe_user['token'] = token
         if safe_user.get('isAdmin'):
             safe_user['adminEmail'] = ADMIN_EMAIL
             safe_user['adminToken'] = _issue_admin_token()
@@ -3410,7 +3442,34 @@ def user_me():
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
-        return jsonify(_safe_user(user, conn))
+        # Re-issue a fresh token on every session restore so pre-deploy
+        # tokens (auth_token = NULL) self-heal without forcing a re-login.
+        with conn.cursor() as cur:
+            _ensure_auth_token_column(cur)
+            token = _issue_user_token(cur, user['id'])
+        conn.commit()
+        response = _safe_user(user, conn)
+        response['token'] = token
+        return jsonify(response)
+    finally:
+        conn.close()
+
+
+@app.post('/api/auth/refresh')
+def auth_refresh():
+    """Lets a logged-in frontend exchange its current token for a fresh one."""
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            _ensure_auth_token_column(cur)
+            token = _issue_user_token(cur, user['id'])
+        conn.commit()
+        response = _safe_user(user, conn)
+        response['token'] = token
+        return jsonify(response)
     finally:
         conn.close()
 
@@ -5130,6 +5189,7 @@ def presence_ping():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 INSERT INTO user_presence (user_id, last_seen)
@@ -5153,6 +5213,7 @@ def presence_online():
             return jsonify({'message': 'Unauthorized'}), 401
         cutoff = (datetime.utcnow() - timedelta(seconds=45)).strftime('%Y-%m-%d %H:%M:%S')
         with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT u.id, u.username, u.wpm, p.last_seen
@@ -5188,6 +5249,7 @@ def chat_get_messages(other_user_id: int):
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
         with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT id, sender_id, recipient_id, body, sent_at, read_at
@@ -5252,6 +5314,7 @@ def chat_send_message():
         if me == recipient_id_int:
             return jsonify({'message': 'Cannot message yourself.'}), 400
         with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
             cur.execute('SELECT id FROM users WHERE id = %s', (recipient_id_int,))
             if not cur.fetchone():
                 return jsonify({'message': 'Recipient not found.'}), 404
@@ -5283,6 +5346,7 @@ def chat_unread_counts():
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
         with conn.cursor() as cur:
+            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT sender_id, COUNT(*) AS cnt
@@ -5476,10 +5540,8 @@ def frontend_routes(path: str):
     return _frontend_file_response(path)
 
 
-
-
 def _bootstrap_db() -> None:
-    """Create all required tables once at startup so per-request DDL is never needed."""
+    """Create all required tables and columns once at startup."""
     try:
         conn = get_connection()
         try:
@@ -5489,11 +5551,14 @@ def _bootstrap_db() -> None:
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_admin_wallet_transactions_table(cur)
                 _ensure_live_race_rooms_table(cur)
+                _ensure_auth_token_column(cur)
             conn.commit()
         finally:
             conn.close()
     except Exception as exc:  # noqa: BLE001
         app.logger.warning('Bootstrap DB warning (non-fatal): %s', exc)
+
+
 if __name__ == '__main__':
     _bootstrap_db()
     app.run(host=APP_HOST, port=APP_PORT, debug=False)

@@ -122,11 +122,44 @@ function AppLayout() {
   }, [location.key]);
 
   useEffect(() => {
-    const syncUser = () => {
-      setCurrentUser(readStoredUser());
+    // Sync from localStorage immediately (so UI isn't blank on load)
+    const syncUser = () => setCurrentUser(readStoredUser());
+    syncUser();
+
+    // Then validate the session with the server and get a fresh token.
+    // This handles the case where the user is already logged in from a
+    // previous session and never hits the login page.
+    const refreshSession = async () => {
+      const stored = readStoredUser();
+      if (!stored?.id) return; // not logged in, nothing to refresh
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        const token = localStorage.getItem('token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        else headers['X-User-Id'] = String(stored.id); // fallback for pre-token sessions
+
+        const res = await fetch('/api/user/me', { headers });
+        if (!res.ok) return; // server down or truly invalid — leave stored user as-is
+
+        const fresh = await res.json();
+
+        // Persist the fresh token so all subsequent API calls authenticate correctly
+        if (fresh.token) {
+          localStorage.setItem('token', fresh.token);
+        }
+
+        // Update stored user with latest server data (balance, wpm, etc.)
+        const updated = { ...stored, ...fresh };
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
+        setCurrentUser(updated);
+      } catch (_) {
+        // Network error — keep the locally stored user, app still works offline-ish
+      }
     };
 
-    syncUser();
+    refreshSession();
+
     window.addEventListener('storage', syncUser);
     window.addEventListener(USER_CHANGE_EVENT, syncUser);
 
@@ -161,6 +194,7 @@ function AppLayout() {
 
   const handleSignOut = () => {
     localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem('token');
     window.dispatchEvent(new Event(USER_CHANGE_EVENT));
     setCurrentUser(null);
     navigate('/');
@@ -252,4 +286,4 @@ function App() {
   );
 }
 
-export default App;
+export default App;commit
