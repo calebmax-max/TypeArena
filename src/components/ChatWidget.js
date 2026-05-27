@@ -59,6 +59,46 @@ function getChatPollTimeoutSeconds() {
   return isLocalHost ? 25 : 3;
 }
 
+function buildWebSocketUrl(path) {
+  const token = localStorage.getItem('token');
+  const storedUser = localStorage.getItem('typearena_user');
+  let userId = '';
+  try {
+    userId = storedUser ? String(JSON.parse(storedUser)?.id || '') : '';
+  } catch (_) {
+    userId = '';
+  }
+
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const httpUrl = buildApiUrl(normalizedPath);
+  const baseUrl = httpUrl.startsWith('http')
+    ? new URL(httpUrl)
+    : new URL(httpUrl, window.location.origin);
+  if (baseUrl.pathname.startsWith('/api/ws/')) {
+    baseUrl.pathname = baseUrl.pathname.replace('/api/ws/', '/ws/');
+  }
+  const protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  baseUrl.protocol = protocol;
+  if (token) {
+    baseUrl.searchParams.set('token', token);
+  } else if (userId) {
+    baseUrl.searchParams.set('userId', userId);
+  }
+  return baseUrl.toString();
+}
+
+function upsertChatContact(players, nextContact) {
+  if (!nextContact?.id) return players;
+  const existing = players.find((player) => String(player.id) === String(nextContact.id));
+  const merged = {
+    ...existing,
+    ...nextContact,
+    isMe: false,
+  };
+  const remaining = players.filter((player) => String(player.id) !== String(nextContact.id));
+  return [merged, ...remaining];
+}
+
 // ── Avatar ───────────────────────────────────────────────────────────────────
 function Avatar({ name, size = 40 }) {
   const initials = name
@@ -160,7 +200,7 @@ function ContactList({ players, onSelect, unread, search }) {
 }
 
 // ── DM thread ────────────────────────────────────────────────────────────────
-function Thread({ partner, currentUserId, onBack, apiFetch }) {
+function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, socketEvent, sendSocketEvent }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -182,6 +222,9 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
         lastIdRef.current = Math.max(...data.map((m) => m.id));
       }
       setMessages(Array.isArray(data) ? data : []);
+      if (sendSocketEvent) {
+        sendSocketEvent({ type: 'mark_read', partnerId: partner.id });
+      }
       setLoading(false);
       return true;
     } catch (error) {
@@ -189,7 +232,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
       setThreadError(error.message || 'Could not load this conversation.');
       return false;
     }
-  }, [partner.id, apiFetch]);
+  }, [partner.id, apiFetch, sendSocketEvent]);
 
   // Long-poll loop — starts AFTER history is loaded so since= is correct
   useEffect(() => {
@@ -198,6 +241,10 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
     const poll = async () => {
       // Load history first, set lastIdRef, then start polling from that id
       await loadMessages();
+
+      if (socketConnected) {
+        return;
+      }
 
       while (activeRef.current) {
         try {
@@ -229,7 +276,45 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
     return () => {
       activeRef.current = false;
     };
-  }, [partner.id, pollTimeoutSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [partner.id, pollTimeoutSeconds, socketConnected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!socketEvent || socketEvent.type !== 'chat_message') return;
+    const msg = socketEvent.message;
+    if (!msg) return;
+    if (String(msg.senderId) === String(currentUserId)) {
+      return;
+    }
+    const touchesThread =
+      (
+        String(msg.senderId) === String(partner.id) &&
+        String(msg.recipientId) === String(currentUserId)
+      ) ||
+      (
+        String(msg.senderId) === String(currentUserId) &&
+        String(msg.recipientId) === String(partner.id)
+      );
+    if (!touchesThread) return;
+    lastIdRef.current = Math.max(lastIdRef.current, Number(msg.id) || 0);
+    setMessages((prev) => {
+      const existing = new Set(prev.map((item) => String(item.id)));
+      if (existing.has(String(msg.id))) {
+        return prev.map((item) => (String(item.id) === String(msg.id) ? { ...item, ...msg } : item));
+      }
+      return [...prev, msg];
+    });
+    if (String(msg.senderId) === String(partner.id) && sendSocketEvent) {
+      sendSocketEvent({ type: 'mark_read', partnerId: partner.id });
+    }
+  }, [socketEvent, partner.id, currentUserId, sendSocketEvent]);
+
+  useEffect(() => {
+    if (!socketEvent || socketEvent.type !== 'chat_read') return;
+    if (String(socketEvent.readerId) !== String(partner.id)) return;
+    setMessages((prev) => prev.map((msg) => (
+      String(msg.senderId) === String(currentUserId) ? { ...msg, read: true } : msg
+    )));
+  }, [socketEvent, partner.id, currentUserId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -454,8 +539,11 @@ export default function ChatWidget({ currentUser }) {
   const [totalUnread, setTotalUnread] = useState(0);
   const [search, setSearch] = useState('');
   const [listError, setListError] = useState('');
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [socketEvent, setSocketEvent] = useState(null);
 
   const isLoggedIn = Boolean(currentUser?.id);
+  const socketRef = useRef(null);
 
   const apiFetchRef = useRef(makeApiFetch(currentUser?.id));
   useEffect(() => {
@@ -463,6 +551,75 @@ export default function ChatWidget({ currentUser }) {
   }, [currentUser?.id]);
 
   const apiFetch = useCallback((path, opts) => apiFetchRef.current(path, opts), []);
+
+  const sendSocketEvent = useCallback((payload) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    socket.send(JSON.stringify(payload));
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      if (socketRef.current) {
+        socketRef.current.close();
+        socketRef.current = null;
+      }
+      setSocketConnected(false);
+      return undefined;
+    }
+
+    let active = true;
+    let reconnectTimer = null;
+
+    const connect = () => {
+      const socket = new WebSocket(buildWebSocketUrl('/ws/chat'));
+      socketRef.current = socket;
+
+      socket.addEventListener('open', () => {
+        if (!active) return;
+        setSocketConnected(true);
+        setListError('');
+      });
+
+      socket.addEventListener('message', (event) => {
+        if (!active) return;
+        try {
+          const payload = JSON.parse(event.data);
+          setSocketEvent(payload);
+        } catch (_) {
+          setSocketEvent({ type: 'error', message: 'Invalid socket payload.' });
+        }
+      });
+
+      socket.addEventListener('close', () => {
+        if (!active) return;
+        setSocketConnected(false);
+        reconnectTimer = window.setTimeout(connect, 2000);
+      });
+
+      socket.addEventListener('error', () => {
+        if (!active) return;
+        setSocketConnected(false);
+      });
+    };
+
+    connect();
+
+    return () => {
+      active = false;
+      setSocketConnected(false);
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+      if (socketRef.current) {
+        socketRef.current.close();
+        socketRef.current = null;
+      }
+    };
+  }, [isLoggedIn, currentUser?.id]);
 
   // Presence ping
   useEffect(() => {
@@ -539,6 +696,43 @@ export default function ChatWidget({ currentUser }) {
       setPartner((current) => (current ? { ...current, ...refreshedPartner } : current));
     }
   }, [players, partner]);
+
+  useEffect(() => {
+    if (!socketEvent) return;
+    if (socketEvent.type === 'error') {
+      setListError(socketEvent.message || 'Chat connection error.');
+      return;
+    }
+    if (socketEvent.type === 'connected' || socketEvent.type === 'pong') {
+      return;
+    }
+    if (socketEvent.type === 'chat_read') {
+      return;
+    }
+    if (socketEvent.type === 'chat_message') {
+      const message = socketEvent.message;
+      const contact = socketEvent.contact;
+      if (contact) {
+        setPlayers((prev) => upsertChatContact(prev, contact));
+      }
+      if (!message) return;
+      const peerId =
+        String(message.senderId) === String(currentUser?.id)
+          ? message.recipientId
+          : message.senderId;
+      const threadOpen =
+        open &&
+        partner &&
+        String(partner.id) === String(peerId);
+      if (String(message.senderId) !== String(currentUser?.id) && !threadOpen) {
+        setUnread((prev) => {
+          const nextCount = Number(prev?.[peerId] || 0) + 1;
+          return { ...prev, [peerId]: nextCount };
+        });
+        setTotalUnread((count) => count + 1);
+      }
+    }
+  }, [socketEvent, currentUser?.id, open, partner]);
 
   if (!isLoggedIn) return null;
 
@@ -640,6 +834,9 @@ export default function ChatWidget({ currentUser }) {
               currentUserId={currentUser.id}
               onBack={() => setPartner(null)}
               apiFetch={apiFetch}
+              socketConnected={socketConnected}
+              socketEvent={socketEvent}
+              sendSocketEvent={sendSocketEvent}
             />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

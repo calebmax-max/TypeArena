@@ -5749,6 +5749,127 @@ def chat_contacts():
         _return_connection(conn)
 
 
+def _serialize_chat_message_row(row: Dict[str, Any], me: int) -> Dict[str, Any]:
+    return {
+        'id': row['id'],
+        'senderId': row['sender_id'],
+        'recipientId': row['recipient_id'],
+        'body': row['body'],
+        'sentAt': row['sent_at'].isoformat() + 'Z' if row.get('sent_at') else None,
+        'read': row['read_at'] is not None,
+        'mine': int(row['sender_id']) == me,
+    }
+
+
+def _serialize_chat_contact_row(user_row: Dict[str, Any], *, unread_count: int = 0, is_online: bool = False, last_seen=None, last_message_at: Optional[str] = None) -> Dict[str, Any]:
+    return {
+        'id': int(user_row['id']),
+        'username': user_row.get('username'),
+        'wpm': float(user_row.get('wpm') or 0),
+        'lastSeen': last_seen,
+        'lastMessageAt': last_message_at,
+        'isOnline': bool(is_online),
+        'unreadCount': int(unread_count or 0),
+        'isMe': False,
+    }
+
+
+def _load_user_by_id(cur, user_id: int) -> Optional[Dict[str, Any]]:
+    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+    return cur.fetchone()
+
+
+def _load_user_by_token(cur, token: str) -> Optional[Dict[str, Any]]:
+    cur.execute('SELECT * FROM users WHERE auth_token = %s', (token,))
+    return cur.fetchone()
+
+
+def _get_user_from_socket() -> Optional[Dict[str, Any]]:
+    token = str(request.args.get('token') or '').strip()
+    raw_user_id = str(request.args.get('userId') or '').strip()
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            if token:
+                user = _load_user_by_token(cur, token)
+                if user:
+                    return user
+            if raw_user_id:
+                try:
+                    user_id = int(raw_user_id)
+                except ValueError:
+                    return None
+                return _load_user_by_id(cur, user_id)
+        return None
+    finally:
+        _return_connection(conn)
+
+
+def _mark_thread_read(cur, other_user_id: int, me: int) -> None:
+    cur.execute(
+        '''
+        UPDATE chat_messages
+        SET read_at = %s
+        WHERE sender_id = %s AND recipient_id = %s AND read_at IS NULL
+        ''',
+        (_now_db(), other_user_id, me),
+    )
+
+
+def _fetch_thread_messages(conn, me: int, other_user_id: int, *, limit: int = 200, mark_read: bool = True) -> list[Dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            '''
+            SELECT id, sender_id, recipient_id, body, sent_at, read_at
+            FROM chat_messages
+            WHERE (sender_id = %s AND recipient_id = %s)
+               OR (sender_id = %s AND recipient_id = %s)
+            ORDER BY sent_at ASC
+            LIMIT %s
+            ''',
+            (me, other_user_id, other_user_id, me, int(limit)),
+        )
+        rows = cur.fetchall()
+        if mark_read:
+            _mark_thread_read(cur, other_user_id, me)
+    if mark_read:
+        conn.commit()
+    return [_serialize_chat_message_row(row, me) for row in rows]
+
+
+def _create_chat_message(conn, sender: Dict[str, Any], recipient_id: int, body: str) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    me = int(sender['id'])
+    normalized_body = str(body or '').strip()
+    if not normalized_body:
+        raise ValueError('Message body is required.')
+    if len(normalized_body) > 1000:
+        raise ValueError('Message too long (max 1000 chars).')
+    if me == recipient_id:
+        raise ValueError('Cannot message yourself.')
+
+    with conn.cursor() as cur:
+        recipient = _load_user_by_id(cur, recipient_id)
+        if not recipient:
+            raise LookupError('Recipient not found.')
+        cur.execute(
+            'INSERT INTO chat_messages (sender_id, recipient_id, body, sent_at) VALUES (%s, %s, %s, %s)',
+            (me, recipient_id, normalized_body, _now_db()),
+        )
+        msg_id = cur.lastrowid
+        cur.execute(
+            '''
+            SELECT id, sender_id, recipient_id, body, sent_at, read_at
+            FROM chat_messages
+            WHERE id = %s
+            ''',
+            (msg_id,),
+        )
+        row = cur.fetchone()
+    conn.commit()
+    message = _serialize_chat_message_row(row, me)
+    return message, recipient
+
+
 @app.get('/api/chat/messages/<int:other_user_id>')
 def chat_get_messages(other_user_id: int):
     conn = get_connection()
@@ -5757,41 +5878,7 @@ def chat_get_messages(other_user_id: int):
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
-        with conn.cursor() as cur:
-            cur.execute(
-                '''
-                SELECT id, sender_id, recipient_id, body, sent_at, read_at
-                FROM chat_messages
-                WHERE (sender_id = %s AND recipient_id = %s)
-                   OR (sender_id = %s AND recipient_id = %s)
-                ORDER BY sent_at ASC
-                LIMIT 200
-                ''',
-                (me, other_user_id, other_user_id, me),
-            )
-            rows = cur.fetchall()
-            # Mark unread messages as read
-            cur.execute(
-                '''
-                UPDATE chat_messages
-                SET read_at = %s
-                WHERE sender_id = %s AND recipient_id = %s AND read_at IS NULL
-                ''',
-                (_now_db(), other_user_id, me),
-            )
-        conn.commit()
-        messages = [
-            {
-                'id': row['id'],
-                'senderId': row['sender_id'],
-                'recipientId': row['recipient_id'],
-                'body': row['body'],
-                'sentAt': row['sent_at'].isoformat() + 'Z' if row.get('sent_at') else None,
-                'read': row['read_at'] is not None,
-                'mine': int(row['sender_id']) == me,
-            }
-            for row in rows
-        ]
+        messages = _fetch_thread_messages(conn, me, other_user_id, limit=200, mark_read=True)
         return jsonify(messages)
     finally:
         _return_connection(conn)
@@ -5810,6 +5897,8 @@ _chat_conds: dict = {}
 _chat_versions: dict = {}
 _chat_waiters: dict = {}          # reference-count for cleanup
 _chat_conds_lock = _threading.Lock()
+_chat_ws_clients: dict[int, set[Any]] = {}
+_chat_ws_lock = _threading.Lock()
 
 
 def _get_or_create_cond(user_id: int) -> _threading.Condition:
@@ -5843,16 +5932,170 @@ def _notify_user(user_id: int) -> None:
         cond.notify_all()
 
 
+def _register_chat_socket(user_id: int, ws) -> None:
+    with _chat_ws_lock:
+        _chat_ws_clients.setdefault(user_id, set()).add(ws)
+
+
+def _unregister_chat_socket(user_id: int, ws) -> None:
+    with _chat_ws_lock:
+        sockets = _chat_ws_clients.get(user_id)
+        if not sockets:
+            return
+        sockets.discard(ws)
+        if not sockets:
+            _chat_ws_clients.pop(user_id, None)
+
+
+def _send_ws_payload(ws, payload: Dict[str, Any]) -> bool:
+    try:
+        ws.send(json.dumps(payload))
+        return True
+    except Exception:
+        return False
+
+
+def _broadcast_ws_payload(user_id: int, payload: Dict[str, Any]) -> None:
+    with _chat_ws_lock:
+        sockets = list(_chat_ws_clients.get(user_id, set()))
+    stale: list[Any] = []
+    for ws in sockets:
+        if not _send_ws_payload(ws, payload):
+            stale.append(ws)
+    if stale:
+        with _chat_ws_lock:
+            active = _chat_ws_clients.get(user_id, set())
+            for ws in stale:
+                active.discard(ws)
+            if not active:
+                _chat_ws_clients.pop(user_id, None)
+
+
+def _push_chat_message_to_clients(message: Dict[str, Any], sender: Dict[str, Any], recipient: Dict[str, Any]) -> None:
+    sender_id = int(sender['id'])
+    recipient_id = int(recipient['id'])
+    sent_at = message.get('sentAt')
+    sender_contact = _serialize_chat_contact_row(
+        sender,
+        is_online=True,
+        unread_count=1,
+        last_message_at=sent_at,
+    )
+    recipient_contact = _serialize_chat_contact_row(
+        recipient,
+        is_online=True,
+        unread_count=0,
+        last_message_at=sent_at,
+    )
+    _broadcast_ws_payload(
+        recipient_id,
+        {
+            'type': 'chat_message',
+            'message': {**message, 'mine': False},
+            'contact': sender_contact,
+        },
+    )
+    _broadcast_ws_payload(
+        sender_id,
+        {
+            'type': 'chat_message',
+            'message': {**message, 'mine': True},
+            'contact': recipient_contact,
+        },
+    )
+
+
+@sock.route('/ws/chat')
+def chat_socket(ws):
+    user = _get_user_from_socket()
+    if not user:
+        _send_ws_payload(ws, {'type': 'error', 'message': 'Unauthorized'})
+        try:
+            ws.close()
+        except Exception:
+            pass
+        return
+
+    user_id = int(user['id'])
+    _register_chat_socket(user_id, ws)
+    _send_ws_payload(ws, {'type': 'connected', 'userId': user_id})
+
+    try:
+        while True:
+            raw_message = ws.receive()
+            if raw_message is None:
+                break
+            try:
+                payload = json.loads(raw_message)
+            except json.JSONDecodeError:
+                _send_ws_payload(ws, {'type': 'error', 'message': 'Invalid WebSocket payload.'})
+                continue
+
+            event_type = str(payload.get('type') or '').strip().lower()
+            if event_type == 'ping':
+                _send_ws_payload(ws, {'type': 'pong', 'ts': _now_iso()})
+                continue
+
+            if event_type == 'mark_read':
+                partner_id = payload.get('partnerId')
+                try:
+                    partner_id_int = int(partner_id)
+                except (TypeError, ValueError):
+                    _send_ws_payload(ws, {'type': 'error', 'message': 'Valid partnerId is required.'})
+                    continue
+                conn = get_connection()
+                try:
+                    with conn.cursor() as cur:
+                        _mark_thread_read(cur, partner_id_int, user_id)
+                    conn.commit()
+                finally:
+                    _return_connection(conn)
+                _broadcast_ws_payload(
+                    partner_id_int,
+                    {
+                        'type': 'chat_read',
+                        'partnerId': user_id,
+                        'readerId': user_id,
+                        'ts': _now_iso(),
+                    },
+                )
+                continue
+
+            if event_type == 'message':
+                recipient_id = payload.get('recipientId')
+                body = payload.get('body')
+                try:
+                    recipient_id_int = int(recipient_id)
+                except (TypeError, ValueError):
+                    _send_ws_payload(ws, {'type': 'error', 'message': 'Valid recipientId is required.'})
+                    continue
+                conn = get_connection()
+                try:
+                    try:
+                        message, recipient = _create_chat_message(conn, user, recipient_id_int, str(body or ''))
+                    except ValueError as exc:
+                        _send_ws_payload(ws, {'type': 'error', 'message': str(exc)})
+                        continue
+                    except LookupError as exc:
+                        _send_ws_payload(ws, {'type': 'error', 'message': str(exc)})
+                        continue
+                finally:
+                    _return_connection(conn)
+                _notify_user(recipient_id_int)
+                _notify_user(user_id)
+                _push_chat_message_to_clients(message, user, recipient)
+                continue
+
+            _send_ws_payload(ws, {'type': 'error', 'message': 'Unsupported WebSocket event.'})
+    finally:
+        _unregister_chat_socket(user_id, ws)
+
+
 @app.post('/api/chat/messages')
 def chat_send_message():
     payload = request.get_json(silent=True) or {}
     recipient_id = payload.get('recipientId')
     body = str(payload.get('body') or '').strip()
-
-    if not body:
-        return jsonify({'message': 'Message body is required.'}), 400
-    if len(body) > 1000:
-        return jsonify({'message': 'Message too long (max 1000 chars).'}), 400
 
     try:
         recipient_id_int = int(recipient_id)
@@ -5864,31 +6107,16 @@ def chat_send_message():
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
-        me = int(user['id'])
-        if me == recipient_id_int:
-            return jsonify({'message': 'Cannot message yourself.'}), 400
-        with conn.cursor() as cur:
-            cur.execute('SELECT id FROM users WHERE id = %s', (recipient_id_int,))
-            if not cur.fetchone():
-                return jsonify({'message': 'Recipient not found.'}), 404
-            cur.execute(
-                'INSERT INTO chat_messages (sender_id, recipient_id, body, sent_at) VALUES (%s, %s, %s, %s)',
-                (me, recipient_id_int, body, _now_db()),
-            )
-            msg_id = cur.lastrowid
-        conn.commit()
-        msg_payload = {
-            'id': msg_id,
-            'senderId': me,
-            'recipientId': recipient_id_int,
-            'body': body,
-            'sentAt': _now_iso(),
-            'mine': True,
-            'read': False,
-        }
+        try:
+            msg_payload, recipient = _create_chat_message(conn, user, recipient_id_int, body)
+        except ValueError as exc:
+            return jsonify({'message': str(exc)}), 400
+        except LookupError as exc:
+            return jsonify({'message': str(exc)}), 404
         # Wake up long-poll requests for both users instantly
         _notify_user(recipient_id_int)
-        _notify_user(me)
+        _notify_user(int(user['id']))
+        _push_chat_message_to_clients(msg_payload, user, recipient)
         return jsonify(msg_payload), 201
     finally:
         _return_connection(conn)
