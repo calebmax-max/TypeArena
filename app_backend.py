@@ -5475,7 +5475,6 @@ def presence_ping():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 INSERT INTO user_presence (user_id, last_seen)
@@ -5499,7 +5498,6 @@ def presence_online():
             return jsonify({'message': 'Unauthorized'}), 401
         cutoff = (datetime.utcnow() - timedelta(seconds=45)).strftime('%Y-%m-%d %H:%M:%S')
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT u.id, u.username, u.wpm, p.last_seen
@@ -5535,7 +5533,6 @@ def chat_get_messages(other_user_id: int):
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT id, sender_id, recipient_id, body, sent_at, read_at
@@ -5577,23 +5574,48 @@ def chat_get_messages(other_user_id: int):
 
 # ── Long-poll infrastructure (must be defined BEFORE chat_send_message) ──────
 import threading as _threading
-_chat_events: dict = {}
-_chat_events_lock = _threading.Lock()
+
+# Maps user_id -> Condition.
+# Using a Condition instead of an Event eliminates the set/clear race:
+# the sender bumps a version counter under the lock and notifies;
+# the waiter checks the counter under the same lock so it can never
+# miss a notification that arrived between wait() returning and the
+# next iteration starting.
+_chat_conds: dict = {}
+_chat_versions: dict = {}
+_chat_waiters: dict = {}          # reference-count for cleanup
+_chat_conds_lock = _threading.Lock()
 
 
-def _get_or_create_event(user_id: int) -> _threading.Event:
-    with _chat_events_lock:
-        if user_id not in _chat_events:
-            _chat_events[user_id] = _threading.Event()
-        return _chat_events[user_id]
+def _get_or_create_cond(user_id: int) -> _threading.Condition:
+    with _chat_conds_lock:
+        if user_id not in _chat_conds:
+            _chat_conds[user_id] = _threading.Condition(_threading.Lock())
+            _chat_versions[user_id] = 0
+            _chat_waiters[user_id] = 0
+        _chat_waiters[user_id] += 1
+        return _chat_conds[user_id]
+
+
+def _release_cond(user_id: int) -> None:
+    """Decrement waiter count and clean up if nobody is listening."""
+    with _chat_conds_lock:
+        _chat_waiters[user_id] = max(0, _chat_waiters.get(user_id, 1) - 1)
+        if _chat_waiters[user_id] == 0:
+            _chat_conds.pop(user_id, None)
+            _chat_versions.pop(user_id, None)
+            _chat_waiters.pop(user_id, None)
 
 
 def _notify_user(user_id: int) -> None:
     """Wake up any long-poll request waiting for user_id."""
-    with _chat_events_lock:
-        ev = _chat_events.get(user_id)
-    if ev:
-        ev.set()
+    with _chat_conds_lock:
+        cond = _chat_conds.get(user_id)
+        if cond is None:
+            return
+        _chat_versions[user_id] = _chat_versions.get(user_id, 0) + 1
+    with cond:
+        cond.notify_all()
 
 
 @app.post('/api/chat/messages')
@@ -5621,7 +5643,6 @@ def chat_send_message():
         if me == recipient_id_int:
             return jsonify({'message': 'Cannot message yourself.'}), 400
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute('SELECT id FROM users WHERE id = %s', (recipient_id_int,))
             if not cur.fetchone():
                 return jsonify({'message': 'Recipient not found.'}), 404
@@ -5654,6 +5675,10 @@ def chat_long_poll(other_user_id: int):
     Long-poll endpoint. The client sends ?since=<last_msg_id>.
     Returns immediately if new messages exist, otherwise holds the
     connection open for up to 25 s waiting for _notify_user() to fire.
+
+    Uses a Condition + version counter instead of Event so that a
+    notification arriving between the DB fetch and the wait() call is
+    never lost (the version will have advanced and we skip waiting).
     """
     conn = get_connection()
     try:
@@ -5673,7 +5698,6 @@ def chat_long_poll(other_user_id: int):
         c = get_connection()
         try:
             with c.cursor() as cur:
-                _ensure_chat_tables(cur)
                 cur.execute(
                     '''
                     SELECT id, sender_id, recipient_id, body, sent_at, read_at
@@ -5717,10 +5741,19 @@ def chat_long_poll(other_user_id: int):
     if msgs:
         return jsonify(msgs)
 
-    # Nothing yet — park the request until _notify_user fires or 25 s pass
-    ev = _get_or_create_event(me)
-    ev.clear()
-    ev.wait(timeout=20)
+    # Nothing yet — park on a Condition so we never miss a notification.
+    # Snapshot the version BEFORE waiting; if _notify_user fires between
+    # fetch_new() above and cond.wait() below the version will have
+    # advanced and we skip the wait entirely.
+    cond = _get_or_create_cond(me)
+    try:
+        with _chat_conds_lock:
+            version_before = _chat_versions.get(me, 0)
+        with cond:
+            if _chat_versions.get(me, 0) == version_before:
+                cond.wait(timeout=25)
+    finally:
+        _release_cond(me)
 
     return jsonify(fetch_new())
 
@@ -5734,7 +5767,6 @@ def chat_unread_counts():
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
         with conn.cursor() as cur:
-            _ensure_chat_tables(cur)
             cur.execute(
                 '''
                 SELECT sender_id, COUNT(*) AS cnt
