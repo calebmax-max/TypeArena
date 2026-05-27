@@ -1119,6 +1119,7 @@ export default function Play({ practicePage = false }){
     joinFriendBattle();
   // joinFriendBattle is a useCallback — include it so the effect always calls
   // the latest version with up-to-date friendBattle.inviteCode / password.
+  // eslint-disable-next-line no-use-before-define
   }, [pendingRematch, phase, joinFriendBattle]);
 
   const redirectToProfile = useCallback(() => {
