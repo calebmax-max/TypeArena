@@ -152,10 +152,12 @@ function AppLayout() {
       if (!stored?.id) return; // not logged in, nothing to refresh
 
       try {
-        const headers = { 'Content-Type': 'application/json' };
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-User-Id': String(stored.id),
+        };
         const token = localStorage.getItem('token');
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        else headers['X-User-Id'] = String(stored.id); // fallback for pre-token sessions
 
         const res = await fetch('/api/user/me', { headers });
         if (!res.ok) return; // server down or truly invalid — leave stored user as-is

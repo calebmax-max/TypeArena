@@ -69,10 +69,11 @@ function buildWebSocketUrl(path) {
   }
   const protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
   baseUrl.protocol = protocol;
+  if (userId) {
+    baseUrl.searchParams.set('userId', userId);
+  }
   if (token) {
     baseUrl.searchParams.set('token', token);
-  } else if (userId) {
-    baseUrl.searchParams.set('userId', userId);
   }
   return baseUrl.toString();
 }
