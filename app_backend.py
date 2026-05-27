@@ -180,6 +180,44 @@ LONG_COMPETITIVE_BLOCKS = [
     'Focus stress test: the player who wins the lane usually maintains form when the content turns noisy. Keep the letters g, h, i, j, and k steady alongside 44, 88, 132, and 2.75%, then finish without dropping the final punctuation.',
 ]
 
+MODE_COMPETITIVE_TAILS = {
+    'code': [
+        'Code emphasis: keep {}, (), [], =>, ==, !=, &&, ||, and :: in order while function names like renderBoard, submitRace, and mergeRooms stay readable.',
+        'Syntax layer: preserve "const", "return", and "async" beside identifiers such as room_id, match_state, and winnerUserId without losing spacing or casing.',
+        'Operator drill: make every slash, underscore, brace, and semicolon matter while the snippet still looks like production-quality logic.',
+    ],
+    'memory': [
+        'Recall emphasis: keep the sequence 3, 8, 13, 21, 34, and 55 in order, then preserve the quote "remember the pattern first" exactly as shown.',
+        'Retention layer: hold the letters n, o, p, q, r, and s in a clean chain while ratios, commas, and quotes stay attached to the right spots.',
+        'Memory drill: the safest route is to store the structure before the clock turns, not to improvise the missing symbol at the end.',
+    ],
+    'marathon': [
+        'Marathon emphasis: the text should keep breathing across a long span, so preserve rhythm through every extra clause and the final carry to the line end.',
+        'Endurance layer: hold your posture through the middle paragraphs, where fatigue usually starts to bend punctuation and spacing out of shape.',
+        'Distance drill: keep the run steady through a long corridor of words, numbers, and symbols so the final section still looks controlled.',
+    ],
+    'speed_burst': [
+        'Burst emphasis: launch quickly, but do not let the accelerated pace strip away the punctuation or the spacing that makes the line readable.',
+        'Sprint layer: keep the opening sharp and the exit clean, even while the numbers, dashes, and quotes come at you faster.',
+        'Fast-lane note: the best burst is the one that looks aggressive without becoming sloppy in the last third.',
+    ],
+    'survival': [
+        'Survival emphasis: every extra mark matters because one careless miss can hand momentum away in a pressure-heavy room.',
+        'Pressure layer: keep the line compact and controlled so the sentence still survives the late-stage squeeze.',
+        'Clutch drill: the goal is to protect detail when the passage starts to feel crowded and the timer feels louder.',
+    ],
+    'quote': [
+        'Quote emphasis: keep the reflective tone intact while punctuation, punctuation-like pauses, and the quoted phrases stay crisp.',
+        'Reflection layer: the line should feel calm but exact, as if every character has to earn its place on the page.',
+        'Philosophy drill: preserve the sentence shape even when the passage slows down enough to tempt lazy typing.',
+    ],
+    'standard': [
+        'Standard emphasis: keep the run balanced so it feels like a real competitive practice lane instead of a sample snippet.',
+        'Baseline layer: protect both rhythm and detail because the easiest-looking passages often expose sloppy habits fastest.',
+        'Core drill: this sector should read cleanly from start to finish while still asking enough of the hands to matter.',
+    ],
+}
+
 
 def _content_id_for_index(kind: str, mode: str, language: str, index: int) -> str:
     raw = f'{kind}:{mode}:{language}:{index}'.encode('utf-8')
@@ -194,8 +232,11 @@ def _augment_competitive_passage(base_passage: str, content_id: str, *, mode: st
     suffix = COMPETITIVE_PASSAGE_SUFFIXES[suffix_index]
     first_block = LONG_COMPETITIVE_BLOCKS[block_index]
     second_block = LONG_COMPETITIVE_BLOCKS[second_block_index]
+    tail_pool = MODE_COMPETITIVE_TAILS.get(mode, MODE_COMPETITIVE_TAILS['standard'])
+    tail_index = int(seed[16:24], 16) % len(tail_pool)
+    tail = tail_pool[tail_index]
     checksum = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
-    return f'{base_passage} {suffix} {first_block} {second_block} Match code: {checksum}.'
+    return f'{base_passage} {suffix} {first_block} {second_block} {tail} Match code: {checksum}.'
 
 
 def _normalize_exclude_content_ids(exclude_content_ids: Any) -> set[str]:
@@ -470,6 +511,67 @@ LIVE_BATTLE_PASSAGE_PARTS = {
         ],
     },
 }
+
+
+def _extend_passage_parts(parts_map: Dict[str, Dict[str, list[str]]], extra_parts: Dict[str, list[str]]) -> None:
+    for sector_parts in parts_map.values():
+        for bucket_name, extra_values in extra_parts.items():
+            bucket = sector_parts.setdefault(bucket_name, [])
+            for value in extra_values:
+                cleaned = str(value or '').strip()
+                if cleaned and cleaned not in bucket:
+                    bucket.append(cleaned)
+
+
+PRACTICE_EXTRA_PARTS = {
+    'intros': [
+        'Advanced practice note: this sector is meant to feel denser, longer, and more like a real ranked drill.',
+        'Precision ladder update: this solo run now leans harder into symbol density, longer clauses, and steady pressure.',
+        'Tournament rehearsal memo: treat every line like a controlled competition sequence rather than a sample paragraph.',
+    ],
+    'focuses': [
+        'Keep the rhythm stable through nested punctuation, quoted fragments, and bracket pairs without flattening the line.',
+        'Preserve mixed character clusters like a1, g7, and t9 while the sentence keeps stretching across the full screen.',
+        'Hold the structure of the paragraph from the first word to the final symbol, even when the text starts to stack.',
+    ],
+    'metrics': [
+        'Keep 41, 83, and 97.2% exact while #, /, :, ;, and () stay perfectly aligned.',
+        'Protect 19:08, 62, and 88.4 while underscores, dashes, and quotes remain locked in place.',
+        'Preserve 7/11, 54, and 91.0 together with {}, [], <>, and comma-separated values.',
+    ],
+    'closers': [
+        'This practice sector should now feel long enough to build real endurance, not just warm up the fingers.',
+        'Longer training lines help the hands learn how to stay accurate after the easy part is over.',
+        'The best practice rounds are the ones that feel demanding from the middle all the way to the final mark.',
+    ],
+}
+
+LIVE_EXTRA_PARTS = {
+    'intros': [
+        'Live arena escalation: this sector is meant to feel tighter, cleaner, and more competitive than a simple warm-up.',
+        'Ranked duel briefing: both players need longer focus windows because the board rewards sustained accuracy now.',
+        'Match pressure update: this live sector is built to punish lazy rhythm and reward deliberate control.',
+    ],
+    'focuses': [
+        'Protect the quoted phrase, the numerical cluster, and every symbol in between while the pace keeps rising.',
+        'Carry through nested punctuation, angle marks, and slash-separated values without losing the sentence shape.',
+        'Keep the duel text readable under pressure so every character still feels intentional and hard-earned.',
+    ],
+    'metrics': [
+        'Maintain 12, 68, and 99.1% while /, #, :, ;, and " " stay untouched.',
+        'Hold 23:11, 57, and 94.7 with {}, [], <>, and operator-like symbols aligned exactly.',
+        'Preserve 4/9, 81, and 90.3 while commas, dashes, and apostrophes remain clean.',
+    ],
+    'closers': [
+        'Live sectors should now carry enough density to feel like a real duel instead of a short lap.',
+        'The harder the passage feels, the more it rewards controlled hands and disciplined recovery.',
+        'Competitive text is most useful when it stays demanding right through the final character.',
+    ],
+}
+
+
+_extend_passage_parts(PRACTICE_PASSAGE_PARTS, PRACTICE_EXTRA_PARTS)
+_extend_passage_parts(LIVE_BATTLE_PASSAGE_PARTS, LIVE_EXTRA_PARTS)
 LIVE_BATTLE_PASSAGE_BANK = {
     mode: _build_live_mode_passages(parts)
     for mode, parts in LIVE_BATTLE_PASSAGE_PARTS.items()
