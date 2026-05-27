@@ -7,35 +7,27 @@ import {
   generateRaceId,
 } from '../utils/typingEngine';
 import {
-  cancelLiveRaceRoom,
   fetchCurrentUser,
   generateRaceContent,
   fetchLiveRaceRoom,
   fetchLiveRaces,
   getStoredUserSnapshot,
-  queueLiveRace,
-  submitLiveRaceResult,
   submitRaceResult,
-  updateLiveRaceHeartbeat,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
 import PrivateRoomPanel from './PrivateRoomPanel';
 import { useActiveKeyboard } from '../hooks/useActiveKeyboard';
 import { useLiveFeed } from '../hooks/useLiveFeed';
+import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { useSpectateRoom } from '../hooks/useSpectateRoom';
 import '../styles/Play.css';
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const USED_CONTENT_IDS_KEY = 'typearena_used_content_ids';
-const LIVE_RACE_COUNTDOWN_FALLBACK = 10;
-const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
 const AFK_FORFEIT_MS = 15000; // #2 rage-quit/AFK: forfeit after 15s of no heartbeat
 const DAILY_CHALLENGE_KEY = 'typearena_daily_challenge';
 const WIN_STREAK_KEY = 'typearena_win_streak';
 const LOBBY_FEED_POLL_INTERVAL_MS = 8000;
-const LIVE_ROOM_POLL_QUEUED_MS = 1000;
-const LIVE_ROOM_POLL_ACTIVE_MS = 2500;
-const LIVE_ROOM_POLL_RESULTS_MS = 1200;
 const SPECTATE_POLL_INTERVAL_MS = 3000;
 
 // ---------------------------------------------------------------------------
@@ -924,10 +916,8 @@ export default function Play({ practicePage = false }){
   const [mode, setMode] = useState('standard');
   const [language, setLanguage] = useState('english');
   const [duration, setDuration] = useState(60);
-  const [liveRoom, setLiveRoom] = useState(null);
   const [typingText, setTypingText] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
-  const [loadingLive, setLoadingLive] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
   // notice is now { message: string, type: 'info'|'error'|'success'|'warning' }
   const [notice, setNotice] = useState(null);
@@ -938,7 +928,6 @@ export default function Play({ practicePage = false }){
     const stored = getStoredUserSnapshot();
     return stored ?? undefined;
   }); // undefined=loading, null=guest, object=user
-  const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [showPracticeModes, setShowPracticeModes] = useState(false);
   const [raceOver, setRaceOver] = useState(false);
   const [friendBattle, setFriendBattle] = useState({
@@ -992,7 +981,7 @@ export default function Play({ practicePage = false }){
   const [isNewPB, setIsNewPB] = useState(false);
   const [mistakeMap, setMistakeMap] = useState({});       // char → count
   const [recentRaces, setRecentRaces] = useState(() => getRecentRaces());
-  const [pendingRematch, setPendingRematch] = useState(false); // triggers rematch after backToLobby settles
+  const [waitingElapsed, setWaitingElapsed] = useState(0);
   // ── Feature #1: WPM sparkline is already collected in wpmHistory — rendered below ──
   // ── Feature #2: AFK/forfeit detection state ────────────────────────────────
   const [afkWarning, setAfkWarning] = useState(false);
@@ -1022,6 +1011,7 @@ export default function Play({ practicePage = false }){
   const [ghostFrames, setGhostFrames] = useState([]);      // pb replay frames for this session
   const [ghostIndex, setGhostIndex] = useState(0);         // which frame the ghost is on
   const ghostIntervalRef = useRef(null);
+  const backToLobbyRef = useRef(() => {});
   // ── Feature #10: Win streak ───────────────────────────────────────────────
   const [winStreak, setWinStreak] = useState(() => getWinStreak());
   // Fix #13: unique SVG gradient ID per component instance — prevents collisions
@@ -1038,17 +1028,9 @@ export default function Play({ practicePage = false }){
 
   const inputRef = useRef(null);
   const timerRef = useRef(null);
-  const heartbeatTimerRef = useRef(null);
-  const heartbeatPayloadRef = useRef(null);
-  const heartbeatInFlightRef = useRef(false);
-  const roomPollInFlightRef = useRef(false);
-  const isSubmittingRef = useRef(false);
-  const isLeavingRef = useRef(false);
-  const queuedAtRef = useRef(null); // tracks when the user entered queued phase
   // Fix #1: ref-based in-flight guard and loaded-key tracker to prevent re-fetching on page revisit
   const contentLoadingRef = useRef(false);
   const loadedForRef = useRef('');
-  const [queueElapsed, setQueueElapsed] = useState(0); // seconds waiting in queue
 
   // Typed notice helper — keeps callsites clean
   const showNotice = useCallback((message, type = 'info') => {
@@ -1217,137 +1199,64 @@ export default function Play({ practicePage = false }){
   useEffect(() => { timeLeftRef.current     = timeLeft;     }, [timeLeft]);
   useEffect(() => { replayFramesRef.current = replayFrames; }, [replayFrames]);
 
-  const buildRoomStandings = useCallback((room) => {
-    if (!room?.players?.length) {
-      return [];
-    }
-
-    const standings = room.players.map((player) => {
-      const result = player?.result || null;
-      return {
-        userId: player.userId,
-        username: player.username || 'Player',
-        wpm: Number(result?.wpm ?? player?.currentWpm ?? 0),
-        accuracy: Number(result?.accuracy ?? player?.currentAccuracy ?? 0),
-        finishedAtTs: Number(result?.finishedAtTs ?? 0),
-        submitted: Boolean(result),
-        isWinner: String(player.userId) === String(room?.winnerUserId),
-        isCurrentUser: String(player.userId) === String(currentUser?.id),
-      };
-    });
-
-    standings.sort((left, right) => {
-      if (left.submitted !== right.submitted) {
-        return left.submitted ? -1 : 1;
-      }
-      if (right.wpm !== left.wpm) {
-        return right.wpm - left.wpm;
-      }
-      if (right.accuracy !== left.accuracy) {
-        return right.accuracy - left.accuracy;
-      }
-      if (left.finishedAtTs && right.finishedAtTs && left.finishedAtTs !== right.finishedAtTs) {
-        return left.finishedAtTs - right.finishedAtTs;
-      }
-      return String(left.username).localeCompare(String(right.username));
-    });
-
-    return standings.map((entry, index) => ({
-      ...entry,
-      rank: index + 1,
-    }));
-  }, [currentUser?.id]);
-
-  const buildRoomResultPayload = useCallback((room) => {
-    if (!room) {
-      return null;
-    }
-
-    const standings = buildRoomStandings(room);
-    const myStanding = standings.find((entry) => entry.isCurrentUser) || null;
-    const myResult =
-      room.players?.find((player) => String(player.userId) === String(currentUser?.id))?.result ||
-      myStanding ||
-      null;
-
-    // Read from refs so this callback stays stable across keystrokes
-    const currentTypingText = typingTextRef.current;
-    const currentTimeLeft   = timeLeftRef.current;
-    const currentReplayFrames = replayFramesRef.current;
-
-    const fallbackWpm = calculateWPM(currentTypingText, Math.max(1, duration - currentTimeLeft));
-    const fallbackAccuracy = calculateAccuracy(
-      room?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '',
-      currentTypingText
-    );
-
-    return {
-      id: room.id || generateRaceId(),
-      wpm: Number(myResult?.wpm ?? fallbackWpm),
-      accuracy: Number(myResult?.accuracy ?? fallbackAccuracy),
-      duration: Number(room.duration || duration),
-      mode: room.mode || mode,
-      language: room.language || language,
-      netWPM: Math.max(
-        0,
-        Math.round(
-          (Number(myResult?.wpm ?? fallbackWpm) * (Number(myResult?.accuracy ?? fallbackAccuracy) / 100)) * 10
-        ) / 10
-      ),
-      coachTip:
-        Number(myResult?.accuracy ?? fallbackAccuracy) < 92
-          ? 'Accuracy dipped. Try smoother keystrokes and avoid forcing speed.'
-          : 'Strong run. Keep your rhythm and push for a faster opening burst.',
-      replayFrames: currentReplayFrames,
-      shareText: `I typed ${Math.round(Number(myResult?.wpm ?? fallbackWpm))} WPM on TypeArena.`,
-      winnerPrize: Number(room?.winnerPrize || 0),
-      completedAt: room?.completedAt || new Date().toISOString(),
-      winnerUserId: room?.winnerUserId || null,
-      winnerUsername:
-        room?.winnerUsername ||
-        standings.find((entry) => entry.isWinner)?.username ||
-        '',
-      standings,
-    };
-  }, [buildRoomStandings, currentUser?.id, duration, generatedContent?.passage, language, mode]);
-
-
-const flushLiveHeartbeat = useCallback(async () => {
-    if (!liveRoom?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
-      return;
-    }
-
-    heartbeatInFlightRef.current = true;
-    const payload = heartbeatPayloadRef.current;
-    heartbeatPayloadRef.current = null;
-
-    try {
-      const room = await updateLiveRaceHeartbeat(liveRoom.id, payload);
-      if (isLeavingRef.current) return;
-      setLiveRoom(room);
-
-      if (room?.status === 'completed') {
-        const finalPayload = buildRoomResultPayload(room);
-        if (finalPayload) {
-          sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
-          setRaceResult(finalPayload);
-        }
-        setPhase('results');
-        return;
-      }
-
-    } catch (error) {
-      console.error('Live heartbeat error:', error);
-    } finally {
-      heartbeatInFlightRef.current = false;
-      if (heartbeatPayloadRef.current) {
-        window.clearTimeout(heartbeatTimerRef.current);
-        heartbeatTimerRef.current = window.setTimeout(() => {
-          flushLiveHeartbeat();
-        }, 120);
-      }
-    }
-  }, [liveRoom?.id, buildRoomResultPayload]);
+  const getModeDescription = useCallback(
+    (modeId) => MODE_CONFIG.find((item) => item.id === modeId)?.description || '',
+    []
+  );
+  const persistLatestRaceResult = useCallback((payload) => {
+    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(payload));
+  }, []);
+  const {
+    liveRoom,
+    liveRoomRef,
+    loadingLive,
+    countdownRemaining,
+    queueElapsed,
+    isSubmittingRef,
+    isLeavingRef,
+    syncRoomClock,
+    startLiveRace,
+    createFriendBattle,
+    joinFriendBattle,
+    requestRematch,
+    cancelPrivateRoom,
+    submitHeartbeat,
+    submitFinalLiveResult,
+    resetLiveSession,
+    myPlayer,
+    opponent,
+  } = useLiveRaceSession({
+    currentUser,
+    phase,
+    setPhase,
+    mode,
+    setMode,
+    language,
+    setLanguage,
+    duration,
+    setDuration,
+    friendBattle,
+    setFriendBattle,
+    wpmFilter,
+    generatedContentPassage: generatedContent?.passage,
+    redirectToProfile,
+    navigate,
+    refreshFeed,
+    showNotice,
+    inputRef,
+    typingTextRef,
+    timeLeftRef,
+    replayFramesRef,
+    getModeDescription,
+    getUsedContentIds,
+    recordUsedContentId,
+    persistLatestRaceResult,
+    setRaceResult,
+    setTypingText,
+    setReplayFrames,
+    setRaceOver,
+    setTimeLeft,
+  });
 
   const finishRaceRef = useRef(null);
   const finishRace = useCallback(async () => {
@@ -1383,48 +1292,7 @@ const flushLiveHeartbeat = useCallback(async () => {
         }
 
         if (liveRoom?.id) {
-            try {
-                const updatedRoom = await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
-
-                if (isLeavingRef.current) return;
-
-                if (updatedRoom?.id) {
-                    setLiveRoom(updatedRoom);
-                }
-
-                const freshPayload = updatedRoom?.id ? buildRoomResultPayload(updatedRoom) : null;
-                const ownPayload = freshPayload || {
-                    ...finalData,
-                    netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
-                    coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
-                    replayFrames: currentReplayFrames,
-                    shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
-                    completedAt: new Date().toISOString(),
-                    standings: [],
-                };
-                sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(ownPayload));
-                setRaceResult(ownPayload);
-                setPhase('results');
-            } catch (error) {
-                if (isLeavingRef.current) return;
-                if (error.message?.includes('1062')) {
-                    setPhase('results');
-                } else {
-                    console.error('Live race submit error:', error);
-                    const fallbackPayload = {
-                        ...finalData,
-                        netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
-                        coachTip: accuracy < 92 ? 'Accuracy dipped.' : 'Strong run.',
-                        replayFrames: currentReplayFrames,
-                        shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
-                        completedAt: new Date().toISOString(),
-                        standings: [],
-                    };
-                    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(fallbackPayload));
-                    setRaceResult(fallbackPayload);
-                    setPhase('results');
-                }
-            }
+            await submitFinalLiveResult({ wpm, accuracy, finalData });
             return;
         }
 
@@ -1485,31 +1353,11 @@ const flushLiveHeartbeat = useCallback(async () => {
         isSubmittingRef.current = false;
     }
 // Fix #9: removed timeLeft, typingText, replayFrames from deps — read via refs above.
-}, [commentatorEnabled, currentUser?.name, currentUser?.username, duration, liveRoom, generatedContent, mode, language, setPhase, buildRoomResultPayload, setRaceResult]);
+}, [commentatorEnabled, currentUser?.name, currentUser?.username, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, submitFinalLiveResult]);
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
-  const syncRoomClock = useCallback((room) => {
-    if (!room?.startedAt) {
-      setCountdownRemaining(Number(room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
-      return;
-    }
-
-    const countdownSeconds = Number(room.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
-    const startedAtMs = new Date(room.startedAt).getTime();
-    if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) {
-      setCountdownRemaining(countdownSeconds);
-      return;
-    }
-
-    const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
-    const remainingCountdown = Math.max(0, Math.ceil(countdownSeconds - elapsedSeconds));
-    const raceElapsed = Math.max(0, Math.floor(elapsedSeconds - countdownSeconds));
-
-    setCountdownRemaining(remainingCountdown);
-    setTimeLeft(Math.max(0, Number(room.duration || duration) - raceElapsed));
-  }, [duration]);
-
+  /* useLiveRaceSession now owns polling, countdown, and heartbeat cleanup.
   useEffect(() => {
     // Fix #10: removed `phase === 'waiting'` from the early-return guard.
     // The 'waiting' phase was never actually set anywhere, making the guard dead code
@@ -1581,6 +1429,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     window.clearTimeout(heartbeatTimerRef.current);
   }, []);
 
+  */
   // Stop music when component unmounts (navigate away)
   useEffect(() => () => { _orchestra.stop(); }, []);
 
@@ -1595,13 +1444,23 @@ const flushLiveHeartbeat = useCallback(async () => {
         setAfkWarning(true);
         window.clearInterval(afkCheck);
         // Auto-forfeit: submit a 0-WPM result to protect prize integrity
-        submitLiveRaceResult(liveRoom.id, { wpm: 0, accuracy: 0, forfeited: true }).catch(() => {});
-        backToLobby();
+        submitFinalLiveResult({
+          wpm: 0,
+          accuracy: 0,
+          finalData: {
+            id: generateRaceId(),
+            wpm: 0,
+            accuracy: 0,
+            duration,
+            mode,
+            language,
+          },
+        }).catch(() => {});
+        backToLobbyRef.current();
       }
     }, 3000);
     return () => window.clearInterval(afkCheck);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, liveRoom?.id]);
+  }, [duration, language, liveRoom?.id, mode, phase, submitFinalLiveResult]);
 
   // ── Feature #4: Daily challenge loader ────────────────────────────────────
   const loadDailyChallenge = useCallback(async () => {
@@ -1617,21 +1476,7 @@ const flushLiveHeartbeat = useCallback(async () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
 
-  // Track how long the user has been waiting in the queue (for UX timeout hint)
-  useEffect(() => {
-    if (phase !== 'queued') {
-      setQueueElapsed(0);
-      queuedAtRef.current = null;
-      return undefined;
-    }
-    if (!queuedAtRef.current) {
-      queuedAtRef.current = Date.now();
-    }
-    const interval = window.setInterval(() => {
-      setQueueElapsed(Math.floor((Date.now() - (queuedAtRef.current || Date.now())) / 1000));
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, [phase]);
+  // Queue elapsed now comes from useLiveRaceSession.
 
   // Keyboard shortcut: Enter in lobby starts the primary race action
   useEffect(() => {
@@ -1665,6 +1510,22 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
   }, [phase]);
 
+  useEffect(() => {
+    if (phase !== 'waiting') {
+      setWaitingElapsed(0);
+      return undefined;
+    }
+
+    const startedAt = Date.now();
+    setWaitingElapsed(0);
+    const interval = window.setInterval(() => {
+      setWaitingElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [phase]);
+
+  /* useLiveRaceSession now owns live-room completion transitions.
   useEffect(() => {
   // Only auto-advance to results from an active game phase, never from lobby
   if (
@@ -1711,10 +1572,7 @@ const flushLiveHeartbeat = useCallback(async () => {
 ]);
 
     
-  const liveRoomRef = useRef(liveRoom);
-  useEffect(() => {
-    liveRoomRef.current = liveRoom;
-  }, [liveRoom]);
+  */
 
   useEffect(() => {
     // Run the race timer during active racing — for both live rooms and solo/practice races
@@ -1742,7 +1600,7 @@ const flushLiveHeartbeat = useCallback(async () => {
 
         const startedAtMs = new Date(currentRoom.startedAt).getTime();
         const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
-        const countdownSeconds = Number(currentRoom.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
+        const countdownSeconds = Number(currentRoom.countdown || 10);
         const raceRemaining = Math.max(0, Number(currentRoom.duration || duration) - Math.floor(elapsedSeconds - countdownSeconds));
 
         setTimeLeft(raceRemaining);
@@ -1765,7 +1623,7 @@ const flushLiveHeartbeat = useCallback(async () => {
         }
         return current - 1;
       });
-    }, liveRoom?.startedAt ? LIVE_CLOCK_SYNC_INTERVAL_MS : LOCAL_RACE_TICK_INTERVAL_MS);
+    }, liveRoom?.startedAt ? 250 : LOCAL_RACE_TICK_INTERVAL_MS);
 
     return () => window.clearInterval(timerRef.current);
   // Bug 2 fix: liveRoom?.startedAt removed from deps — every heartbeat returned a new room
@@ -1792,7 +1650,7 @@ const flushLiveHeartbeat = useCallback(async () => {
 
     isLeavingRef.current = false;
     isSubmittingRef.current = false;
-    setLiveRoom(null);
+    resetLiveSession();
     setTypingText('');
     setReplayFrames([]);
     setRaceResult(null);
@@ -1833,7 +1691,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, language, mode, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, isLeavingRef, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showNotice]);
 
   // startPracticeRace is a convenience wrapper that starts in the current mode.
   const startPracticeRace = useCallback(() => {
@@ -1925,28 +1783,19 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   }, [phase]);
 
   const backToLobby = useCallback(() => {
-    isLeavingRef.current = true;
-    isSubmittingRef.current = false;
-
     if (timerRef.current) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (heartbeatTimerRef.current) {
-      window.clearTimeout(heartbeatTimerRef.current);
-      heartbeatTimerRef.current = null;
-    }
 
     sessionStorage.removeItem(LATEST_RACE_RESULT_KEY);
-    setLiveRoom(null);
+    resetLiveSession();
     setRaceResult(null);
     setRaceOver(false);
     setTypingText('');
     setReplayFrames([]);
     showNotice(null);
     setShowPracticeModes(false);
-    setQueueElapsed(0);
-    queuedAtRef.current = null;
     setStreak(0);
     setWpmHistory([]);
     setIsNewPB(false);
@@ -1966,10 +1815,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     // Fix #5: reset daily challenge so it doesn't bleed into subsequent practice races
     setShowDailyChallenge(false);
     setPhase('lobby');
-  }, [showNotice]);
+  }, [resetLiveSession, showNotice]);
+  backToLobbyRef.current = backToLobby;
 
-  // Fix #2: useCallback gives a stable reference so the keyboard-shortcut effect
-  // always calls the current version with up-to-date mode/language/duration/wpmFilter.
+  /* useLiveRaceSession now owns live room start/join/cancel/rematch flows.
   const startLiveRace = useCallback(async () => {
     if (currentUser === undefined) return;
     if (!currentUser?.id) {
@@ -2260,6 +2109,60 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       refreshFeed();
     }
   };
+  */
+
+  const buildInviteLink = useCallback(() => {
+    const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
+    const roomPassword = liveRoom?.password || friendBattle.password;
+    if (!inviteCode) return '';
+    return `${window.location.origin}/play?invite=${encodeURIComponent(inviteCode)}${roomPassword ? `&password=${encodeURIComponent(roomPassword)}` : ''}`;
+  }, [friendBattle.inviteCode, friendBattle.password, liveRoom?.inviteCode, liveRoom?.password]);
+
+  const copyTextToClipboard = useCallback(async (text, successMessage) => {
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        document.body.removeChild(helper);
+      }
+      showNotice(successMessage, 'success');
+    } catch {
+      showNotice('Copy failed on this device. Try sharing on WhatsApp instead.', 'warning');
+    }
+  }, [showNotice]);
+
+  const copyInviteCode = useCallback(() => {
+    copyTextToClipboard(liveRoom?.inviteCode || friendBattle.inviteCode, 'Invite code copied.');
+  }, [copyTextToClipboard, friendBattle.inviteCode, liveRoom?.inviteCode]);
+
+  const copyInviteLink = useCallback(() => {
+    copyTextToClipboard(buildInviteLink(), 'Invite link copied.');
+  }, [buildInviteLink, copyTextToClipboard]);
+
+  const shareToWhatsApp = useCallback(() => {
+    if (!liveRoom?.inviteCode && !friendBattle.inviteCode) {
+      return;
+    }
+    const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
+    const roomPassword = liveRoom?.password || friendBattle.password;
+    const inviteLink = buildInviteLink();
+    const parts = [
+      'Join my TypeArena friend battle.',
+      `Invite code: ${inviteCode}`,
+      roomPassword ? `Password: ${roomPassword}` : '',
+      `Open: ${inviteLink}`,
+    ].filter(Boolean);
+    const message = parts.join(' ');
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  }, [buildInviteLink, friendBattle.inviteCode, friendBattle.password, liveRoom?.inviteCode, liveRoom?.password]);
 
   const handleInputChange = (event) => {
     lastHeartbeatRef.current = Date.now(); // #2 AFK reset on every keystroke
@@ -2361,20 +2264,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       const currentWpm = calculateWPM(value, Math.max(1, duration - timeLeft));
       const liveSourceText = liveRoom?.text || generatedContent?.passage || 'Type fast, type clean, and own the round.';
       const currentAccuracy = calculateAccuracy(liveSourceText, value);
-      heartbeatPayloadRef.current = { progress, currentWpm, currentAccuracy };
-      if (!heartbeatTimerRef.current) {
-        heartbeatTimerRef.current = window.setTimeout(() => {
-          heartbeatTimerRef.current = null;
-          flushLiveHeartbeat();
-        }, 180);
-      }
+      submitHeartbeat({ progress, currentWpm, currentAccuracy });
     }
   };
 
-  const myPlayer = currentUser?.id
-    ? (liveRoom?.players?.find((player) => String(player.userId) === String(currentUser.id)) ?? null)
-    : null;
-  const opponent = liveRoom?.players?.find((player) => player.userId !== myPlayer?.userId);
   const hasSignatureInvites = Boolean(currentUser?.storePerks?.customInviteCodes);
   const equippedItems = currentUser?.equippedItems || {};
   const themePreset = THEME_PRESETS[equippedItems.theme] || THEME_PRESETS.default;
@@ -2435,6 +2328,15 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     liveRoom?.winnerUsername ||
     liveRoom?.players?.find((player) => String(player.userId) === String(liveRoom?.winnerUserId))?.username ||
     '';
+  const waitingPlayers = (liveRoom?.players || []).filter((player) => !player?.result);
+  const waitingOnOpponentNames = waitingPlayers
+    .filter((player) => String(player.userId) !== String(currentUser?.id))
+    .map((player) => player.username || 'Opponent');
+  const submittedPlayersCount = (liveRoom?.players || []).filter((player) => Boolean(player?.result)).length;
+  const totalPlayersCount = liveRoom?.players?.length || 0;
+  const waitingStatusMessage = waitingOnOpponentNames.length
+    ? `Waiting on ${waitingOnOpponentNames.join(', ')} to finish...`
+    : 'Finalizing winner and standings...';
   const equippedSummary = [
     themePreset.label,
     skinPreset.label || 'Default keyboard skin',
@@ -2977,7 +2879,20 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       {phase === 'waiting' && (
         <div className="race-results">
           <h1>Result Submitted!</h1>
-          <p className="results-challenge">Waiting for your opponent to finish...</p>
+          <p className="results-challenge">{waitingStatusMessage}</p>
+          <div
+            className="results-grid"
+            style={{ marginTop: '1rem', marginBottom: '0.5rem' }}
+          >
+            <div className="result-card">
+              <span className="result-label">Submitted</span>
+              <span className="result-value">{submittedPlayersCount}/{Math.max(totalPlayersCount, 1)}</span>
+            </div>
+            <div className="result-card">
+              <span className="result-label">Waiting</span>
+              <span className="result-value">{formatTime(waitingElapsed)}</span>
+            </div>
+          </div>
           {liveRoom?.players && (
             <div className="results-grid" style={{ marginTop: '1.5rem' }}>
               {liveRoom.players.map((player) => {
@@ -3000,7 +2915,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </div>
           )}
           <p className="results-challenge" style={{ marginTop: '1rem', fontSize: '0.85rem', opacity: 0.7 }}>
-            Results will appear automatically once both players finish.
+            {waitingOnOpponentNames.length
+              ? 'Final results will appear automatically as soon as every racer submits.'
+              : 'Everyone has submitted. We are confirming the winner and final standings now.'}
           </p>
           {/* Fix #14: give the user an escape route so they can never get permanently stuck */}
           <div className="results-actions" style={{ marginTop: '1rem' }}>
@@ -3455,7 +3372,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 if (rematchCode) {
                   setFriendBattle((prev) => ({ ...prev, inviteCode: rematchCode }));
                   // Use a one-time flag carried in state rather than a raw timeout
-                  setPendingRematch(true);
+                  requestRematch();
                 } else {
                   startLiveRace();
                 }
