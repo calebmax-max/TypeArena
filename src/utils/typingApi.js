@@ -684,6 +684,13 @@ export const fetchAdminWallet = async () => {
   }
 };
 
+export const verifyAdminSession = async () => {
+  const response = await apiFetch(buildApiUrl('/api/admin/wallet'), {
+    headers: buildAdminHeaders(),
+  });
+  return await parseResponse(response);
+};
+
 export const addFundsToAdminWallet = async (amount, note = '') => {
   const response = await apiFetch(buildApiUrl('/api/admin/wallet/topup'), {
     method: 'POST',

@@ -555,6 +555,8 @@ function ChatWidget({ currentUser }) {
   const socketRef = useRef(null);
   const socketConnectedRef = useRef(false);
   const socketEventQueueRef = useRef([]);
+  const socketHeartbeatRef = useRef(null);
+  const reconnectDelayRef = useRef(2000);
 
   const apiFetchRef = useRef(makeApiFetch(currentUser?.id));
   useEffect(() => {
@@ -576,12 +578,27 @@ function ChatWidget({ currentUser }) {
     }
   }, []);
 
+  const clearSocketHeartbeat = useCallback(() => {
+    if (socketHeartbeatRef.current) {
+      window.clearInterval(socketHeartbeatRef.current);
+      socketHeartbeatRef.current = null;
+    }
+  }, []);
+
+  const scheduleSocketReconnect = useCallback((connect) => {
+    const delay = reconnectDelayRef.current;
+    reconnectDelayRef.current = Math.min(delay * 2, 30000);
+    return window.setTimeout(connect, delay);
+  }, []);
+
   useEffect(() => {
     if (!isLoggedIn) {
       if (socketRef.current) {
         socketRef.current.close();
         socketRef.current = null;
       }
+      clearSocketHeartbeat();
+      reconnectDelayRef.current = 2000;
       setSocketConnected(false);
       return undefined;
     }
@@ -595,9 +612,22 @@ function ChatWidget({ currentUser }) {
 
       socket.addEventListener('open', () => {
         if (!active) return;
+        reconnectDelayRef.current = 2000;
         socketConnectedRef.current = true;
         setSocketConnected(true);
         setListError('');
+        clearSocketHeartbeat();
+        socketHeartbeatRef.current = window.setInterval(() => {
+          const currentSocket = socketRef.current;
+          if (!currentSocket || currentSocket.readyState !== WebSocket.OPEN) {
+            return;
+          }
+          try {
+            currentSocket.send(JSON.stringify({ type: 'ping' }));
+          } catch (_) {
+            // If the heartbeat send fails, the close handler will reconnect.
+          }
+        }, 25000);
       });
 
       socket.addEventListener('message', (event) => {
@@ -615,13 +645,15 @@ function ChatWidget({ currentUser }) {
         if (!active) return;
         socketConnectedRef.current = false;
         setSocketConnected(false);
-        reconnectTimer = window.setTimeout(connect, 2000);
+        clearSocketHeartbeat();
+        reconnectTimer = scheduleSocketReconnect(connect);
       });
 
       socket.addEventListener('error', () => {
         if (!active) return;
         socketConnectedRef.current = false;
         setSocketConnected(false);
+        clearSocketHeartbeat();
       });
     };
 
@@ -631,6 +663,8 @@ function ChatWidget({ currentUser }) {
       active = false;
       socketConnectedRef.current = false;
       setSocketConnected(false);
+      clearSocketHeartbeat();
+      reconnectDelayRef.current = 2000;
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer);
       }
@@ -639,7 +673,7 @@ function ChatWidget({ currentUser }) {
         socketRef.current = null;
       }
     };
-  }, [isLoggedIn, currentUser?.id]);
+  }, [clearSocketHeartbeat, isLoggedIn, scheduleSocketReconnect, currentUser?.id]);
 
   useEffect(() => {
     if (socketEvent) return;

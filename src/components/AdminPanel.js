@@ -14,6 +14,7 @@ import {
   fetchTournamentParticipants,
   fetchTournaments,
   getAdminToken,
+  verifyAdminSession,
   updateAdminAiSettings,
   updateAdminSiteMarquee,
   withdrawFromAdminWallet,
@@ -45,6 +46,7 @@ const NAV_ITEMS = [
 
 export default function AdminPanel() {
   const [token, setToken] = useState(getAdminToken());
+  const [authChecked, setAuthChecked] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
   const [formData, setFormData] = useState({ name: '', entryFee: '', maxParticipants: '2', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
   const [notice, setNotice] = useState('');
@@ -69,6 +71,7 @@ export default function AdminPanel() {
   const [musicNotice, setMusicNotice] = useState('');
   const [trackAddMode, setTrackAddMode] = useState('file');
   const [localFileObjectUrl, setLocalFileObjectUrl] = useState(null);
+  const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = async () => {
     const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData] = await Promise.all([
@@ -81,9 +84,53 @@ export default function AdminPanel() {
     setAdminWallet(walletData);
   };
 
-  useEffect(() => { if (token) loadAdminData(); }, [token]);
+  useEffect(() => {
+    let active = true;
 
-  const showNotice = (msg) => { setNotice(msg); setTimeout(() => setNotice(''), 4000); };
+    const checkAccess = async () => {
+      if (!token) {
+        if (active) {
+          setAuthChecked(true);
+        }
+        return;
+      }
+
+      setAuthChecked(false);
+      try {
+        await verifyAdminSession();
+        if (!active) return;
+        await loadAdminData();
+        setAuthChecked(true);
+      } catch (error) {
+        if (!active) return;
+        adminLogout();
+        setToken(null);
+        setAnalytics(null);
+        setTournaments([]);
+        setAiSettings(normalizeAiSettings());
+        setAdminWallet({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
+        setNotice('Admin session expired. Please sign in again.');
+        setAuthChecked(true);
+      }
+    };
+
+    checkAccess();
+    return () => { active = false; };
+  }, [token]);
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+    }
+  }, []);
+
+  const showNotice = (msg) => {
+    setNotice(msg);
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+    }
+    noticeTimerRef.current = setTimeout(() => setNotice(''), 4000);
+  };
 
   const computeStatus = (startDate, startTime) => {
     if (!startDate || !startTime) return 'upcoming';
@@ -887,7 +934,15 @@ export default function AdminPanel() {
           <p style={{ fontSize: '2rem', margin: 0 }}>⬡</p>
           <h1 className="ap-lock-title">Restricted Area</h1>
           <p className="ap-lock-sub">Admin access requires authentication. Sign in from the main profile page.</p>
+          {notice ? <p className="ap-lock-sub" style={{ color: 'var(--ap-warn)' }}>{notice}</p> : null}
           <Link to="/profile" className="ap-lock-link">Go to Sign In</Link>
+        </div>
+      ) : !authChecked ? (
+        <div className="ap-lock">
+          <p style={{ fontSize: '2rem', margin: 0 }}>◌</p>
+          <h1 className="ap-lock-title">Verifying Access</h1>
+          <p className="ap-lock-sub">Checking your admin session before opening the console.</p>
+          {notice ? <p className="ap-lock-sub" style={{ color: 'var(--ap-warn)' }}>{notice}</p> : null}
         </div>
       ) : (
         <div className="ap-root">
