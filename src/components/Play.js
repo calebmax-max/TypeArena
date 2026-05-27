@@ -134,7 +134,15 @@ const savePB = (mode, language, duration, wpm, accuracy, frames = []) => {
   try {
     const store = JSON.parse(localStorage.getItem(PB_KEY) || '{}');
     const key = `${mode}__${language}__${duration}`;
-    store[key] = { wpm, accuracy, date: new Date().toISOString(), frames };
+    // Bug E fix: storing full typedText strings in every frame could exceed the
+    // localStorage quota (300 frames × ~2000 chars ≈ 600 KB per PB entry).
+    // Store only the typed character count per frame — enough to drive the ghost
+    // cursor and replay scrubber, at a fraction of the size.
+    const compactFrames = frames.map((f) => ({
+      len: typeof f.typedText === 'string' ? f.typedText.length : (f.len || 0),
+      timestamp: f.timestamp,
+    }));
+    store[key] = { wpm, accuracy, date: new Date().toISOString(), frames: compactFrames };
     localStorage.setItem(PB_KEY, JSON.stringify(store));
   } catch {}
 };
@@ -317,6 +325,10 @@ const _orchestra = (() => {
       lfo.connect(lfoGain);
       lfoGain.connect(osc.frequency);
       lfo.start();
+      // Fix #10 (Issue 10): LFO node was previously orphaned — started but never
+      // tracked, so it survived every stop() call and leaked in the AudioContext.
+      // Return it alongside the main osc so callers can push it into the nodes array.
+      return { osc, gain: g, lfo };
     }
     return { osc, gain: g };
   };
@@ -391,6 +403,8 @@ const _orchestra = (() => {
       n.gain.connect(lobbyGain);
       n.osc.start();
       nodes.push(n.osc);
+      // Fix #10: track LFO so it is stopped with the rest of the layer
+      if (n.lfo) nodes.push(n.lfo);
     });
 
     // Octave bass pad
@@ -403,7 +417,13 @@ const _orchestra = (() => {
 
     // Slow shimmer on top (high triangle — like a glockenspiel ghost note)
     const shimmer = makeOsc(523.25, 'triangle', 0.012, 0.2, 4); // C5
-    if (shimmer) { shimmer.gain.connect(lobbyGain); shimmer.osc.start(); nodes.push(shimmer.osc); }
+    if (shimmer) {
+      shimmer.gain.connect(lobbyGain);
+      shimmer.osc.start();
+      nodes.push(shimmer.osc);
+      // Fix #10: track LFO
+      if (shimmer.lfo) nodes.push(shimmer.lfo);
+    }
 
     lobbyNodes = nodes;
   };
@@ -872,10 +892,12 @@ const TypingCharacter = React.memo(function TypingCharacter({
   isCurrent,
   isGhost,
   isTyped,
+  isCorrect,  // Fix #4 (Issue 4): was missing — incorrect chars were styled same as correct
 }) {
   let className = 'char untyped';
   if (isTyped) {
-    className = 'char correct';
+    // Fix #4: distinguish correct vs incorrect typed characters
+    className = isCorrect ? 'char correct' : 'char incorrect';
   } else if (isCurrent) {
     className = 'char current';
   }
@@ -1078,6 +1100,10 @@ export default function Play({ practicePage = false }){
   const backToLobbyRef = useRef(() => {});
   // ── Feature #10: Win streak ───────────────────────────────────────────────
   const [winStreak, setWinStreak] = useState(() => getWinStreak());
+  // Fix #1 (Issue 1): pendingRematch was referenced in a useEffect but never declared,
+  // causing a ReferenceError crash. Declare it here so the rematch effect can set/read it.
+  const [pendingRematch, setPendingRematch] = useState(false);
+
   // Fix #13: unique SVG gradient ID per component instance — prevents collisions
   // when React strict-mode mounts the component twice or when two instances coexist.
   const sparkGradId = useRef(`sparkGrad-${Math.random().toString(36).slice(2)}`);
@@ -1143,7 +1169,10 @@ export default function Play({ practicePage = false }){
     if (_welcomeFiredRef.current) return;
     // Fire as soon as we have a name; fall back to "Champion" for guests
     const name = currentUser?.username || currentUser?.name || null;
-    if (currentUser === null) return; // still loading — wait
+    // Fix #7 (Issue 7): `currentUser === null` means guest (resolved, not signed in).
+    // `currentUser === undefined` means still loading — that's when we should wait.
+    // The original guard had these backwards, so guests never triggered the welcome.
+    if (currentUser === undefined) return; // still loading — wait
     _welcomeFiredRef.current = true;
     const displayName = name || 'Champion';
     const timer = window.setTimeout(() => {
@@ -1238,6 +1267,13 @@ export default function Play({ practicePage = false }){
           // startLiveRace) so that merely previewing content in the lobby doesn't
           // exhaust the rotation pool.
         }
+      } catch (err) {
+        // Bug B fix: previously no catch — a network error left generatedContent null
+        // silently and allowed the user to start a race against the 43-char placeholder.
+        if (!cancelled) {
+          console.error('Failed to load race content:', err);
+          showNotice('Could not load race content. Check your connection and try again.', 'error');
+        }
       } finally {
         contentLoadingRef.current = false;
         if (!cancelled) setContentLoading(false);
@@ -1245,7 +1281,7 @@ export default function Play({ practicePage = false }){
     };
     loadGeneratedContent();
     return () => { cancelled = true; };
-  }, [language, mode, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [language, mode, phase, showNotice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   
   // Refs that mirror fast-changing state so useCallback dependencies stay stable
@@ -1341,7 +1377,16 @@ export default function Play({ practicePage = false }){
         const currentReplayFrames = replayFramesRef.current;
 
         const elapsed = Math.max(1, duration - currentTimeLeft);
-        const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
+        // Bug A fix: finishRace previously always computed accuracy against
+        // generatedContent?.passage, which is wrong when the player is using the
+        // daily challenge or custom text. Mirror the same sourceText priority chain
+        // used by the component so WPM/accuracy are calculated against the correct passage.
+        const sourceText = liveRoom?.text
+            || (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
+            || (useCustomText && customText ? customText : null)
+            || generatedContent?.passage
+            || MODE_CONFIG.find((item) => item.id === mode)?.description
+            || '';
         const wpm = calculateWPM(currentTypingText, elapsed);
         const accuracy = calculateAccuracy(sourceText, currentTypingText);
         
@@ -1354,16 +1399,20 @@ export default function Play({ practicePage = false }){
             language,
         };
 
-        if (!liveRoom?.id) {
-            await submitRaceResult(finalData);
-        }
-
         if (liveRoom?.id) {
             await submitFinalLiveResult({ wpm, accuracy, finalData });
             return;
         }
 
         if (isLeavingRef.current) return;
+
+        // Solo / practice path: submit to the server fire-and-forget so a network
+        // error never blocks setPhase('results'). Previously this was awaited before
+        // the results logic, so any API failure (401, 500, offline) caused the screen
+        // to silently hang on 'racing' with no results shown.
+        submitRaceResult(finalData).catch((err) => {
+            console.warn('submitRaceResult failed (non-fatal):', err);
+        });
 
         // Ensure this passage is recorded as used so the next solo race won't repeat it
         recordUsedContentId(
@@ -1381,8 +1430,10 @@ export default function Play({ practicePage = false }){
             setIsNewPB(true);
         }
 
-        // #10 win streak — solo race always counts as a "win"
-        const updatedStreak = updateWinStreak(true);
+        // #10 win streak — solo race: only count as a win when the player actually typed
+        // something. A 0-WPM submission (e.g. timer expired with no input) is not a win.
+        // Fix #5 (Issue 5): previously always passed true, so forfeits inflated the streak.
+        const updatedStreak = updateWinStreak(wpm > 0);
         setWinStreak(updatedStreak);
 
         // Play finish sound
@@ -1420,7 +1471,7 @@ export default function Play({ practicePage = false }){
         isSubmittingRef.current = false;
     }
 // Fix #9: removed timeLeft, typingText, replayFrames from deps — read via refs above.
-}, [commentatorEnabled, currentUser?.name, currentUser?.username, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, submitFinalLiveResult]);
+}, [commentatorEnabled, currentUser?.name, currentUser?.username, customText, dailyChallenge, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, showDailyChallenge, submitFinalLiveResult, useCustomText]);
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
@@ -2077,106 +2128,28 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
   }, [currentUser, duration, friendBattle.inviteCode, friendBattle.password, language, mode, navigate, redirectToProfile, refreshFeed, showNotice]);
 
-  // Rematch: once backToLobby() has settled (phase === 'lobby') and a rematch
-  // was requested, fire joinFriendBattle. Using an effect avoids the fragile
-  // setTimeout that previously fired against potentially stale state.
-  // Placed after joinFriendBattle definition to avoid reference-before-init.
+  // Rematch useEffect is placed after the comment block below ↓
+
+  */
+  // Fix #2 (Issue 2):
+  // copyTextToClipboard, copyInviteCode, copyInviteLink, and shareToWhatsApp that
+  // previously appeared here (before the */ closing of the large commented-out block)
+  // were outside the comment and caused "Identifier has already been declared" crashes.
+  // They have been removed; the correct useCallback versions below are the only copies.
+  //
+  // Fix #3 (Issue 3): cancelPrivateRoom was also outside the comment block and
+  // referenced undeclared variables (cancelLiveRaceRoom, heartbeatTimerRef, setLiveRoom,
+  // setQueueElapsed, queuedAtRef). It is now delegated entirely to useLiveRaceSession,
+  // which already exposes a cancelPrivateRoom in its return value (line 1289).
+
+  // Bug F fix: rematch useEffect — was previously inside the large commented-out block
+  // so it never ran. joinFriendBattle is defined in the hook (destructured above), so
+  // this effect can safely reference it here in live code.
   useEffect(() => {
     if (!pendingRematch || phase !== 'lobby') return;
     setPendingRematch(false);
     joinFriendBattle();
   }, [pendingRematch, phase, joinFriendBattle]);
-
-  const buildInviteLink = useCallback(() => {
-    const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
-    const roomPassword = liveRoom?.password || friendBattle.password;
-    if (!inviteCode) return '';
-    return `${window.location.origin}/play?invite=${encodeURIComponent(inviteCode)}${roomPassword ? `&password=${encodeURIComponent(roomPassword)}` : ''}`;
-  }, [friendBattle.inviteCode, friendBattle.password, liveRoom?.inviteCode, liveRoom?.password]);
-
-  const copyTextToClipboard = useCallback(async (text, successMessage) => {
-    if (!text) return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const helper = document.createElement('textarea');
-        helper.value = text;
-        helper.style.position = 'fixed';
-        helper.style.opacity = '0';
-        document.body.appendChild(helper);
-        helper.select();
-        document.execCommand('copy');
-        document.body.removeChild(helper);
-      }
-      showNotice(successMessage, 'success');
-    } catch {
-      showNotice('Copy failed on this device. Try sharing on WhatsApp instead.', 'warning');
-    }
-  }, [showNotice]);
-
-  const copyInviteCode = useCallback(() => {
-    copyTextToClipboard(liveRoom?.inviteCode || friendBattle.inviteCode, 'Invite code copied.');
-  }, [copyTextToClipboard, friendBattle.inviteCode, liveRoom?.inviteCode]);
-
-  const copyInviteLink = useCallback(() => {
-    copyTextToClipboard(buildInviteLink(), 'Invite link copied.');
-  }, [buildInviteLink, copyTextToClipboard]);
-
-  const shareToWhatsApp = () => {
-    if (!liveRoom?.inviteCode && !friendBattle.inviteCode) {
-      return;
-    }
-    const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
-    const roomPassword = liveRoom?.password || friendBattle.password;
-    const inviteLink = buildInviteLink();
-    const parts = [
-      'Join my TypeArena friend battle.',
-      `Invite code: ${inviteCode}`,
-      roomPassword ? `Password: ${roomPassword}` : '',
-      `Open: ${inviteLink}`,
-    ].filter(Boolean);
-    const message = parts.join(' ');
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-  };
-
-  const cancelPrivateRoom = async () => {
-    if (!liveRoom?.id) {
-      return;
-    }
-    // Fix #4: mark as leaving immediately so any in-flight heartbeat/poll callbacks
-    // don't restore the room after we clear it below.
-    isLeavingRef.current = true;
-    setLoadingLive(true);
-    try {
-      const result = await cancelLiveRaceRoom(liveRoom.id);
-      showNotice(result.message || 'Private room canceled.', 'info');
-    } catch (error) {
-      showNotice(error.message || 'Could not cancel private room.', 'error');
-    } finally {
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      if (heartbeatTimerRef.current) {
-        window.clearTimeout(heartbeatTimerRef.current);
-        heartbeatTimerRef.current = null;
-      }
-      setLiveRoom(null);
-      setRaceResult(null);
-      setRaceOver(false);
-      setTypingText('');
-      setReplayFrames([]);
-      setQueueElapsed(0);
-      queuedAtRef.current = null;
-      setPhase('lobby');
-      setLoadingLive(false);
-      // Fix #15: fire-and-forget — lobby is already reset above; awaiting here
-      // causes any refreshFeed rejection to surface as an unhandled promise rejection.
-      refreshFeed();
-    }
-  };
-  */
 
   const buildInviteLink = useCallback(() => {
     const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
@@ -2231,7 +2204,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   }, [buildInviteLink, friendBattle.inviteCode, friendBattle.password, liveRoom?.inviteCode, liveRoom?.password]);
 
-  const handleInputChange = (event) => {
+  const handleInputChange = useCallback((event) => {
     lastHeartbeatRef.current = Date.now(); // #2 AFK reset on every keystroke
     // ── NEW #A: Penalty Mode — block backspace entirely ────────────────────
     // Fix #7: event.preventDefault() has no effect on React controlled inputs;
@@ -2309,7 +2282,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
 
     // WPM history for sparkline — record a point every ~2 seconds of elapsed time
-    const elapsed = Math.max(1, duration - timeLeft);
+    // Fix #6 (Issue 6): `timeLeft` was a stale closure value here; read the ref instead.
+    const elapsed = Math.max(1, duration - timeLeftRef.current);
     setWpmHistory((prev) => {
       const lastT = prev.length ? prev[prev.length - 1].t : 0;
       if (elapsed - lastT >= 2) {
@@ -2333,7 +2307,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       const currentAccuracy = calculateAccuracy(liveSourceText, value);
       submitHeartbeat({ progress, currentWpm, currentAccuracy });
     }
-  };
+  // Fix #8 (Issue 8): memoised with useCallback. timeLeftRef.current is read for the
+  // sparkline (fix #6). timeLeft is kept for the live-room heartbeat WPM calculation.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentatorEnabled, customText, duration, generatedContent?.passage, isSubmittingRef, liveRoom, penaltyMode, raceOver, submitHeartbeat, timeLeft, typingText, useCustomText]);
 
   const hasSignatureInvites = Boolean(currentUser?.storePerks?.customInviteCodes);
   const equippedItems = currentUser?.equippedItems || {};
@@ -2354,8 +2331,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     || 'Type fast, type clean, and own the round.';
   // ── NEW #E: ghost position — character the ghost has reached ────────────
   const sourceChars = useMemo(() => sourceText.split(''), [sourceText]);
+  // Bug E fix: stored PB frames now use compact {len, timestamp} format.
+  // Support both old full-text frames and new compact frames.
   const ghostLen = ghostFrames.length > 0
-    ? (ghostFrames[ghostIndex]?.typedText || '').length
+    ? (ghostFrames[ghostIndex]?.len ?? (ghostFrames[ghostIndex]?.typedText || '').length)
     : -1;
 
   const renderedText = useMemo(() => (
@@ -2363,6 +2342,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       const isTyped = index < typingText.length;
       const isCurrent = index === typingText.length;
       const isGhost = ghostLen >= 0 && index === ghostLen && !isCurrent;
+      // Fix #4 (Issue 4): compute per-character correctness so TypingCharacter can
+      // render 'char incorrect' for mismatches instead of always 'char correct'.
+      const isCorrect = isTyped && typingText[index] === char;
       return (
         <TypingCharacter
           key={index}
@@ -2370,6 +2352,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           isCurrent={isCurrent}
           isGhost={isGhost}
           isTyped={isTyped}
+          isCorrect={isCorrect}
         />
       );
     })
@@ -2520,6 +2503,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     ctx2d.fillText('typearena.io', 80, 1040);
 
     canvas.toBlob((blob) => {
+      // Fix #9 (Issue 9): blob is null if the canvas is tainted or the encoder fails.
+      // createObjectURL(null) throws a TypeError, so guard before proceeding.
+      if (!blob) {
+        console.error('exportScoreCard: canvas.toBlob returned null — cannot create PNG');
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -2611,7 +2600,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               )}
             </div>
             {practicePage ? (
-              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined}>
+              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined || (!useCustomText && !dailyChallenge && !generatedContent?.passage)}>
                 {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading…" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content…" /> : 'Start This Practice'}
               </button>
             ) : (
@@ -3381,7 +3370,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           </div>
 
           {(raceResult.replayFrames || []).length > 0 && (
-            <ReplayPlayer frames={raceResult.replayFrames} />
+            <ReplayPlayer key={raceResult.replayFrames.length} frames={raceResult.replayFrames} />
           )}
 
           <div className="results-actions">
@@ -3410,8 +3399,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 backToLobby();
                 if (rematchCode) {
                   setFriendBattle((prev) => ({ ...prev, inviteCode: rematchCode }));
-                  // Use a one-time flag carried in state rather than a raw timeout
-                  requestRematch();
+                  // Bug F fix: the Rematch button previously called requestRematch() from
+                  // useLiveRaceSession, but the useEffect that actually fires joinFriendBattle
+                  // watches local pendingRematch state — a different flag.
+                  // Call setPendingRematch(true) so the active useEffect picks it up.
+                  setPendingRematch(true);
                 } else {
                   startLiveRace();
                 }
