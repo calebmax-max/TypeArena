@@ -47,6 +47,10 @@ def load_application():
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
+        bootstrap = getattr(module, '_bootstrap_db', None)
+        if callable(bootstrap):
+            bootstrap()
+
         application = getattr(module, 'app', None) or getattr(module, 'application', None)
         if application is not None:
             return application

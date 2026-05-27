@@ -19,9 +19,44 @@ function makeApiFetch(_userId) {
       ...(body ? { body } : {}),
       ...rest,
     });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    const raw = await res.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      data = null;
+    }
+    if (!res.ok) {
+      const message = data?.message || raw.trim() || `Request failed with status ${res.status}`;
+      const error = new Error(message);
+      error.status = res.status;
+      throw error;
+    }
+    return data;
   };
+}
+
+function formatLastSeen(isoValue) {
+  if (!isoValue) return 'Offline';
+  const timestamp = Date.parse(isoValue);
+  if (Number.isNaN(timestamp)) return 'Offline';
+  const diffMs = Date.now() - timestamp;
+  const diffMins = Math.max(0, Math.round(diffMs / 60000));
+  if (diffMins < 1) return 'Online recently';
+  if (diffMins < 60) return `Last seen ${diffMins}m ago`;
+  const diffHours = Math.round(diffMins / 60);
+  if (diffHours < 24) return `Last seen ${diffHours}h ago`;
+  return `Last seen ${new Date(timestamp).toLocaleDateString()}`;
+}
+
+function getChatPollTimeoutSeconds() {
+  if (typeof window === 'undefined') return 25;
+  const hostname = String(window.location.hostname || '').toLowerCase();
+  const isLocalHost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1';
+  return isLocalHost ? 25 : 3;
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────
@@ -58,11 +93,16 @@ function ContactList({ players, onSelect, unread, search }) {
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="hsl(240 5% 55%)" strokeWidth="1.2">
             <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
           </svg>
-          {search ? `No players matching "${search}"` : 'No other players online'}
+          {search ? `No players matching "${search}"` : 'No chats yet'}
         </div>
       ) : (
         others.map((p, i) => {
           const hasUnread = unread[p.id] > 0;
+          const subtitle = p.isOnline
+            ? 'Online'
+            : p.lastMessageAt
+              ? 'Recent chat'
+              : formatLastSeen(p.lastSeen);
           return (
             <div
               key={p.id}
@@ -78,11 +118,13 @@ function ContactList({ players, onSelect, unread, search }) {
             >
               <div style={{ position: 'relative' }}>
                 <Avatar name={p.username} size={49} />
-                <span style={{
-                  position: 'absolute', bottom: 1, right: 1,
-                  width: 12, height: 12, borderRadius: '50%',
-                  background: 'hsl(145 80% 42%)', border: '2px solid hsl(0 0% 95%)',
-                }} />
+                {p.isOnline ? (
+                  <span style={{
+                    position: 'absolute', bottom: 1, right: 1,
+                    width: 12, height: 12, borderRadius: '50%',
+                    background: 'hsl(145 80% 42%)', border: '2px solid hsl(0 0% 95%)',
+                  }} />
+                ) : null}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -95,7 +137,7 @@ function ContactList({ players, onSelect, unread, search }) {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
                   <span style={{ fontSize: 13, color: 'hsl(240 5% 58%)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                    Online
+                    {subtitle}
                   </span>
                   {hasUnread && (
                     <span style={{
@@ -122,21 +164,29 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [threadError, setThreadError] = useState('');
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const lastIdRef = useRef(0);
   const activeRef = useRef(true);
+  const pollTimeoutSeconds = getChatPollTimeoutSeconds();
 
   // Load full history on open, then start long-poll from the latest id
   const loadMessages = useCallback(async () => {
+    setThreadError('');
+    setLoading(true);
     try {
       const data = await apiFetch(`/api/chat/messages/${partner.id}`);
       if (Array.isArray(data) && data.length > 0) {
         lastIdRef.current = Math.max(...data.map((m) => m.id));
       }
       setMessages(Array.isArray(data) ? data : []);
+      setLoading(false);
       return true;
-    } catch (_) {
+    } catch (error) {
+      setLoading(false);
+      setThreadError(error.message || 'Could not load this conversation.');
       return false;
     }
   }, [partner.id, apiFetch]);
@@ -152,8 +202,9 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
       while (activeRef.current) {
         try {
           const newMsgs = await apiFetch(
-            `/api/chat/poll/${partner.id}?since=${lastIdRef.current}`
+            `/api/chat/poll/${partner.id}?since=${lastIdRef.current}&timeout=${pollTimeoutSeconds}`
           );
+          setThreadError('');
           if (!activeRef.current) break;
           if (Array.isArray(newMsgs) && newMsgs.length > 0) {
             lastIdRef.current = Math.max(...newMsgs.map((m) => m.id));
@@ -164,8 +215,9 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
               return [...prev, ...fresh];
             });
           }
-        } catch (_) {
+        } catch (error) {
           if (!activeRef.current) break;
+          setThreadError(error.message || 'Chat connection dropped. Retrying...');
           // Brief pause on error before retrying
           await new Promise((r) => setTimeout(r, 1000));
         }
@@ -177,7 +229,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
     return () => {
       activeRef.current = false;
     };
-  }, [partner.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [partner.id, pollTimeoutSeconds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -217,9 +269,10 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
         // Replace temp with confirmed message
         setMessages((prev) => prev.map((m) => m.id === tempId ? msg : m));
       }
-    } catch (_) {
+    } catch (error) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setInput(body);
+      setThreadError(error.message || 'Message failed to send.');
     } finally {
       setSending(false);
     }
@@ -251,17 +304,38 @@ function Thread({ partner, currentUserId, onBack, apiFetch }) {
         <Avatar name={partner.username} size={38} />
         <div style={{ flex: 1 }}>
           <div style={{ color: 'hsl(0 0% 95%)', fontWeight: 600, fontSize: 15 }}>{partner.username}</div>
-          <div style={{ color: 'hsl(145 40% 60%)', fontSize: 12 }}>online</div>
+          <div style={{ color: partner.isOnline ? 'hsl(145 40% 60%)' : 'hsl(240 5% 58%)', fontSize: 12 }}>
+            {partner.isOnline ? 'online' : formatLastSeen(partner.lastSeen)}
+          </div>
         </div>
 
       </div>
+
+      {threadError ? (
+        <div style={{
+          padding: '8px 12px',
+          background: 'rgba(185, 28, 28, 0.18)',
+          color: 'hsl(0 0% 96%)',
+          fontSize: 12,
+          borderTop: '1px solid rgba(248, 113, 113, 0.25)',
+          borderBottom: '1px solid rgba(248, 113, 113, 0.25)',
+        }}>
+          {threadError}
+        </div>
+      ) : null}
 
       {/* Chat background pattern */}
       <div style={{
         flex: 1, overflowY: 'auto', padding: '8px 16px',
         background: 'hsl(240 12% 6%)',
       }}>
-        {messages.length === 0 && (
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24, color: 'hsl(240 5% 58%)', fontSize: 13 }}>
+            Loading conversation...
+          </div>
+        ) : null}
+
+        {!loading && messages.length === 0 && (
           <div style={{
             display: 'flex', justifyContent: 'center', marginTop: 16,
           }}>
@@ -379,6 +453,7 @@ export default function ChatWidget({ currentUser }) {
   const [unread, setUnread] = useState({});
   const [totalUnread, setTotalUnread] = useState(0);
   const [search, setSearch] = useState('');
+  const [listError, setListError] = useState('');
 
   const isLoggedIn = Boolean(currentUser?.id);
 
@@ -405,10 +480,18 @@ export default function ChatWidget({ currentUser }) {
     };
   }, [isLoggedIn, apiFetch]);
 
-  // Poll online players
+  // Poll chat contacts so recent conversations stay reachable even when offline
   useEffect(() => {
     if (!isLoggedIn) return;
-    const load = () => apiFetch('/api/presence/online').then(setPlayers).catch(() => {});
+    const load = () =>
+      apiFetch('/api/chat/contacts')
+        .then((contacts) => {
+          setPlayers(Array.isArray(contacts) ? contacts : []);
+          setListError('');
+        })
+        .catch((error) => {
+          setListError(error.message || 'Could not load chats.');
+        });
     load();
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
@@ -422,6 +505,10 @@ export default function ChatWidget({ currentUser }) {
         .then((counts) => {
           setUnread(counts);
           setTotalUnread(Object.values(counts).reduce((s, n) => s + n, 0));
+          setPlayers((prev) => prev.map((player) => ({
+            ...player,
+            unreadCount: Number(counts?.[player.id] || 0),
+          })));
         })
         .catch(() => {});
     load();
@@ -437,9 +524,25 @@ export default function ChatWidget({ currentUser }) {
     }
   }, [partner]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!partner) return;
+    const refreshedPartner = players.find((player) => String(player.id) === String(partner.id));
+    if (
+      refreshedPartner &&
+      (
+        refreshedPartner.isOnline !== partner.isOnline ||
+        refreshedPartner.lastSeen !== partner.lastSeen ||
+        refreshedPartner.lastMessageAt !== partner.lastMessageAt ||
+        refreshedPartner.unreadCount !== partner.unreadCount
+      )
+    ) {
+      setPartner((current) => (current ? { ...current, ...refreshedPartner } : current));
+    }
+  }, [players, partner]);
+
   if (!isLoggedIn) return null;
 
-  const onlineCount = players.filter((p) => !p.isMe).length;
+  const onlineCount = players.filter((p) => !p.isMe && p.isOnline).length;
   const filteredPlayers = players.filter((p) =>
     !p.isMe && p.username.toLowerCase().includes(search.toLowerCase())
   );
@@ -549,7 +652,7 @@ export default function ChatWidget({ currentUser }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
-                      onClick={() => window.history.back()}
+                      onClick={() => setOpen(false)}
                       aria-label="Go back"
                       style={{
                         background: 'none', border: 'none', cursor: 'pointer',
@@ -561,7 +664,7 @@ export default function ChatWidget({ currentUser }) {
                         <path d="M15 18l-6-6 6-6" />
                       </svg>
                     </button>
-                    <span style={{ color: 'hsl(0 0% 95%)', fontSize: 20, fontWeight: 700 }}>Players</span>
+                    <span style={{ color: 'hsl(0 0% 95%)', fontSize: 20, fontWeight: 700 }}>Chats</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8, color: 'hsl(145 40% 60%)' }}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -599,6 +702,19 @@ export default function ChatWidget({ currentUser }) {
                   )}
                 </div>
               </div>
+
+              {listError ? (
+                <div style={{
+                  margin: '0 16px 12px',
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: 'rgba(185, 28, 28, 0.18)',
+                  color: 'hsl(0 0% 96%)',
+                  fontSize: 12,
+                }}>
+                  {listError}
+                </div>
+              ) : null}
 
               {/* Online status bar */}
               <div style={{

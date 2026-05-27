@@ -79,6 +79,11 @@ It manages these tables:
 - `prize_payouts`
 - `store_purchases`
 
+Chat and presence tables are also now bootstrapped automatically when the WSGI app starts:
+
+- `user_presence`
+- `chat_messages`
+
 ## 5. Frontend hosting
 
 The React app expects API requests under `/api`.
