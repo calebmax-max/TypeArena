@@ -73,7 +73,7 @@ export default function AdminPanel() {
   const [localFileObjectUrl, setLocalFileObjectUrl] = useState(null);
   const noticeTimerRef = React.useRef(null);
 
-  const loadAdminData = async () => {
+  const loadAdminData = React.useCallback(async () => {
     const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData] = await Promise.all([
       fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(),
     ]);
@@ -82,7 +82,7 @@ export default function AdminPanel() {
     setAiSettings(normalizeAiSettings(aiSettingsData));
     setSiteMarqueeText((siteMarqueeData?.items || DEFAULT_SITE_MARQUEE_ITEMS).join('\n'));
     setAdminWallet(walletData);
-  };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -100,7 +100,7 @@ export default function AdminPanel() {
         await verifyAdminSession();
         if (!active) return;
         await loadAdminData();
-        setAuthChecked(true);
+        if (active) setAuthChecked(true);
       } catch (error) {
         if (!active) return;
         adminLogout();
@@ -116,11 +116,14 @@ export default function AdminPanel() {
 
     checkAccess();
     return () => { active = false; };
-  }, [token]);
+  }, [token, loadAdminData]);
 
   useEffect(() => () => {
     if (noticeTimerRef.current) {
       clearTimeout(noticeTimerRef.current);
+    }
+    if (localFileObjectUrl) {
+      URL.revokeObjectURL(localFileObjectUrl);
     }
   }, []);
 
@@ -139,7 +142,7 @@ export default function AdminPanel() {
   };
 
   const handleCreateTournament = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     try {
       const entryFee = Number(formData.entryFee || 0);
       const maxParticipants = Math.max(2, Number(formData.maxParticipants || 2));
@@ -167,7 +170,7 @@ export default function AdminPanel() {
   const handleSignOut = () => { adminLogout(); setToken(null); };
 
   const handleAiSettingsSave = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     try {
       const result = await updateAdminAiSettings({ provider: aiSettings.provider, model: aiSettings.model });
       setAiSettings(normalizeAiSettings(result.settings || aiSettings));
@@ -176,7 +179,7 @@ export default function AdminPanel() {
   };
 
   const handleSiteMarqueeSave = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     const items = siteMarqueeText.split('\n').map(s => s.trim()).filter(Boolean);
     if (!items.length) { showNotice('Add at least one marquee line.'); return; }
     try {
@@ -188,7 +191,7 @@ export default function AdminPanel() {
   };
 
   const handleAdminWalletTopUp = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     try {
       const result = await addFundsToAdminWallet(walletForm.topupAmount, walletForm.topupNote);
       showNotice(result.message || 'Admin wallet funded.');
@@ -198,7 +201,7 @@ export default function AdminPanel() {
   };
 
   const handleAdminWalletWithdraw = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     try {
       const result = await withdrawFromAdminWallet(walletForm.withdrawAmount, walletForm.withdrawNote);
       showNotice(result.message || 'Withdrawal completed.');
@@ -222,7 +225,7 @@ export default function AdminPanel() {
     const existingStart = t.startTime ? new Date(t.startTime) : null;
     const startDate = existingStart ? existingStart.toISOString().slice(0, 10) : '';
     const startTime = existingStart ? existingStart.toTimeString().slice(0, 5) : '';
-    setEditForm({
+    const newEditForm = {
       name: t.name || '',
       entryFee: String(t.entryFee || ''),
       maxParticipants: String(t.matchSize || t.maxParticipants || 2),
@@ -230,7 +233,9 @@ export default function AdminPanel() {
       startDate,
       startTime,
       matchDurationMins: String(t.matchDurationMins || 10),
-    });
+    };
+    // Set both atomically to prevent mismatch between editingTournament and editForm
+    setEditForm(newEditForm);
     setEditingTournament(t);
   };
 
@@ -266,7 +271,7 @@ export default function AdminPanel() {
   const handleViewParticipants = async (t) => {
     if (viewingParticipantsId === t.id) { setViewingParticipantsId(null); return; }
     setViewingParticipantsId(t.id);
-    if (participants[t.id]) return; // already loaded
+    // Always re-fetch to avoid stale data
     setLoadingParticipantsId(t.id);
     try {
       const data = await fetchTournamentParticipants(t.id);
@@ -336,6 +341,7 @@ export default function AdminPanel() {
   const maxParticipants = Math.max(2, Number(formData.maxParticipants || 2));
   const totalStake = entryFee * maxParticipants;
   const winnerAmount = totalStake * 0.6;
+  const platformFee = totalStake * 0.4;
 
   // ─── Metric data ────────────────────────────────────────────────────────────
   const primaryMetrics = [
@@ -1069,8 +1075,8 @@ export default function AdminPanel() {
                           <span className={`ap-tx-amount ${item.direction === 'out' ? 'out' : 'in'}`}>
                             {item.direction === 'out' ? '−' : '+'}KES {Number(item.amount || 0).toLocaleString()}
                           </span>
-                          <span className="ap-tx-type">{item.type.replace(/_/g, ' ')}</span>
-                          <span className="ap-tx-note">{item.source.replace(/_/g, ' ')}{item.note ? ` · ${item.note}` : ''}</span>
+                          <span className="ap-tx-type">{(item.type || '').replace(/_/g, ' ')}</span>
+                          <span className="ap-tx-note">{(item.source || '').replace(/_/g, ' ')}{item.note ? ` · ${item.note}` : ''}</span>
                         </div>
                       ))}
                     </div>
@@ -1130,6 +1136,7 @@ export default function AdminPanel() {
                     <span>Total pot <strong>KES {totalStake.toLocaleString()}</strong></span>
                     <span>Players <strong>{maxParticipants}</strong></span>
                     <span>Winner gets <strong>KES {winnerAmount.toLocaleString()}</strong></span>
+                    <span>Platform fee (40%) <strong>KES {platformFee.toLocaleString()}</strong></span>
                   </div>
                   <button className="ap-btn" onClick={handleCreateTournament}>Create Tournament</button>
                 </div>
@@ -1139,7 +1146,10 @@ export default function AdminPanel() {
                   {tournaments.length ? (
                     <div className="ap-tourney-list">
                       {tournaments.map(t => {
-                        const liveStatus = t.startTime && Date.now() >= new Date(t.startTime).getTime() ? 'active' : (t.status || 'upcoming');
+                        const existingStart = t.startTime ? new Date(t.startTime) : null;
+                        const tStartDate = existingStart ? existingStart.toISOString().slice(0, 10) : '';
+                        const tStartTime = existingStart ? existingStart.toTimeString().slice(0, 5) : '';
+                        const liveStatus = computeStatus(tStartDate, tStartTime);
                         const startLabel = t.startTime ? new Date(t.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'No start time set';
                         const isEditing = editingTournament?.id === t.id;
                         return (

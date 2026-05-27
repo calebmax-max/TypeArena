@@ -105,6 +105,40 @@ def _is_admin_email(email: str) -> bool:
     return bool(normalized_email and ADMIN_EMAIL and normalized_email == ADMIN_EMAIL.lower())
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        text = str(value).strip()
+        if not text:
+            return default
+        return int(float(text))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return float(int(value))
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip()
+        if not text:
+            return default
+        return float(text)
+    except (TypeError, ValueError):
+        return default
+
+
 def _issue_admin_token() -> str:
     token = secrets.token_urlsafe(24)
     ADMIN_TOKENS.add(token)
@@ -829,12 +863,12 @@ def _tier_for_user(user: Dict[str, Any]) -> str:
     The leaderboard passes rank explicitly; profile calls without rank
     use season_points_stored for threshold matching only.
     """
-    season_pts = int(user.get('season_points_stored') or user.get('seasonPoints') or 0)
-    rank = int(user.get('_season_rank') or 9999)
+    season_pts = _safe_int(user.get('season_points_stored') or user.get('seasonPoints') or 0)
+    rank = _safe_int(user.get('_season_rank') or 9999, default=9999)
     if season_pts > 0:
         return _tier_for_season_points(season_pts, rank)
     # Fallback: WPM-based (users who haven't played this season yet)
-    wpm = float(user.get('wpm') or 0)
+    wpm = _safe_float(user.get('wpm') or 0)
     if wpm >= 120:
         return 'Diamond'
     if wpm >= 95:
@@ -864,10 +898,10 @@ def _competitive_season_points(
     live_earnings: float = 0.0,
     owned_items: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> int:
-    wpm = float(user.get('wpm') or 0)
-    accuracy = float(user.get('accuracy') or 0)
-    wins = int(user.get('wins') or 0)
-    total_races = int(user.get('total_races') or 0)
+    wpm = _safe_float(user.get('wpm') or 0)
+    accuracy = _safe_float(user.get('accuracy') or 0)
+    wins = _safe_int(user.get('wins') or 0)
+    total_races = _safe_int(user.get('total_races') or 0)
 
     base_points = (wpm * 2.4) + (accuracy * 1.6) + (wins * 24) + (min(total_races, 120) * 0.5)
 
@@ -897,12 +931,12 @@ def _season_points_for_user(user: Dict[str, Any], owned_items: list[str] | set[s
 
 def _referral_code_for_user(user: Dict[str, Any]) -> str:
     username = ''.join(ch for ch in str(user.get('username') or 'TYPE') if ch.isalnum()).upper()[:4] or 'TYPE'
-    return f'{username}{int(user.get("id") or 0):04d}'
+    return f'{username}{_safe_int(user.get("id") or 0):04d}'
 
 
 def _coach_tip_for_user(user: Dict[str, Any]) -> str:
-    accuracy = float(user.get('accuracy') or 0)
-    wpm = float(user.get('wpm') or 0)
+    accuracy = _safe_float(user.get('accuracy') or 0)
+    wpm = _safe_float(user.get('wpm') or 0)
     if accuracy < 92:
         return 'Your biggest gain is accuracy. Slow down slightly on tricky words and focus on fewer corrections.'
     if wpm < 70:
@@ -2064,8 +2098,8 @@ def _wallet_capabilities() -> Dict[str, Any]:
 
 
 def _safe_user_with_owned_items(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...]) -> Dict[str, Any]:
-    total_races = int(user.get('total_races') or 0)
-    wins = int(user.get('wins') or 0)
+    total_races = _safe_int(user.get('total_races') or 0)
+    wins = _safe_int(user.get('wins') or 0)
     owned_list = list(owned_items or [])
     perks = _store_perks_from_owned_items(owned_list)
     is_admin = _is_admin_email(user.get('email') or '')
@@ -2075,15 +2109,15 @@ def _safe_user_with_owned_items(user: Dict[str, Any], owned_items: list[str] | s
         'email': user['email'],
         'isAdmin': is_admin,
         'phoneNumber': user.get('phone_number') or '',
-        'wpm': float(user.get('wpm') or 0),
-        'accuracy': float(user.get('accuracy') or 0),
+        'wpm': _safe_float(user.get('wpm') or 0),
+        'accuracy': _safe_float(user.get('accuracy') or 0),
         'totalRaces': total_races,
         'wins': wins,
-        'balance': float(user.get('balance') or 0),
+        'balance': _safe_float(user.get('balance') or 0),
         'tier': _tier_for_user(user),
         'season': _season_name(),
-        'seasonPoints': int(user.get('season_points_stored') or _season_points_for_user(user, owned_list)),
-        'premium': wins >= 10 or float(user.get('balance') or 0) >= 5000,
+        'seasonPoints': _safe_int(user.get('season_points_stored') or _season_points_for_user(user, owned_list)),
+        'premium': wins >= 10 or _safe_float(user.get('balance') or 0) >= 5000,
         'aiCoachTip': _coach_tip_for_user(user),
         'ownedStoreItems': owned_list,
         'storePerks': perks,
@@ -2100,7 +2134,7 @@ def _safe_user_with_owned_items(user: Dict[str, Any], owned_items: list[str] | s
 
 
 def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
-    owned_items = _owned_store_items_for_user(conn, int(user.get('id') or 0)) if conn else []
+    owned_items = _owned_store_items_for_user(conn, _safe_int(user.get('id') or 0)) if conn else []
     return _safe_user_with_owned_items(user, owned_items)
 
 
@@ -3756,18 +3790,26 @@ def auth_login():
 def user_me():
     conn = get_connection()
     try:
-        user = _get_user_from_header(conn)
-        if not user:
-            return jsonify({'message': 'Unauthorized'}), 401
-        # Re-issue a fresh token on every session restore so pre-deploy
-        # tokens (auth_token = NULL) self-heal without forcing a re-login.
-        with conn.cursor() as cur:
-            _ensure_auth_token_column(cur)
-            token = _issue_user_token(cur, user['id'])
-        conn.commit()
-        response = _safe_user(user, conn)
-        response['token'] = token
-        return jsonify(response)
+        try:
+            user = _get_user_from_header(conn)
+            if not user:
+                return jsonify({'message': 'Unauthorized'}), 401
+            # Re-issue a fresh token on every session restore so pre-deploy
+            # tokens (auth_token = NULL) self-heal without forcing a re-login.
+            with conn.cursor() as cur:
+                _ensure_auth_token_column(cur)
+                token = _issue_user_token(cur, user['id'])
+            conn.commit()
+            response = _safe_user(user, conn)
+            response['token'] = token
+            return jsonify(response)
+        except Exception:
+            app.logger.exception(
+                '/api/user/me failed for user_id=%s email=%s',
+                user.get('id') if isinstance(user, dict) else None,
+                user.get('email') if isinstance(user, dict) else None,
+            )
+            raise
     finally:
         _return_connection(conn)
 
@@ -3777,16 +3819,24 @@ def auth_refresh():
     """Lets a logged-in frontend exchange its current token for a fresh one."""
     conn = get_connection()
     try:
-        user = _get_user_from_header(conn)
-        if not user:
-            return jsonify({'message': 'Unauthorized'}), 401
-        with conn.cursor() as cur:
-            _ensure_auth_token_column(cur)
-            token = _issue_user_token(cur, user['id'])
-        conn.commit()
-        response = _safe_user(user, conn)
-        response['token'] = token
-        return jsonify(response)
+        try:
+            user = _get_user_from_header(conn)
+            if not user:
+                return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                _ensure_auth_token_column(cur)
+                token = _issue_user_token(cur, user['id'])
+            conn.commit()
+            response = _safe_user(user, conn)
+            response['token'] = token
+            return jsonify(response)
+        except Exception:
+            app.logger.exception(
+                '/api/auth/refresh failed for user_id=%s email=%s',
+                user.get('id') if isinstance(user, dict) else None,
+                user.get('email') if isinstance(user, dict) else None,
+            )
+            raise
     finally:
         _return_connection(conn)
 
