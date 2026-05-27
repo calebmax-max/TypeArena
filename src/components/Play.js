@@ -1110,17 +1110,7 @@ export default function Play({ practicePage = false }){
     });
   }, [currentUser?.id]);
 
-  // Rematch: once backToLobby() has settled (phase === 'lobby') and a rematch
-  // was requested, fire joinFriendBattle. Using an effect avoids the fragile
-  // setTimeout that previously fired against potentially stale state.
-  useEffect(() => {
-    if (!pendingRematch || phase !== 'lobby') return;
-    setPendingRematch(false);
-    joinFriendBattle();
-  // joinFriendBattle is a useCallback — include it so the effect always calls
-  // the latest version with up-to-date friendBattle.inviteCode / password.
-  // eslint-disable-next-line no-use-before-define
-  }, [pendingRematch, phase, joinFriendBattle]);
+
 
   const redirectToProfile = useCallback(() => {
     const redirectPath = `${location.pathname}${location.search || ''}`;
@@ -2200,6 +2190,16 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       setLoadingLive(false);
     }
   }, [currentUser?.id, duration, friendBattle.inviteCode, friendBattle.password, language, mode, navigate, redirectToProfile, refreshFeed, showNotice]);
+
+  // Rematch: once backToLobby() has settled (phase === 'lobby') and a rematch
+  // was requested, fire joinFriendBattle. Using an effect avoids the fragile
+  // setTimeout that previously fired against potentially stale state.
+  // Placed after joinFriendBattle definition to avoid reference-before-init.
+  useEffect(() => {
+    if (!pendingRematch || phase !== 'lobby') return;
+    setPendingRematch(false);
+    joinFriendBattle();
+  }, [pendingRematch, phase, joinFriendBattle]);
 
   const shareToWhatsApp = () => {
     if (!liveRoom?.inviteCode && !friendBattle.inviteCode) {
