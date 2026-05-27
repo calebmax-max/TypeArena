@@ -1884,7 +1884,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, language, mode, redirectToProfile, showNotice]);
+  }, [commentatorEnabled, currentUser, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, language, mode, redirectToProfile, showNotice]);
 
   // startPracticeRace is a convenience wrapper that starts in the current mode.
   const startPracticeRace = useCallback(() => {
@@ -2069,7 +2069,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     } finally {
       setLoadingLive(false);
     }
-  }, [currentUser?.id, duration, language, mode, redirectToProfile, refreshFeed, showNotice, wpmFilter]);
+  }, [currentUser, duration, language, mode, redirectToProfile, refreshFeed, showNotice, wpmFilter]);
 
   const createFriendBattle = async () => {
     if (currentUser === undefined) return;
@@ -2207,7 +2207,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     } finally {
       setLoadingLive(false);
     }
-  }, [currentUser?.id, duration, friendBattle.inviteCode, friendBattle.password, language, mode, navigate, redirectToProfile, refreshFeed, showNotice]);
+  }, [currentUser, duration, friendBattle.inviteCode, friendBattle.password, language, mode, navigate, redirectToProfile, refreshFeed, showNotice]);
 
   // Rematch: once backToLobby() has settled (phase === 'lobby') and a rematch
   // was requested, fire joinFriendBattle. Using an effect avoids the fragile
