@@ -5636,114 +5636,7 @@ def chat_contacts():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
-        cutoff_dt = datetime.utcnow() - timedelta(seconds=45)
-        cutoff = cutoff_dt.strftime('%Y-%m-%d %H:%M:%S')
-        with conn.cursor() as cur:
-            cur.execute(
-                '''
-                SELECT u.id, u.username, u.wpm, p.last_seen
-                FROM user_presence p
-                JOIN users u ON u.id = p.user_id
-                WHERE p.user_id <> %s AND p.last_seen >= %s
-                ORDER BY p.last_seen DESC, u.username ASC
-                ''',
-                (me, cutoff),
-            )
-            online_rows = cur.fetchall()
-
-            cur.execute(
-                '''
-                SELECT partner_id, MAX(sent_at) AS last_message_at
-                FROM (
-                    SELECT recipient_id AS partner_id, sent_at
-                    FROM chat_messages
-                    WHERE sender_id = %s
-                    UNION ALL
-                    SELECT sender_id AS partner_id, sent_at
-                    FROM chat_messages
-                    WHERE recipient_id = %s
-                ) recent_threads
-                GROUP BY partner_id
-                ORDER BY last_message_at DESC
-                LIMIT 50
-                ''',
-                (me, me),
-            )
-            recent_rows = cur.fetchall()
-
-            cur.execute(
-                '''
-                SELECT sender_id, COUNT(*) AS cnt
-                FROM chat_messages
-                WHERE recipient_id = %s AND read_at IS NULL
-                GROUP BY sender_id
-                ''',
-                (me,),
-            )
-            unread_rows = cur.fetchall()
-
-        unread_by_sender = {int(row['sender_id']): int(row['cnt']) for row in unread_rows}
-        contacts_by_id: Dict[int, Dict[str, Any]] = {}
-
-        for row in online_rows:
-            user_id = int(row['id'])
-            contacts_by_id[user_id] = {
-                'id': user_id,
-                'username': row['username'],
-                'wpm': float(row['wpm'] or 0),
-                'lastSeen': row['last_seen'].isoformat() + 'Z' if row.get('last_seen') else None,
-                'lastMessageAt': None,
-                'isOnline': bool(row.get('last_seen') and row['last_seen'] >= cutoff_dt),
-                'unreadCount': unread_by_sender.get(user_id, 0),
-                'isMe': False,
-            }
-
-        if recent_rows:
-            partner_ids = [int(row['partner_id']) for row in recent_rows if row.get('partner_id')]
-            if partner_ids:
-                placeholders = ', '.join(['%s'] * len(partner_ids))
-                with conn.cursor() as cur:
-                    cur.execute(
-                        f'''
-                        SELECT id, username, wpm
-                        FROM users
-                        WHERE id IN ({placeholders})
-                        ''',
-                        tuple(partner_ids),
-                    )
-                    user_rows = cur.fetchall()
-                users_by_id = {int(row['id']): row for row in user_rows}
-                for row in recent_rows:
-                    partner_id = int(row['partner_id'])
-                    partner = users_by_id.get(partner_id)
-                    if not partner:
-                        continue
-                    last_message_at = row.get('last_message_at')
-                    existing = contacts_by_id.get(partner_id)
-                    if existing:
-                        existing['lastMessageAt'] = last_message_at.isoformat() + 'Z' if last_message_at else existing.get('lastMessageAt')
-                        existing['unreadCount'] = unread_by_sender.get(partner_id, existing.get('unreadCount', 0))
-                        continue
-                    contacts_by_id[partner_id] = {
-                        'id': partner_id,
-                        'username': partner['username'],
-                        'wpm': float(partner['wpm'] or 0),
-                        'lastSeen': None,
-                        'lastMessageAt': last_message_at.isoformat() + 'Z' if last_message_at else None,
-                        'isOnline': False,
-                        'unreadCount': unread_by_sender.get(partner_id, 0),
-                        'isMe': False,
-                    }
-
-        contacts = sorted(
-            contacts_by_id.values(),
-            key=lambda row: (
-                -int(row.get('unreadCount') or 0),
-                -int(bool(row.get('isOnline'))),
-                -(int(datetime.fromisoformat((row.get('lastMessageAt') or '').replace('Z', '+00:00')).timestamp()) if row.get('lastMessageAt') else 0),
-                str(row.get('username') or '').lower(),
-            ),
-        )
+        contacts = _fetch_chat_contacts(conn, me)
         return jsonify(contacts)
     finally:
         _return_connection(conn)
@@ -5772,6 +5665,132 @@ def _serialize_chat_contact_row(user_row: Dict[str, Any], *, unread_count: int =
         'unreadCount': int(unread_count or 0),
         'isMe': False,
     }
+
+
+def _fetch_chat_unread_counts(conn, me: int) -> Dict[int, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            '''
+            SELECT sender_id, COUNT(*) AS cnt
+            FROM chat_messages
+            WHERE recipient_id = %s AND read_at IS NULL
+            GROUP BY sender_id
+            ''',
+            (me,),
+        )
+        rows = cur.fetchall()
+    return {int(row['sender_id']): int(row['cnt']) for row in rows}
+
+
+def _fetch_chat_contacts(
+    conn,
+    me: int,
+    *,
+    unread_by_sender: Optional[Dict[int, int]] = None,
+) -> list[Dict[str, Any]]:
+    cutoff_dt = datetime.utcnow() - timedelta(seconds=45)
+    cutoff = cutoff_dt.strftime('%Y-%m-%d %H:%M:%S')
+    with conn.cursor() as cur:
+        cur.execute(
+            '''
+            SELECT u.id, u.username, u.wpm, p.last_seen
+            FROM user_presence p
+            JOIN users u ON u.id = p.user_id
+            WHERE p.user_id <> %s AND p.last_seen >= %s
+            ORDER BY p.last_seen DESC, u.username ASC
+            ''',
+            (me, cutoff),
+        )
+        online_rows = cur.fetchall()
+
+        cur.execute(
+            '''
+            SELECT partner_id, MAX(sent_at) AS last_message_at
+            FROM (
+                SELECT recipient_id AS partner_id, sent_at
+                FROM chat_messages
+                WHERE sender_id = %s
+                UNION ALL
+                SELECT sender_id AS partner_id, sent_at
+                FROM chat_messages
+                WHERE recipient_id = %s
+            ) recent_threads
+            GROUP BY partner_id
+            ORDER BY last_message_at DESC
+            LIMIT 50
+            ''',
+            (me, me),
+        )
+        recent_rows = cur.fetchall()
+
+    unread_by_sender = unread_by_sender or _fetch_chat_unread_counts(conn, me)
+    contacts_by_id: Dict[int, Dict[str, Any]] = {}
+
+    for row in online_rows:
+        user_id = int(row['id'])
+        contacts_by_id[user_id] = {
+            'id': user_id,
+            'username': row['username'],
+            'wpm': float(row['wpm'] or 0),
+            'lastSeen': row['last_seen'].isoformat() + 'Z' if row.get('last_seen') else None,
+            'lastMessageAt': None,
+            'isOnline': bool(row.get('last_seen') and row['last_seen'] >= cutoff_dt),
+            'unreadCount': unread_by_sender.get(user_id, 0),
+            'isMe': False,
+        }
+
+    if recent_rows:
+        partner_ids = [int(row['partner_id']) for row in recent_rows if row.get('partner_id')]
+        if partner_ids:
+            placeholders = ', '.join(['%s'] * len(partner_ids))
+            with conn.cursor() as cur:
+                cur.execute(
+                    f'''
+                    SELECT id, username, wpm
+                    FROM users
+                    WHERE id IN ({placeholders})
+                    ''',
+                    tuple(partner_ids),
+                )
+                user_rows = cur.fetchall()
+            users_by_id = {int(row['id']): row for row in user_rows}
+            for row in recent_rows:
+                partner_id = int(row['partner_id'])
+                partner = users_by_id.get(partner_id)
+                if not partner:
+                    continue
+                last_message_at = row.get('last_message_at')
+                existing = contacts_by_id.get(partner_id)
+                if existing:
+                    existing['lastMessageAt'] = last_message_at.isoformat() + 'Z' if last_message_at else existing.get('lastMessageAt')
+                    existing['unreadCount'] = unread_by_sender.get(partner_id, existing.get('unreadCount', 0))
+                    continue
+                contacts_by_id[partner_id] = {
+                    'id': partner_id,
+                    'username': partner['username'],
+                    'wpm': float(partner['wpm'] or 0),
+                    'lastSeen': None,
+                    'lastMessageAt': last_message_at.isoformat() + 'Z' if last_message_at else None,
+                    'isOnline': False,
+                    'unreadCount': unread_by_sender.get(partner_id, 0),
+                    'isMe': False,
+                }
+
+    contacts = sorted(
+        contacts_by_id.values(),
+        key=lambda row: (
+            -int(row.get('unreadCount') or 0),
+            -int(bool(row.get('isOnline'))),
+            -(int(datetime.fromisoformat((row.get('lastMessageAt') or '').replace('Z', '+00:00')).timestamp()) if row.get('lastMessageAt') else 0),
+            str(row.get('username') or '').lower(),
+        ),
+    )
+    return contacts
+
+
+def _fetch_chat_state(conn, me: int) -> tuple[list[Dict[str, Any]], Dict[int, int]]:
+    unread_by_sender = _fetch_chat_unread_counts(conn, me)
+    return _fetch_chat_contacts(conn, me, unread_by_sender=unread_by_sender), unread_by_sender
 
 
 def _load_user_by_id(cur, user_id: int) -> Optional[Dict[str, Any]]:
@@ -6045,6 +6064,56 @@ def chat_socket(ws):
                 _send_ws_payload(ws, {'type': 'pong', 'ts': _now_iso()})
                 continue
 
+            if event_type == 'sync_state':
+                conn = get_connection()
+                try:
+                    contacts, unread = _fetch_chat_state(conn, user_id)
+                finally:
+                    _return_connection(conn)
+                _send_ws_payload(
+                    ws,
+                    {
+                        'type': 'chat_state',
+                        'contacts': contacts,
+                        'unread': unread,
+                        'userId': user_id,
+                        'ts': _now_iso(),
+                    },
+                )
+                continue
+
+            if event_type == 'load_thread':
+                partner_id = payload.get('partnerId')
+                try:
+                    partner_id_int = int(partner_id)
+                except (TypeError, ValueError):
+                    _send_ws_payload(ws, {'type': 'error', 'message': 'Valid partnerId is required.'})
+                    continue
+                conn = get_connection()
+                try:
+                    messages = _fetch_thread_messages(conn, user_id, partner_id_int, limit=200, mark_read=True)
+                finally:
+                    _return_connection(conn)
+                _broadcast_ws_payload(
+                    partner_id_int,
+                    {
+                        'type': 'chat_read',
+                        'partnerId': user_id,
+                        'readerId': user_id,
+                        'ts': _now_iso(),
+                    },
+                )
+                _send_ws_payload(
+                    ws,
+                    {
+                        'type': 'chat_thread',
+                        'partnerId': partner_id_int,
+                        'messages': messages,
+                        'ts': _now_iso(),
+                    },
+                )
+                continue
+
             if event_type == 'mark_read':
                 partner_id = payload.get('partnerId')
                 try:
@@ -6248,18 +6317,7 @@ def chat_unread_counts():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
-        with conn.cursor() as cur:
-            cur.execute(
-                '''
-                SELECT sender_id, COUNT(*) AS cnt
-                FROM chat_messages
-                WHERE recipient_id = %s AND read_at IS NULL
-                GROUP BY sender_id
-                ''',
-                (me,),
-            )
-            rows = cur.fetchall()
-        counts = {int(row['sender_id']): int(row['cnt']) for row in rows}
+        counts = _fetch_chat_unread_counts(conn, me)
         return jsonify(counts)
     finally:
         _return_connection(conn)

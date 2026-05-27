@@ -49,10 +49,6 @@ function formatLastSeen(isoValue) {
   return `Last seen ${new Date(timestamp).toLocaleDateString()}`;
 }
 
-function getChatPollTimeoutSeconds() {
-  return 3;
-}
-
 function buildWebSocketUrl(path) {
   const token = localStorage.getItem('token');
   const storedUser = localStorage.getItem('typearena_user');
@@ -91,13 +87,6 @@ function upsertChatContact(players, nextContact) {
   };
   const remaining = players.filter((player) => String(player.id) !== String(nextContact.id));
   return [merged, ...remaining];
-}
-
-function mergeUnreadCountsIntoPlayers(players, counts) {
-  return players.map((player) => ({
-    ...player,
-    unreadCount: Number(counts?.[player.id] || 0),
-  }));
 }
 
 function sortChatMessages(messages) {
@@ -238,7 +227,7 @@ function ContactList({ players, onSelect, unread, search }) {
 }
 
 // ── DM thread ────────────────────────────────────────────────────────────────
-function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, socketEvent, sendSocketEvent }) {
+function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, sendSocketEvent, onThreadLoaded }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -247,89 +236,61 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const lastIdRef = useRef(0);
-  const activeRef = useRef(true);
-  const pollTimeoutSeconds = getChatPollTimeoutSeconds();
+  const pendingThreadRequestRef = useRef(false);
+  const partnerId = partner?.id;
 
-  // Load full history on open, then start long-poll from the latest id
-  const loadMessages = useCallback(async () => {
-    setThreadError('');
-    setLoading(true);
-    try {
-      const data = await apiFetch(`/api/chat/messages/${partner.id}`);
-      if (Array.isArray(data) && data.length > 0) {
-        lastIdRef.current = Math.max(...data.map((m) => m.id));
-      }
-      setMessages((prev) => {
-        const nextMessages = Array.isArray(data) ? data : [];
-        const pendingMessages = prev.filter((message) => String(message.id || '').startsWith('tmp_'));
-        if (pendingMessages.length === 0) {
-          return sortChatMessages(nextMessages);
-        }
-
-        const seenIds = new Set(nextMessages.map((message) => String(message.id)));
-        const mergedMessages = [...nextMessages];
-        pendingMessages.forEach((message) => {
-          if (!seenIds.has(String(message.id))) {
-            mergedMessages.push(message);
-          }
-        });
-        return sortChatMessages(mergedMessages);
-      });
-      if (sendSocketEvent) {
-        sendSocketEvent({ type: 'mark_read', partnerId: partner.id });
-      }
-      setLoading(false);
-      return true;
-    } catch (error) {
-      setLoading(false);
-      setThreadError(error.message || 'Could not load this conversation.');
-      return false;
-    }
-  }, [partner.id, apiFetch, sendSocketEvent]);
-
-  // Long-poll loop — starts AFTER history is loaded so since= is correct
   useEffect(() => {
-    activeRef.current = true;
+    setMessages([]);
+    setLoading(true);
+    setThreadError('');
+    lastIdRef.current = 0;
+    pendingThreadRequestRef.current = true;
+  }, [partnerId]);
 
-    const poll = async () => {
-      // Load history first, set lastIdRef, then start polling from that id
-      await loadMessages();
+  useEffect(() => {
+    if (!partnerId) return;
+    pendingThreadRequestRef.current = true;
+  }, [socketConnected, partnerId]);
 
-      if (socketConnected) {
-        return;
+  useEffect(() => {
+    if (!socketConnected || !pendingThreadRequestRef.current || !partnerId) {
+      return;
+    }
+    pendingThreadRequestRef.current = false;
+    sendSocketEvent({
+      type: 'load_thread',
+      partnerId,
+    });
+  }, [socketConnected, partnerId, sendSocketEvent]);
+
+  useEffect(() => {
+    if (!socketEvent || socketEvent.type !== 'chat_thread') return;
+    if (String(socketEvent.partnerId) !== String(partnerId)) return;
+    const nextMessages = Array.isArray(socketEvent.messages) ? socketEvent.messages : [];
+    if (nextMessages.length > 0) {
+      lastIdRef.current = Math.max(...nextMessages.map((message) => Number(message.id) || 0));
+    }
+    setMessages((prev) => {
+      const pendingMessages = prev.filter((message) => String(message.id || '').startsWith('tmp_'));
+      if (pendingMessages.length === 0) {
+        return sortChatMessages(nextMessages);
       }
 
-      while (activeRef.current) {
-        try {
-          const newMsgs = await apiFetch(
-            `/api/chat/poll/${partner.id}?since=${lastIdRef.current}&timeout=${pollTimeoutSeconds}`
-          );
-          setThreadError('');
-          if (!activeRef.current) break;
-          if (Array.isArray(newMsgs) && newMsgs.length > 0) {
-            lastIdRef.current = Math.max(...newMsgs.map((m) => m.id));
-            setMessages((prev) => {
-              const existingIds = new Set(prev.map((m) => String(m.id)));
-              const fresh = newMsgs.filter((m) => !existingIds.has(String(m.id)));
-              if (fresh.length === 0) return prev;
-              return [...prev, ...fresh];
-            });
-          }
-        } catch (error) {
-          if (!activeRef.current) break;
-          setThreadError(error.message || 'Chat connection dropped. Retrying...');
-          // Brief pause on error before retrying
-          await new Promise((r) => setTimeout(r, 1000));
+      const seenIds = new Set(nextMessages.map((message) => String(message.id)));
+      const mergedMessages = [...nextMessages];
+      pendingMessages.forEach((message) => {
+        if (!seenIds.has(String(message.id))) {
+          mergedMessages.push(message);
         }
-      }
-    };
-
-    poll();
-
-    return () => {
-      activeRef.current = false;
-    };
-  }, [partner.id, pollTimeoutSeconds, socketConnected]); // eslint-disable-line react-hooks/exhaustive-deps
+      });
+      return sortChatMessages(mergedMessages);
+    });
+    setLoading(false);
+    setThreadError('');
+    if (onThreadLoaded) {
+      onThreadLoaded(partnerId);
+    }
+  }, [socketEvent, partnerId, onThreadLoaded]);
 
   useEffect(() => {
     if (!socketEvent || socketEvent.type !== 'chat_message') return;
@@ -337,30 +298,30 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
     if (!msg) return;
     const touchesThread =
       (
-        String(msg.senderId) === String(partner.id) &&
+        String(msg.senderId) === String(partnerId) &&
         String(msg.recipientId) === String(currentUserId)
       ) ||
       (
         String(msg.senderId) === String(currentUserId) &&
-        String(msg.recipientId) === String(partner.id)
+        String(msg.recipientId) === String(partnerId)
       );
     if (!touchesThread) return;
     if (msg.id) {
       lastIdRef.current = Math.max(lastIdRef.current, Number(msg.id) || 0);
     }
     setMessages((prev) => upsertChatMessage(prev, msg));
-    if (String(msg.senderId) === String(partner.id) && sendSocketEvent) {
-      sendSocketEvent({ type: 'mark_read', partnerId: partner.id });
+    if (String(msg.senderId) === String(partnerId) && sendSocketEvent) {
+      sendSocketEvent({ type: 'mark_read', partnerId });
     }
-  }, [socketEvent, partner.id, currentUserId, sendSocketEvent]);
+  }, [socketEvent, partnerId, currentUserId, sendSocketEvent]);
 
   useEffect(() => {
     if (!socketEvent || socketEvent.type !== 'chat_read') return;
-    if (String(socketEvent.readerId) !== String(partner.id)) return;
+    if (String(socketEvent.readerId) !== String(partnerId)) return;
     setMessages((prev) => prev.map((msg) => (
       String(msg.senderId) === String(currentUserId) ? { ...msg, read: true } : msg
     )));
-  }, [socketEvent, partner.id, currentUserId]);
+  }, [socketEvent, partnerId, currentUserId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -399,16 +360,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
       });
 
       if (!sentViaSocket) {
-        const msg = await apiFetch('/api/chat/messages', {
-          method: 'POST',
-          body: JSON.stringify({ recipientId: partner.id, body, clientMsgId: tempId }),
-        });
-        if (msg && msg.id) {
-          // Update lastId so long-poll doesn't re-add this message
-          lastIdRef.current = Math.max(lastIdRef.current, msg.id);
-          // Replace temp with confirmed message
-          setMessages((prev) => prev.map((m) => (String(m.id) === tempId ? msg : m)));
-        }
+        throw new Error('Chat socket is not connected.');
       }
     } catch (error) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -702,38 +654,11 @@ export default function ChatWidget({ currentUser }) {
     };
   }, [isLoggedIn, apiFetch]);
 
-  // Poll chat contacts so recent conversations stay reachable even when offline
+  // Refresh chat state from the socket whenever it reconnects
   useEffect(() => {
-    if (!isLoggedIn) return;
-    const load = () =>
-      apiFetch('/api/chat/contacts')
-        .then((contacts) => {
-          setPlayers(Array.isArray(contacts) ? contacts : []);
-          setListError('');
-        })
-        .catch((error) => {
-          setListError(error.message || 'Could not load chats.');
-        });
-    load();
-    const id = setInterval(load, socketConnectedRef.current ? 60000 : 20000);
-    return () => clearInterval(id);
-  }, [isLoggedIn, apiFetch, socketConnected]);
-
-  // Poll unread counts
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    const load = () =>
-      apiFetch('/api/chat/unread')
-        .then((counts) => {
-          setUnread(counts);
-          setTotalUnread(Object.values(counts).reduce((s, n) => s + n, 0));
-          setPlayers((prev) => mergeUnreadCountsIntoPlayers(prev, counts));
-        })
-        .catch(() => {});
-    load();
-    const id = setInterval(load, socketConnectedRef.current ? 60000 : 8000);
-    return () => clearInterval(id);
-  }, [isLoggedIn, apiFetch, socketConnected]);
+    if (!isLoggedIn || !socketConnected) return;
+    sendSocketEvent({ type: 'sync_state' });
+  }, [isLoggedIn, socketConnected, sendSocketEvent]);
 
   // Clear unread for current thread
   useEffect(() => {
@@ -766,6 +691,34 @@ export default function ChatWidget({ currentUser }) {
       return;
     }
     if (socketEvent.type === 'connected' || socketEvent.type === 'pong') {
+      return;
+    }
+    if (socketEvent.type === 'chat_state') {
+      setPlayers(Array.isArray(socketEvent.contacts) ? socketEvent.contacts : []);
+      const nextUnread = socketEvent.unread || {};
+      setUnread(nextUnread);
+      setTotalUnread(Object.values(nextUnread).reduce((sum, value) => sum + Number(value || 0), 0));
+      setListError('');
+      return;
+    }
+    if (socketEvent.type === 'chat_thread') {
+      const partnerId = socketEvent.partnerId;
+      if (partner && String(partner.id) === String(partnerId)) {
+        const unreadCount = Number(unread?.[partnerId] || 0);
+        if (unreadCount > 0) {
+          setUnread((prev) => {
+            const next = { ...prev };
+            delete next[partnerId];
+            return next;
+          });
+          setTotalUnread((count) => Math.max(0, count - unreadCount));
+          setPlayers((prev) => prev.map((player) => (
+            String(player.id) === String(partnerId)
+              ? { ...player, unreadCount: 0 }
+              : player
+          )));
+        }
+      }
       return;
     }
     if (socketEvent.type === 'chat_read') {
@@ -807,7 +760,7 @@ export default function ChatWidget({ currentUser }) {
         );
       }
     }
-  }, [socketEvent, currentUser?.id, open, partner]);
+  }, [socketEvent, currentUser?.id, open, partner, unread]);
 
   if (!isLoggedIn) return null;
 
@@ -908,10 +861,25 @@ export default function ChatWidget({ currentUser }) {
               partner={partner}
               currentUserId={currentUser.id}
               onBack={() => setPartner(null)}
-              apiFetch={apiFetch}
               socketConnected={socketConnected}
               socketEvent={socketEvent}
               sendSocketEvent={sendSocketEvent}
+              onThreadLoaded={(partnerId) => {
+                const existingUnread = Number(unread?.[partnerId] || 0);
+                if (existingUnread > 0) {
+                  setUnread((prev) => {
+                    const next = { ...prev };
+                    delete next[partnerId];
+                    return next;
+                  });
+                  setTotalUnread((count) => Math.max(0, count - existingUnread));
+                }
+                setPlayers((prev) => prev.map((player) => (
+                  String(player.id) === String(partnerId)
+                    ? { ...player, unreadCount: 0 }
+                    : player
+                )));
+              }}
             />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
