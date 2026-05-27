@@ -568,10 +568,6 @@ LIVE_EXTRA_PARTS = {
         'Competitive text is most useful when it stays demanding right through the final character.',
     ],
 }
-
-
-_extend_passage_parts(PRACTICE_PASSAGE_PARTS, PRACTICE_EXTRA_PARTS)
-_extend_passage_parts(LIVE_BATTLE_PASSAGE_PARTS, LIVE_EXTRA_PARTS)
 LIVE_BATTLE_PASSAGE_BANK = {
     mode: _build_live_mode_passages(parts)
     for mode, parts in LIVE_BATTLE_PASSAGE_PARTS.items()
@@ -1016,6 +1012,11 @@ PRACTICE_PASSAGE_PARTS = {
         ],
     },
 }
+
+
+_extend_passage_parts(PRACTICE_PASSAGE_PARTS, PRACTICE_EXTRA_PARTS)
+_extend_passage_parts(LIVE_BATTLE_PASSAGE_PARTS, LIVE_EXTRA_PARTS)
+
 AI_PASSAGE_BANK = {
     mode: _build_live_mode_passages(parts)
     for mode, parts in PRACTICE_PASSAGE_PARTS.items()
