@@ -277,6 +277,7 @@ const _orchestra = (() => {
   let running = false;
   let currentPhase = 'lobby'; // 'lobby' | 'race'
   let enabled = true;
+  let _stopTimeoutId = null; // Fix #8: track pending stop timeout to cancel on re-start
 
   const getCtx = () => {
     // Always reuse the shared AudioContext so the orchestra and sound effects
@@ -456,6 +457,8 @@ const _orchestra = (() => {
   const start = () => {
     const c = getCtx();
     if (!c || running || !enabled) return;
+    // Fix #8: cancel any pending stop cleanup so a quick remount gets a fresh start
+    if (_stopTimeoutId) { clearTimeout(_stopTimeoutId); _stopTimeoutId = null; }
     running = true;
 
     masterGain = c.createGain();
@@ -493,7 +496,9 @@ const _orchestra = (() => {
     if (!running) return;
     running = false; // mark stopped immediately so start() can be called again
     ramp(masterGain, 0, 1.5);
-    setTimeout(() => {
+    if (_stopTimeoutId) clearTimeout(_stopTimeoutId);
+    _stopTimeoutId = setTimeout(() => {
+      _stopTimeoutId = null;
       [...lobbyNodes, ...raceNodes].forEach((n) => { try { n.stop(); } catch {} });
       if (raceRhythmId) window.clearInterval(raceRhythmId);
       lobbyNodes = []; raceNodes = [];
@@ -1030,6 +1035,9 @@ export default function Play({ practicePage = false }){
   const isSubmittingRef = useRef(false);
   const isLeavingRef = useRef(false);
   const queuedAtRef = useRef(null); // tracks when the user entered queued phase
+  // Fix #1: ref-based in-flight guard and loaded-key tracker to prevent re-fetching on page revisit
+  const contentLoadingRef = useRef(false);
+  const loadedForRef = useRef('');
   const [queueElapsed, setQueueElapsed] = useState(0); // seconds waiting in queue
 
   // Typed notice helper — keeps callsites clean
@@ -1206,28 +1214,35 @@ export default function Play({ practicePage = false }){
     if (phase === 'racing' || phase === 'queued' || phase === 'waiting') {
       return;
     }
+    const key = `${mode}__${language}`;
+    // Fix #1: skip if we already have content for this exact mode+language combo
+    // and skip if a fetch is already in-flight (ref-based guard avoids stale-closure issue)
+    if (generatedContent && loadedForRef.current === key) return;
+    if (contentLoadingRef.current) return;
+
     let cancelled = false;
     const loadGeneratedContent = async () => {
-      // Guard: don't fire a second fetch if one is already in flight
-      if (contentLoading) return;
+      contentLoadingRef.current = true;
       setContentLoading(true);
       try {
         const excludeContentIds = getUsedContentIds(mode, language);
         const content = await generateRaceContent(mode, language, { excludeContentIds });
         if (!cancelled) {
           setGeneratedContent(content);
+          loadedForRef.current = key; // mark as loaded for this mode+language
           // NOTE: we intentionally do NOT call recordUsedContentId here.
           // The ID is recorded when the race actually starts (in startPracticeRace /
           // startLiveRace) so that merely previewing content in the lobby doesn't
           // exhaust the rotation pool.
         }
       } finally {
+        contentLoadingRef.current = false;
         if (!cancelled) setContentLoading(false);
       }
     };
     loadGeneratedContent();
     return () => { cancelled = true; };
-  }, [language, mode, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [language, mode, phase, generatedContent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   
   // Refs that mirror fast-changing state so useCallback dependencies stay stable
@@ -2011,10 +2026,16 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     setGhostFrames([]);
     setGhostIndex(0);
     window.clearInterval(ghostIntervalRef.current);
+    // Fix #1: allow fresh content fetch on next lobby visit
+    loadedForRef.current = '';
+    // Fix #5: reset daily challenge so it doesn't bleed into subsequent practice races
+    setShowDailyChallenge(false);
     setPhase('lobby');
   }, [showNotice]);
 
-  const startLiveRace = async () => {
+  // Fix #2: useCallback gives a stable reference so the keyboard-shortcut effect
+  // always calls the current version with up-to-date mode/language/duration/wpmFilter.
+  const startLiveRace = useCallback(async () => {
     if (!currentUser?.id) {
       redirectToProfile();
       return;
@@ -2064,7 +2085,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     } finally {
       setLoadingLive(false);
     }
-  };
+  }, [currentUser?.id, duration, language, mode, redirectToProfile, refreshFeed, showNotice, wpmFilter]);
 
   const createFriendBattle = async () => {
     if (!currentUser?.id) {
@@ -2124,11 +2145,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     } catch (error) {
       console.error("Error creating friend battle:", error);
       setPhase('lobby');
+      // Fix #2: error is a plain Error from fetch — error.response is always undefined.
+      // Use error.message directly instead of the Axios-style error.response?.data path.
       showNotice(
-        error.response?.data?.message ||
-        error.response?.data?.error ||
-        error.message ||
-        'Could not create friend battle.',
+        error.message || 'Could not create friend battle.',
         'error'
       );
     } finally {
@@ -2222,6 +2242,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     if (!liveRoom?.id) {
       return;
     }
+    // Fix #4: mark as leaving immediately so any in-flight heartbeat/poll callbacks
+    // don't restore the room after we clear it below.
+    isLeavingRef.current = true;
     setLoadingLive(true);
     try {
       const result = await cancelLiveRaceRoom(liveRoom.id);
@@ -2253,8 +2276,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   const handleInputChange = (event) => {
     lastHeartbeatRef.current = Date.now(); // #2 AFK reset on every keystroke
     // ── NEW #A: Penalty Mode — block backspace entirely ────────────────────
+    // Fix #7: event.preventDefault() has no effect on React controlled inputs;
+    // the early return alone is what prevents the value update.
     if (penaltyMode && event.target.value.length < typingText.length) {
-      event.preventDefault();
       return;
     }
     const value = event.target.value;
@@ -2438,9 +2462,25 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     for (let y = 0; y < 1080; y += 60) { ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(1080, y); ctx2d.stroke(); }
 
     // Glow circle
+    // Fix #6: the previous string-replace approach to convert hsl/rgb → hsla/rgba
+    // was fragile and broke for hex colors and CSS variables. Resolve the actual
+    // computed accent color at runtime so the canvas gradient is always valid.
+    const resolvedAccent = (() => {
+      try {
+        const tmp = document.createElement('div');
+        tmp.style.color = accentColor;
+        document.body.appendChild(tmp);
+        const computed = window.getComputedStyle(tmp).color; // always returns rgb(...)
+        document.body.removeChild(tmp);
+        // computed is "rgb(r, g, b)" — convert to rgba
+        return computed.replace('rgb(', 'rgba(').replace(')', ', 0.08)');
+      } catch {
+        return 'rgba(34,197,94,0.08)';
+      }
+    })();
     const glow = ctx2d.createRadialGradient(540, 400, 0, 540, 400, 500);
-    glow.addColorStop(0, accentColor.replace(')', ', 0.08)').replace('hsl', 'hsla').replace('rgb', 'rgba') || 'rgba(34,197,94,0.08)');
-    glow.addColorStop(1, 'transparent');
+    glow.addColorStop(0, resolvedAccent);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx2d.fillStyle = glow;
     ctx2d.fillRect(0, 0, 1080, 1080);
 
