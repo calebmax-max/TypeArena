@@ -163,6 +163,99 @@ def _build_live_mode_passages(parts: Dict[str, list[str]]) -> list[str]:
     return passages
 
 
+COMPETITIVE_PASSAGE_SUFFIXES = [
+    'Calibration note: keep 14, 27, 91.8%, 6:2, #08, {}, [], and "quoted text" exactly where they belong while alpha, beta, gamma, and delta stay in order.',
+    'Symbol drill: preserve /, :, ;, #, %, and parentheses, then repeat the letters k, m, q, z, and x without flattening the spacing between them.',
+    'Precision lane: hold 31, 57, and 93.8 intact, protect < > and = signs, and keep the sequence "a-b-c" aligned with every slash and comma.',
+    'Tournament note: the second half rewards patience, so keep 18, 42, 108, and 4.1% clean while the punctuation stack stays disciplined.',
+    'Race calibration: maintain every bracket, dash, apostrophe, and quotation mark while the letters in vector, syntax, and rhythm remain untouched.',
+]
+
+LONG_COMPETITIVE_BLOCKS = [
+    'Extended drill: the strongest runs are built from small exact motions, so keep the symbols #, %, /, :, ;, and () in place while the words "high pressure" and "clean finish" never drift apart. Keep sequence markers like 03, 19, and 144 visible from the first letter to the last.',
+    'Long-form checkpoint: accuracy matters more once the sentence grows, so protect the rhythm in alpha-numeric clusters such as a1, b2, c3, and z9. Stay calm through punctuation piles, quoted fragments, and bracket pairs while every comma still lands where it should.',
+    'Competition layer: imagine the board as a scorecard that punishes careless edits. Hold 58.7%, 102, and 7:11 perfectly while you carry the letters p, r, o, and v through the line. The last stretch should still look tidy even when the pace rises.',
+    'Endurance cue: keep the paragraph readable to a spectator but unforgiving to a rushed hand. Preserve hyphens, underscores, apostrophes, and slash-separated values like north/south and 12/24 without flattening the spacing or breaking the structure.',
+    'Symbol density note: typed repetition should feel deliberate, not robotic, so repeat the pattern carefully while brackets [ ], braces { }, angle marks < >, and quotations " " remain locked in place. The real test is whether the line still feels controlled after the middle section.',
+    'Focus stress test: the player who wins the lane usually maintains form when the content turns noisy. Keep the letters g, h, i, j, and k steady alongside 44, 88, 132, and 2.75%, then finish without dropping the final punctuation.',
+]
+
+
+def _content_id_for_index(kind: str, mode: str, language: str, index: int) -> str:
+    raw = f'{kind}:{mode}:{language}:{index}'.encode('utf-8')
+    return hashlib.sha1(raw).hexdigest()[:12]
+
+
+def _augment_competitive_passage(base_passage: str, content_id: str, *, mode: str, language: str, is_live: bool) -> str:
+    seed = hashlib.sha1(f'{content_id}:{mode}:{language}:{int(is_live)}'.encode('utf-8')).hexdigest()
+    suffix_index = int(seed, 16) % len(COMPETITIVE_PASSAGE_SUFFIXES)
+    block_index = int(seed[:8], 16) % len(LONG_COMPETITIVE_BLOCKS)
+    second_block_index = (block_index + int(seed[8:16], 16)) % len(LONG_COMPETITIVE_BLOCKS)
+    suffix = COMPETITIVE_PASSAGE_SUFFIXES[suffix_index]
+    first_block = LONG_COMPETITIVE_BLOCKS[block_index]
+    second_block = LONG_COMPETITIVE_BLOCKS[second_block_index]
+    checksum = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+    return f'{base_passage} {suffix} {first_block} {second_block} Match code: {checksum}.'
+
+
+def _normalize_exclude_content_ids(exclude_content_ids: Any) -> set[str]:
+    normalized: set[str] = set()
+    if not exclude_content_ids:
+        return normalized
+    if isinstance(exclude_content_ids, str):
+        exclude_content_ids = [exclude_content_ids]
+    for value in exclude_content_ids:
+        text = str(value or '').strip()
+        if not text:
+            continue
+        for chunk in text.split(','):
+            normalized_chunk = chunk.strip()
+            if normalized_chunk:
+                normalized.add(normalized_chunk)
+    return normalized
+
+
+def _select_competitive_passage(
+    passages: list[str],
+    *,
+    kind: str,
+    mode: str,
+    language: str,
+    exclude_content_ids: Any = None,
+    is_live: bool = False,
+) -> Dict[str, Any]:
+    entries = []
+    for index, passage in enumerate(passages):
+        content_id = _content_id_for_index(kind, mode, language, index)
+        entries.append(
+            {
+                'contentId': content_id,
+                'passage': _augment_competitive_passage(
+                    passage,
+                    content_id,
+                    mode=mode,
+                    language=language,
+                    is_live=is_live,
+                ),
+            }
+        )
+
+    if not entries:
+        return {'contentId': '', 'passage': '', 'totalContentCount': 0}
+
+    excluded = _normalize_exclude_content_ids(exclude_content_ids)
+    available = [entry for entry in entries if entry['contentId'] not in excluded]
+    if not available:
+        available = entries
+
+    selected = available[secrets.randbelow(len(available))]
+    return {
+        **selected,
+        'id': selected['contentId'],
+        'totalContentCount': len(entries),
+    }
+
+
 LIVE_RACE_TEXTS = {
     'standard': 'Speed comes from rhythm, not panic. Keep your shoulders relaxed and let accurate keystrokes build momentum every second of the race.',
     'survival': 'In survival mode every mistake costs pressure. Stay calm, stay precise, and protect your lead with clean, confident typing.',
@@ -1364,7 +1457,7 @@ def _equip_field_for_category(category: str) -> str | None:
     return mapping.get(str(category or '').strip())
 
 
-def _generate_passage(mode: str, language: str) -> Dict[str, Any]:
+def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None) -> Dict[str, Any]:
     normalized_mode = str(mode or 'standard').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
     if normalized_language == 'swahili':
@@ -1383,14 +1476,21 @@ def _generate_passage(mode: str, language: str) -> Dict[str, Any]:
         pool_key = normalized_mode if normalized_mode in AI_PASSAGE_BANK else 'standard'
 
     passages = AI_PASSAGE_BANK.get(pool_key) or AI_PASSAGE_BANK['standard']
-    base_passage = passages[secrets.randbelow(len(passages))]
-    decorator = PASSAGE_DECORATORS[secrets.randbelow(len(PASSAGE_DECORATORS))]
-    checksum = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
-    passage = f'{base_passage} {decorator} Match code: {checksum}.'
+    selected = _select_competitive_passage(
+        passages,
+        kind='practice',
+        mode=normalized_mode,
+        language=normalized_language,
+        exclude_content_ids=exclude_content_ids,
+        is_live=False,
+    )
     return {
         'mode': normalized_mode,
         'language': normalized_language,
-        'passage': passage,
+        'passage': selected['passage'],
+        'contentId': selected['contentId'],
+        'id': selected['id'],
+        'totalContentCount': selected['totalContentCount'],
         'title': f'{pool_key.title()} Marathon Paragraph',
         'antiCheatHint': 'Freshly generated content reduces memorization and replay abuse.',
         'provider': 'local',
@@ -1398,7 +1498,7 @@ def _generate_passage(mode: str, language: str) -> Dict[str, Any]:
     }
 
 
-def _generate_live_battle_passage(mode: str, language: str, is_private: bool = False) -> str:
+def _generate_live_battle_passage(mode: str, language: str, is_private: bool = False, exclude_content_ids: Any = None) -> Dict[str, Any]:
     normalized_mode = str(mode or 'standard').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
 
@@ -1412,14 +1512,33 @@ def _generate_live_battle_passage(mode: str, language: str, is_private: bool = F
         passages = LIVE_BATTLE_PASSAGE_BANK.get(normalized_mode) or LIVE_BATTLE_PASSAGE_BANK.get('standard') or []
 
     if not passages:
-        fallback = _generate_passage(mode, language).get('passage')
-        return fallback or LIVE_RACE_TEXTS.get(normalized_mode, LIVE_RACE_TEXTS['standard'])
+        fallback = _generate_passage(mode, language, exclude_content_ids=exclude_content_ids)
+        passage_text = fallback.get('passage') or LIVE_RACE_TEXTS.get(normalized_mode, LIVE_RACE_TEXTS['standard'])
+        return {
+            'contentId': fallback.get('contentId') or _content_id_for_index('live-fallback', normalized_mode, normalized_language, 0),
+            'id': fallback.get('contentId') or _content_id_for_index('live-fallback', normalized_mode, normalized_language, 0),
+            'passage': passage_text,
+            'totalContentCount': fallback.get('totalContentCount') or len(passages),
+        }
 
-    base_passage = passages[secrets.randbelow(len(passages))]
+    selected = _select_competitive_passage(
+        passages,
+        kind='live',
+        mode=normalized_mode,
+        language=normalized_language,
+        exclude_content_ids=exclude_content_ids,
+        is_live=True,
+    )
+    passage = selected['passage']
     if is_private:
         room_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
-        return f'{base_passage} Private room note: keep code {room_code} and every symbol exactly as shown.'
-    return base_passage
+        passage = f'{passage} Private room note: keep code {room_code} and every symbol exactly as shown.'
+    return {
+        'contentId': selected['contentId'],
+        'id': selected['id'],
+        'passage': passage,
+        'totalContentCount': selected['totalContentCount'],
+    }
 
 
 def _current_ai_settings() -> Dict[str, Any]:
@@ -1501,8 +1620,9 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
                     'content': (
                         'Generate one fresh typing race passage. '
                         f'Mode: {normalized_mode}. Language: {normalized_language}. '
-                        'Passage must be a single paragraph between 110 and 170 words, natural, competitive, and hard to memorize. '
-                        'It must include numbers and symbols such as %, #, /, :, ;, brackets, or quotes. '
+                        'Passage must be a single paragraph between 180 and 260 words, natural, competitive, hard to memorize, and worthy of serious practice. '
+                        'It must include several clusters of numbers and symbols such as %, #, /, :, ;, brackets, quotes, dashes, underscores, and angle marks. '
+                        'The paragraph should feel like a long competitive drill rather than a short sample. '
                         'Include a short anti-cheat hint. '
                         'Respond with JSON only: {"title": "...", "passage": "...", "antiCheatHint": "..."}'
                     ),
@@ -1529,12 +1649,16 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     passage = str(parsed.get('passage') or '').strip()
     if not passage:
         raise ValueError('OpenAI response did not include a passage.')
+    content_id = hashlib.sha1(f'openai:{normalized_mode}:{normalized_language}:{passage}'.encode('utf-8')).hexdigest()[:12]
 
     return {
         'mode': normalized_mode,
         'language': normalized_language,
         'title': str(parsed.get('title') or f'{normalized_mode.title()} Sprint').strip(),
         'passage': passage,
+        'contentId': content_id,
+        'id': content_id,
+        'totalContentCount': 0,
         'antiCheatHint': str(parsed.get('antiCheatHint') or 'Fresh AI-generated text reduces repetition and memorization.').strip(),
         'provider': 'openai',
         'model': model_name,
@@ -1574,6 +1698,8 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'duration': room['duration'],
         'countdown': room.get('countdown', LIVE_RACE_COUNTDOWN_SECONDS),
         'text': room['text'],
+        'contentId': room.get('contentId'),
+        'totalContentCount': int(room.get('totalContentCount') or 0),
         'players': players,
         'winnerUserId': winner_user_id,
         'winnerUsername': winner_username or str(room.get('winner', {}).get('username') or ''),
@@ -4793,6 +4919,7 @@ def queue_live_race():
             invite_code = str(payload.get('inviteCode') or '').strip().upper()
             room_password = str(payload.get('password') or '').strip()
             winner_prize = float(payload.get('winnerPrize') or 0)
+            exclude_content_ids = payload.get('excludeContentIds') or []
             stake_amount = 0.0
             winner_takes_all = False
 
@@ -4803,7 +4930,13 @@ def queue_live_race():
                 if not user_perks.get('customInviteCodes'):
                     return jsonify({'message': 'Buy the Signature Invite Pass in the marketplace to create custom private room codes.'}), 400
 
-            text = _generate_live_battle_passage(mode, language, is_private=is_private)
+            content = _generate_live_battle_passage(
+                mode,
+                language,
+                is_private=is_private,
+                exclude_content_ids=exclude_content_ids,
+            )
+            text = content.get('passage') or LIVE_RACE_TEXTS.get(mode, LIVE_RACE_TEXTS['standard'])
             player_snapshot = {
                 'userId': user['id'],
                 'username': user['username'],
@@ -4894,6 +5027,8 @@ def queue_live_race():
                 'results': {},
                 'winnerPrize': winner_prize,
                 'winnerUserId': None,
+                'contentId': content.get('contentId'),
+                'totalContentCount': int(content.get('totalContentCount') or 0),
                 'tournamentId': tournament_id,
                 'spectators': 0,
                 'createdAt': _now_iso(),
@@ -5072,14 +5207,20 @@ def submit_live_race(room_id: str):
 def generate_race_content():
     mode = request.args.get('mode', 'business')
     language = request.args.get('language', 'english')
+    exclude_content_ids = request.args.getlist('excludeContentIds')
+    if len(exclude_content_ids) == 1 and ',' in exclude_content_ids[0]:
+        exclude_content_ids = [item.strip() for item in exclude_content_ids[0].split(',') if item.strip()]
+    excluded_set = _normalize_exclude_content_ids(exclude_content_ids)
     settings = _current_ai_settings()
     if settings['provider'] == 'local':
-        content = _generate_passage(mode, language)
+        content = _generate_passage(mode, language, exclude_content_ids=exclude_content_ids)
     else:
         try:
             content = _openai_generate_passage(mode, language)
+            if excluded_set and str(content.get('contentId') or '') in excluded_set:
+                content = _generate_passage(mode, language, exclude_content_ids=exclude_content_ids)
         except ValueError:
-            content = _generate_passage(mode, language)
+            content = _generate_passage(mode, language, exclude_content_ids=exclude_content_ids)
     return jsonify(content)
 
 

@@ -782,21 +782,29 @@ export const submitLiveRaceResult = async (roomId, payload) => {
 
 const FALLBACK_PASSAGES = [
   {
+    id: 'fallback_business_sprint',
+    contentId: 'fallback_business_sprint',
     title: 'Business Sprint',
     passage: 'Premium typing rooms reward accuracy, focus, and consistency across every high-pressure round.',
     antiCheatHint: 'Fresh passages reduce repetition.',
   },
   {
+    id: 'fallback_digital_age',
+    contentId: 'fallback_digital_age',
     title: 'Digital Age',
     passage: 'Technology transforms how we communicate, collaborate, and compete in an increasingly connected world.',
     antiCheatHint: 'Stay focused on each word.',
   },
   {
+    id: 'fallback_sharp_focus',
+    contentId: 'fallback_sharp_focus',
     title: 'Sharp Focus',
     passage: 'Speed and precision define the best typists. Train daily, track your progress, and push your limits.',
     antiCheatHint: 'Accuracy beats raw speed.',
   },
   {
+    id: 'fallback_code_runner',
+    contentId: 'fallback_code_runner',
     title: 'Code Runner',
     passage: 'Clean code is easy to read, simple to maintain, and efficient to run across every modern platform.',
     antiCheatHint: 'Consistency is key.',
@@ -807,16 +815,28 @@ const FALLBACK_PASSAGES = [
 // Adjust here if your Render instance regularly needs more warm-up time.
 const CONTENT_LOAD_TIMEOUT_MS = 5000;
 
-export const generateRaceContent = async (mode, language) => {
+export const generateRaceContent = async (mode, language, options = {}) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONTENT_LOAD_TIMEOUT_MS);
   try {
+    const excludeContentIds = Array.isArray(options.excludeContentIds)
+      ? options.excludeContentIds.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const query = new URLSearchParams({
+      mode: String(mode || 'standard'),
+      language: String(language || 'english'),
+    });
+    excludeContentIds.forEach((contentId) => query.append('excludeContentIds', contentId));
     const response = await apiFetch(
-      buildApiUrl(`/api/race-content/generate?mode=${encodeURIComponent(mode)}&language=${encodeURIComponent(language)}`),
+      buildApiUrl(`/api/race-content/generate?${query.toString()}`),
       { headers: buildHeaders(), signal: controller.signal }
     );
     clearTimeout(timeoutId);
-    return await parseResponse(response);
+    const parsed = await parseResponse(response);
+    if (parsed?.contentId && !parsed.id) {
+      parsed.id = parsed.contentId;
+    }
+    return parsed;
   } catch (error) {
     // Always clear the timeout — even if abort fired it may not have been cleared yet.
     clearTimeout(timeoutId);
