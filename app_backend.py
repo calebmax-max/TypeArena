@@ -2057,6 +2057,7 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
             'badge': user.get('equipped_badge') or '',
             'effect': user.get('equipped_effect') or '',
             'frame': user.get('equipped_frame') or '',
+            'cursor': user.get('equipped_cursor') or '',
         },
     }
 
@@ -2811,7 +2812,7 @@ def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
             return None
         with conn.cursor() as cur:
             cur.execute(
-                'SELECT id, username, email, balance, wpm, accuracy, total_races, wins, phone_number, auth_token, equipped_theme, equipped_cursor, equipped_badge FROM users WHERE id = %s',
+                'SELECT * FROM users WHERE id = %s',
                 (user_id,)
             )
             return cur.fetchone()
@@ -2823,7 +2824,7 @@ def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
         if token:
             with conn.cursor() as cur:
                 cur.execute(
-                    'SELECT id, username, email, balance, wpm, accuracy, total_races, wins, phone_number, auth_token, equipped_theme, equipped_cursor, equipped_badge FROM users WHERE auth_token = %s',
+                    'SELECT * FROM users WHERE auth_token = %s',
                     (token,)
                 )
                 return cur.fetchone()
