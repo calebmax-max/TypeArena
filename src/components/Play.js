@@ -906,6 +906,7 @@ function ReplayPlayer({ frames }) {
   );
 }
 
+// private_race_fixes_applied: 2026-05 (fast polling, submit-returns-room, no contentLoading on create)
 export default function Play({ practicePage = false }){
   const location = useLocation();
   const navigate = useNavigate();
@@ -924,7 +925,7 @@ export default function Play({ practicePage = false }){
   const [raceResult, setRaceResult] = useState(null);
   const [generatedContent, setGeneratedContent] = useState(null);
   const [replayFrames, setReplayFrames] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(undefined); // undefined=loading, null=guest, object=user
   const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [showPracticeModes, setShowPracticeModes] = useState(false);
   const [raceOver, setRaceOver] = useState(false);
@@ -1113,10 +1114,11 @@ export default function Play({ practicePage = false }){
 
 
   const redirectToProfile = useCallback(() => {
+    if (currentUser === undefined) return; // still loading — don't redirect yet
     const redirectPath = `${location.pathname}${location.search || ''}`;
     showNotice('Sign in first to play, join live races, or compete in private rooms.', 'info');
     navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}`);
-  }, [location.pathname, location.search, navigate, showNotice]);
+  }, [currentUser, location.pathname, location.search, navigate, showNotice]);
 
   useEffect(() => {
     if (phase !== 'racing') {
@@ -1407,13 +1409,22 @@ const flushLiveHeartbeat = useCallback(async () => {
 
         if (liveRoom?.id) {
             try {
-                await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
+                // submitLiveRaceResult returns the updated room object from the backend.
+                // Use IT — not the stale liveRoom state — so the result payload always
+                // has the server-authoritative WPM, accuracy, standings, and winnerUserId.
+                const updatedRoom = await submitLiveRaceResult(liveRoom.id, { wpm, accuracy });
 
                 if (isLeavingRef.current) return;
 
-                // Show results immediately with own stats — don't make the user wait for opponent
-                const immediatePayload = buildRoomResultPayload(liveRoom);
-                const ownPayload = immediatePayload || {
+                // Merge the fresh room into local state so polling sees it immediately
+                if (updatedRoom?.id) {
+                    setLiveRoom(updatedRoom);
+                }
+
+                // Build the result from the fresh room first; fall back to local calc
+                // if the server didn't return a fully-formed room (e.g. network glitch)
+                const freshPayload = updatedRoom?.id ? buildRoomResultPayload(updatedRoom) : null;
+                const ownPayload = freshPayload || {
                     ...finalData,
                     netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
                     coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
@@ -1425,14 +1436,28 @@ const flushLiveHeartbeat = useCallback(async () => {
                 sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(ownPayload));
                 setRaceResult(ownPayload);
                 setPhase('results');
-                // Standings will be updated automatically by the polling effect
-                // when the opponent finishes — no separate chain needed
+                // Polling continues at 600ms in results phase to pick up the opponent's
+                // result and update standings once they finish.
             } catch (error) {
                 if (isLeavingRef.current) return;
-                if (error.message.includes('1062')) {
+                if (error.message?.includes('1062')) {
+                    // Duplicate submit — already recorded; safe to show results
                     setPhase('results');
                 } else {
                     console.error('Live race submit error:', error);
+                    // Still move to results with what we have locally
+                    const fallbackPayload = {
+                        ...finalData,
+                        netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+                        coachTip: accuracy < 92 ? 'Accuracy dipped.' : 'Strong run.',
+                        replayFrames: currentReplayFrames,
+                        shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
+                        completedAt: new Date().toISOString(),
+                        standings: [],
+                    };
+                    sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(fallbackPayload));
+                    setRaceResult(fallbackPayload);
+                    setPhase('results');
                 }
             }
             return;
@@ -1571,7 +1596,8 @@ const flushLiveHeartbeat = useCallback(async () => {
       } catch (error) {
         console.error('Live room polling error:', error);
       }
-    }, phase === 'queued' ? 1500 : phase === 'results' ? 1000 : 2200);
+    // Faster polling: detect opponent join quickly (800ms), racing keeps 2200ms, results 600ms
+    }, phase === 'queued' ? 800 : phase === 'results' ? 600 : 2200);
 
     return () => window.clearInterval(interval);
   // liveRoom.id is captured as roomId above — the full object is intentionally excluded
@@ -1821,6 +1847,7 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
     setShowPracticeModes(false);
 
+    if (currentUser === undefined) return;
     if (!currentUser?.id) {
       redirectToProfile();
       return;
@@ -2004,6 +2031,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   // Fix #2: useCallback gives a stable reference so the keyboard-shortcut effect
   // always calls the current version with up-to-date mode/language/duration/wpmFilter.
   const startLiveRace = useCallback(async () => {
+    if (currentUser === undefined) return;
     if (!currentUser?.id) {
       redirectToProfile();
       return;
@@ -2056,6 +2084,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   }, [currentUser?.id, duration, language, mode, redirectToProfile, refreshFeed, showNotice, wpmFilter]);
 
   const createFriendBattle = async () => {
+    if (currentUser === undefined) return;
     if (!currentUser?.id) {
       redirectToProfile();
       return;
@@ -2127,6 +2156,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   // Fix #11: useCallback so pendingRematch effect (and direct callers) always
   // see the current friendBattle.inviteCode / password, not a stale closure.
   const joinFriendBattle = useCallback(async () => {
+    if (currentUser === undefined) return;
     if (!currentUser?.id) {
       redirectToProfile();
       return;
@@ -2620,12 +2650,13 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               )}
             </div>
             {practicePage ? (
-              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading}>
-                {contentLoading ? <span className="arena-spinner" aria-label="Loading content…" /> : 'Start This Practice'}
+              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined}>
+                {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading…" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content…" /> : 'Start This Practice'}
               </button>
             ) : (
-              <button className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive || contentLoading}>
-                {loadingLive ? 'Joining Live Room…' : contentLoading ? <span className="arena-spinner" aria-label="Loading content…" /> : 'Join Live 1v1'}
+              {/* contentLoading removed — live races use server-side content */}
+              <button className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive || currentUser === undefined}>
+                {(loadingLive || currentUser === undefined) ? <span className="arena-spinner" aria-label="Loading…" /> : 'Join Live 1v1'}
               </button>
             )}
           </div>
@@ -2812,7 +2843,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               />
             </div>
             <div className="results-actions">
-              <button className="btn btn-primary" onClick={createFriendBattle} disabled={loadingLive || !currentUser?.id}>
+              {/* contentLoading excluded: private rooms use server-generated content */}
+              <button className="btn btn-primary" onClick={createFriendBattle} disabled={loadingLive || currentUser === undefined || !currentUser?.id}>
                 Create Private Room
               </button>
               <button className="btn btn-outline-primary" onClick={joinFriendBattle} disabled={loadingLive || !friendBattle.inviteCode.trim()}>
