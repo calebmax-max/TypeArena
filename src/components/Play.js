@@ -1321,7 +1321,6 @@ export default function Play({ practicePage = false }){
     startLiveRace,
     createFriendBattle,
     joinFriendBattle,
-    requestRematch,
     cancelPrivateRoom,
     submitHeartbeat,
     submitFinalLiveResult,
