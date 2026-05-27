@@ -125,7 +125,7 @@ export default function AdminPanel() {
     if (localFileObjectUrl) {
       URL.revokeObjectURL(localFileObjectUrl);
     }
-  }, []);
+  }, [localFileObjectUrl]);
 
   const showNotice = (msg) => {
     setNotice(msg);
