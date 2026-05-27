@@ -3858,6 +3858,7 @@ def admin_analytics():
                 'marketplaceRevenueTotal': float(marketplace_revenue.get('marketplace_total') or 0),
                 'topPlayers': [
                     {
+                        'id': row['id'],
                         'username': row['username'],
                         'wpm': float(row.get('wpm') or 0),
                         'wins': int(row.get('wins') or 0),
@@ -3898,6 +3899,46 @@ def admin_update_ai_settings():
     settings = _current_ai_settings()
     settings['hasApiKey'] = bool(OPENAI_API_KEY)
     return jsonify({'message': 'AI content settings updated.', 'settings': settings})
+
+
+@app.post('/api/admin/impersonate-user')
+def admin_impersonate_user():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    raw_user_id = payload.get('userId')
+    raw_username = str(payload.get('username') or '').strip()
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            target_user = None
+            if raw_user_id is not None:
+                try:
+                    user_id = int(raw_user_id)
+                except (TypeError, ValueError):
+                    return jsonify({'message': 'Invalid user id'}), 400
+                cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+                target_user = cur.fetchone()
+            elif raw_username:
+                cur.execute('SELECT * FROM users WHERE LOWER(username)=LOWER(%s)', (raw_username,))
+                target_user = cur.fetchone()
+            else:
+                return jsonify({'message': 'userId or username is required'}), 400
+
+            if not target_user:
+                return jsonify({'message': 'User not found'}), 404
+
+            _ensure_auth_token_column(cur)
+            token = _issue_user_token(cur, int(target_user['id']))
+        conn.commit()
+        response = _safe_user(target_user, conn)
+        response['token'] = token
+        message = f"Signed in as {response.get('username') or 'player'}."
+        return jsonify({'user': response, 'message': message})
+    finally:
+        _return_connection(conn)
 
 
 @app.get('/api/site-marquee')

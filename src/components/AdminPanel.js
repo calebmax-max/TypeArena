@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   addFundsToAdminWallet,
   adminCreateTournament,
+  adminImpersonateUser,
   adminUpdateTournament,
   adminDeleteAllTournaments,
   adminDeleteTournament,
@@ -45,6 +46,7 @@ const NAV_ITEMS = [
 ];
 
 export default function AdminPanel() {
+  const navigate = useNavigate();
   const [token, setToken] = useState(getAdminToken());
   const [authChecked, setAuthChecked] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
@@ -64,6 +66,7 @@ export default function AdminPanel() {
   const [viewingParticipantsId, setViewingParticipantsId] = useState(null);
   const [participants, setParticipants] = useState({});
   const [loadingParticipantsId, setLoadingParticipantsId] = useState(null);
+  const [impersonatingId, setImpersonatingId] = useState(null);
 
   // Music
   const musicState = useMusicState();
@@ -168,6 +171,20 @@ export default function AdminPanel() {
   };
 
   const handleSignOut = () => { adminLogout(); setToken(null); };
+
+  const handleImpersonatePlayer = async (player) => {
+    if (!player?.id) return;
+    setImpersonatingId(player.id);
+    try {
+      const result = await adminImpersonateUser({ userId: player.id });
+      showNotice(result.message || `Signed in as ${player.username || 'player'}.`);
+      navigate('/profile');
+    } catch (err) {
+      showNotice(err.message || 'Could not sign in as that player.');
+    } finally {
+      setImpersonatingId(null);
+    }
+  };
 
   const handleAiSettingsSave = async (e) => {
     if (e?.preventDefault) e.preventDefault();
@@ -1282,6 +1299,7 @@ export default function AdminPanel() {
                           <th>Username</th>
                           <th>WPM</th>
                           <th>Wins</th>
+                          <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1295,6 +1313,16 @@ export default function AdminPanel() {
                             <td style={{ fontFamily: 'var(--ap-font-head)', fontWeight: 700 }}>{p.username}</td>
                             <td style={{ color: 'var(--ap-accent)' }}>{p.wpm}</td>
                             <td>{p.wins}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="ap-btn ap-btn-ghost ap-btn-sm"
+                                onClick={() => handleImpersonatePlayer(p)}
+                                disabled={!p.id || impersonatingId === p.id}
+                              >
+                                {impersonatingId === p.id ? 'Signing in…' : 'Sign in as'}
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>

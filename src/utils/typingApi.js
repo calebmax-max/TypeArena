@@ -57,6 +57,12 @@ const setStoredUser = (user) => {
   localStorage.setItem('typearena_user', JSON.stringify(sanitizeUser(user)));
 };
 
+const preserveAdminTokenAfterUserSwap = (adminToken) => {
+  if (adminToken) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, adminToken);
+  }
+};
+
 export const buildHeaders = (extraHeaders = {}) => {
   const headers = {
     'Content-Type': 'application/json',
@@ -476,7 +482,10 @@ export const adminLogin = async (email, password) => {
     });
     const data = await parseResponse(response);
     if (data?.token) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('typearena_user');
       localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+      window.dispatchEvent(new Event('typearena-user-changed'));
     }
     return data;
   } catch (error) {
@@ -489,7 +498,10 @@ export const adminLogin = async (email, password) => {
         normalizedPassword === DEFAULT_ADMIN_PASSWORD
       ) {
         const offlineToken = `offline_admin_${Date.now()}`;
+        localStorage.removeItem('token');
+        localStorage.removeItem('typearena_user');
         localStorage.setItem(ADMIN_TOKEN_KEY, offlineToken);
+        window.dispatchEvent(new Event('typearena-user-changed'));
         return { token: offlineToken, adminEmail: DEFAULT_ADMIN_EMAIL, mode: 'offline' };
       }
       throw new Error('Invalid admin credentials.');
@@ -500,6 +512,29 @@ export const adminLogin = async (email, password) => {
 
 export const adminLogout = () => {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
+};
+
+export const adminImpersonateUser = async ({ userId = null, username = '' }) => {
+  const adminToken = getAdminToken();
+  if (!adminToken) {
+    throw new Error('Admin session not found. Please login again.');
+  }
+
+  const response = await apiFetch(buildApiUrl('/api/admin/impersonate-user'), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify({
+      userId,
+      username,
+    }),
+  });
+  const data = await parseResponse(response);
+  if (data?.user) {
+    setStoredUser(data.user);
+    preserveAdminTokenAfterUserSwap(adminToken);
+    window.dispatchEvent(new Event('typearena-user-changed'));
+  }
+  return data;
 };
 
 export const adminCreateTournament = async (payload) => {
