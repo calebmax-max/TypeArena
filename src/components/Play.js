@@ -18,6 +18,11 @@ import {
   submitRaceResult,
   updateLiveRaceHeartbeat,
 } from '../utils/typingApi';
+import { buildApiUrl } from '../utils/api';
+import PrivateRoomPanel from './PrivateRoomPanel';
+import { useActiveKeyboard } from '../hooks/useActiveKeyboard';
+import { useLiveFeed } from '../hooks/useLiveFeed';
+import { useSpectateRoom } from '../hooks/useSpectateRoom';
 import '../styles/Play.css';
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
@@ -27,6 +32,11 @@ const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
 const AFK_FORFEIT_MS = 15000; // #2 rage-quit/AFK: forfeit after 15s of no heartbeat
 const DAILY_CHALLENGE_KEY = 'typearena_daily_challenge';
 const WIN_STREAK_KEY = 'typearena_win_streak';
+const LOBBY_FEED_POLL_INTERVAL_MS = 8000;
+const LIVE_ROOM_POLL_QUEUED_MS = 1000;
+const LIVE_ROOM_POLL_ACTIVE_MS = 2500;
+const LIVE_ROOM_POLL_RESULTS_MS = 1200;
+const SPECTATE_POLL_INTERVAL_MS = 3000;
 
 // ---------------------------------------------------------------------------
 // Content rotation helpers
@@ -914,7 +924,6 @@ export default function Play({ practicePage = false }){
   const [mode, setMode] = useState('standard');
   const [language, setLanguage] = useState('english');
   const [duration, setDuration] = useState(60);
-  const [liveFeed, setLiveFeed] = useState([]);
   const [liveRoom, setLiveRoom] = useState(null);
   const [typingText, setTypingText] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
@@ -989,9 +998,6 @@ export default function Play({ practicePage = false }){
   const [afkWarning, setAfkWarning] = useState(false);
   const lastHeartbeatRef = useRef(Date.now());
   // ── Feature #3: Spectator mode state ──────────────────────────────────────
-  const [spectateRoom, setSpectateRoom] = useState(null);
-  const [spectateData, setSpectateData] = useState(null);
-  const spectateIntervalRef = useRef(null);
   // ── Feature #4: Daily challenge state ─────────────────────────────────────
   const [dailyChallenge, setDailyChallenge] = useState(() => getDailyChallenge());
   const [showDailyChallenge, setShowDailyChallenge] = useState(false);
@@ -1009,9 +1015,9 @@ export default function Play({ practicePage = false }){
   const [penaltyMode, setPenaltyMode] = useState(false);
   // ── NEW #B: Keyboard shortcut overlay ─────────────────────────────────────
   const [showShortcuts, setShowShortcuts] = useState(false);
-  // ── NEW #D: Post-race AI coaching ─────────────────────────────────────────
-  const [aiCoaching, setAiCoaching] = useState(null);   // null | 'loading' | string
+  const [aiCoaching, setAiCoaching] = useState(null);
   const [aiCoachingError, setAiCoachingError] = useState(false);
+  // ── NEW #D: Post-race AI coaching ─────────────────────────────────────────
   // ── NEW #E: Ghost race — replay personal best ──────────────────────────────
   const [ghostFrames, setGhostFrames] = useState([]);      // pb replay frames for this session
   const [ghostIndex, setGhostIndex] = useState(0);         // which frame the ghost is on
@@ -1023,16 +1029,19 @@ export default function Play({ practicePage = false }){
   const sparkGradId = useRef(`sparkGrad-${Math.random().toString(36).slice(2)}`);
   // ────────────────────────────────────────────────────────────────────────────
 
-  // activeKeys is stored in a ref and applied directly to DOM to avoid
-  // triggering a React re-render on every single keydown/keyup event.
-  const activeKeysRef = useRef([]);
-  const [activeKeys, setActiveKeys] = useState([]);
+  const activeKeys = useActiveKeyboard({
+    phase,
+    normalizeKeyboardKey,
+    onBlur: () => setFocusLost(true),
+    onFocus: () => setFocusLost(false),
+  });
 
   const inputRef = useRef(null);
   const timerRef = useRef(null);
   const heartbeatTimerRef = useRef(null);
   const heartbeatPayloadRef = useRef(null);
   const heartbeatInFlightRef = useRef(false);
+  const roomPollInFlightRef = useRef(false);
   const isSubmittingRef = useRef(false);
   const isLeavingRef = useRef(false);
   const queuedAtRef = useRef(null); // tracks when the user entered queued phase
@@ -1045,6 +1054,22 @@ export default function Play({ practicePage = false }){
   const showNotice = useCallback((message, type = 'info') => {
     setNotice(message ? { message, type } : null);
   }, []);
+
+  const { liveFeed, refreshFeed } = useLiveFeed({
+    phase,
+    fetchLiveRaces,
+    pollIntervalMs: LOBBY_FEED_POLL_INTERVAL_MS,
+  });
+
+  const {
+    spectateRoom,
+    spectateData,
+    watchRoom,
+    stopWatching,
+  } = useSpectateRoom({
+    fetchLiveRaceRoom,
+    pollIntervalMs: SPECTATE_POLL_INTERVAL_MS,
+  });
 
   useEffect(() => {
     fetchCurrentUser().then(setCurrentUser).catch(() => {});
@@ -1122,59 +1147,6 @@ export default function Play({ practicePage = false }){
     showNotice('Sign in first to play, join live races, or compete in private rooms.', 'info');
     navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}`);
   }, [currentUser, location.pathname, location.search, navigate, showNotice]);
-
-  useEffect(() => {
-    if (phase !== 'racing') {
-      activeKeysRef.current = [];
-      setActiveKeys([]);
-      return undefined;
-    }
-
-    let rafId = null;
-    const flushKeys = () => {
-      setActiveKeys([...activeKeysRef.current]);
-      rafId = null;
-    };
-    const scheduleFlush = () => {
-      if (!rafId) rafId = window.requestAnimationFrame(flushKeys);
-    };
-
-    const handleWindowKeyDown = (event) => {
-      const normalized = normalizeKeyboardKey(event.key);
-      if (!normalized) return;
-      if (!activeKeysRef.current.includes(normalized)) {
-        activeKeysRef.current = [...activeKeysRef.current, normalized];
-        scheduleFlush();
-      }
-    };
-
-    const handleWindowKeyUp = (event) => {
-      const normalized = normalizeKeyboardKey(event.key);
-      if (!normalized) return;
-      activeKeysRef.current = activeKeysRef.current.filter((item) => item !== normalized);
-      scheduleFlush();
-    };
-
-    const handleWindowBlur = () => {
-      activeKeysRef.current = [];
-      setActiveKeys([]);
-      setFocusLost(true);
-    };
-    const handleWindowFocus = () => setFocusLost(false);
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-    window.addEventListener('keyup', handleWindowKeyUp);
-    window.addEventListener('blur', handleWindowBlur);
-    window.addEventListener('focus', handleWindowFocus);
-
-    return () => {
-      if (rafId) window.cancelAnimationFrame(rafId);
-      window.removeEventListener('keydown', handleWindowKeyDown);
-      window.removeEventListener('keyup', handleWindowKeyUp);
-      window.removeEventListener('blur', handleWindowBlur);
-      window.removeEventListener('focus', handleWindowFocus);
-    };
-  }, [phase]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1539,17 +1511,6 @@ const flushLiveHeartbeat = useCallback(async () => {
   }, [duration]);
 
   useEffect(() => {
-    const loadFeed = async () => {
-      if (phase === 'racing') return;
-      const rooms = await fetchLiveRaces().catch(() => []);
-      setLiveFeed(Array.isArray(rooms) ? rooms : []);
-    };
-    loadFeed();
-    const interval = window.setInterval(loadFeed, 4000);
-    return () => window.clearInterval(interval);
-  }, [phase]);
-
-  useEffect(() => {
     // Fix #10: removed `phase === 'waiting'` from the early-return guard.
     // The 'waiting' phase was never actually set anywhere, making the guard dead code
     // that would also block polling if the phase were ever used in future.
@@ -1566,6 +1527,10 @@ const flushLiveHeartbeat = useCallback(async () => {
     }
 
     const interval = window.setInterval(async () => {
+      if (document.visibilityState !== 'visible' || roomPollInFlightRef.current) {
+        return;
+      }
+      roomPollInFlightRef.current = true;
       try {
         const room = await fetchLiveRaceRoom(roomId);
         if (isLeavingRef.current) return;
@@ -1588,8 +1553,14 @@ const flushLiveHeartbeat = useCallback(async () => {
         }
       } catch (error) {
         console.error('Live room polling error:', error);
+      } finally {
+        roomPollInFlightRef.current = false;
       }
-    }, phase === 'queued' ? 800 : phase === 'results' ? 600 : 2200);
+    }, phase === 'queued'
+      ? LIVE_ROOM_POLL_QUEUED_MS
+      : phase === 'results'
+        ? LIVE_ROOM_POLL_RESULTS_MS
+        : LIVE_ROOM_POLL_ACTIVE_MS);
 
     return () => window.clearInterval(interval);
   // liveRoom.id is captured as roomId above — the full object is intentionally excluded
@@ -1631,31 +1602,6 @@ const flushLiveHeartbeat = useCallback(async () => {
     return () => window.clearInterval(afkCheck);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, liveRoom?.id]);
-
-  // ── Feature #3: Spectator polling ─────────────────────────────────────────
-  const watchRoom = useCallback((roomId) => {
-    setSpectateRoom(roomId);
-    const poll = async () => {
-      try {
-        const room = await fetchLiveRaceRoom(roomId);
-        setSpectateData(room);
-        if (room?.status === 'completed') {
-          window.clearInterval(spectateIntervalRef.current);
-        }
-      } catch {}
-    };
-    poll();
-    spectateIntervalRef.current = window.setInterval(poll, 2000);
-  }, []);
-
-  const stopWatching = useCallback(() => {
-    window.clearInterval(spectateIntervalRef.current);
-    setSpectateRoom(null);
-    setSpectateData(null);
-  }, []);
-
-  // Clean up spectator polling on unmount
-  useEffect(() => () => window.clearInterval(spectateIntervalRef.current), []);
 
   // ── Feature #4: Daily challenge loader ────────────────────────────────────
   const loadDailyChallenge = useCallback(async () => {
@@ -1831,11 +1777,6 @@ const flushLiveHeartbeat = useCallback(async () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duration, liveRoom?.id, phase, syncRoomClock]);
 
-  const refreshFeed = useCallback(async () => {
-    const rooms = await fetchLiveRaces().catch(() => []);
-    setLiveFeed(Array.isArray(rooms) ? rooms : []);
-  }, []);
-
   const startPracticeRaceWithMode = useCallback((nextMode) => {
     const resolvedMode = nextMode || mode;
     if (nextMode && nextMode !== mode) {
@@ -1935,9 +1876,9 @@ const flushLiveHeartbeat = useCallback(async () => {
   useEffect(() => () => window.clearInterval(ghostIntervalRef.current), []);
   useEffect(() => {
     if (phase !== 'results' || !raceResult) return;
-    // Reset from any previous race
     setAiCoaching('loading');
     setAiCoachingError(false);
+    const controller = new AbortController();
 
     const topMistakes = Object.entries(mistakeMap)
       .sort((a, b) => b[1] - a[1])
@@ -1960,10 +1901,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
     // SECURITY: never call the Anthropic API directly from the browser — the key
     // would be visible to every user. Route through your own backend proxy instead.
-    fetch('/api/ai-coaching', {
+    fetch(buildApiUrl('/api/ai-coaching'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
+      signal: controller.signal,
     })
       .then((r) => {
         if (!r.ok) throw new Error(`AI coaching request failed: ${r.status}`);
@@ -1973,10 +1915,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
         const text = (data.content || []).map((b) => b.text || '').join('').trim();
         setAiCoaching(text || null);
       })
-      .catch(() => {
+      .catch((error) => {
+        if (error?.name === 'AbortError') return;
         setAiCoachingError(true);
         setAiCoaching(null);
       });
+    return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
@@ -2227,13 +2171,49 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     joinFriendBattle();
   }, [pendingRematch, phase, joinFriendBattle]);
 
+  const buildInviteLink = useCallback(() => {
+    const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
+    const roomPassword = liveRoom?.password || friendBattle.password;
+    if (!inviteCode) return '';
+    return `${window.location.origin}/play?invite=${encodeURIComponent(inviteCode)}${roomPassword ? `&password=${encodeURIComponent(roomPassword)}` : ''}`;
+  }, [friendBattle.inviteCode, friendBattle.password, liveRoom?.inviteCode, liveRoom?.password]);
+
+  const copyTextToClipboard = useCallback(async (text, successMessage) => {
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        document.body.removeChild(helper);
+      }
+      showNotice(successMessage, 'success');
+    } catch {
+      showNotice('Copy failed on this device. Try sharing on WhatsApp instead.', 'warning');
+    }
+  }, [showNotice]);
+
+  const copyInviteCode = useCallback(() => {
+    copyTextToClipboard(liveRoom?.inviteCode || friendBattle.inviteCode, 'Invite code copied.');
+  }, [copyTextToClipboard, friendBattle.inviteCode, liveRoom?.inviteCode]);
+
+  const copyInviteLink = useCallback(() => {
+    copyTextToClipboard(buildInviteLink(), 'Invite link copied.');
+  }, [buildInviteLink, copyTextToClipboard]);
+
   const shareToWhatsApp = () => {
     if (!liveRoom?.inviteCode && !friendBattle.inviteCode) {
       return;
     }
     const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
     const roomPassword = liveRoom?.password || friendBattle.password;
-    const inviteLink = `${window.location.origin}/play?invite=${encodeURIComponent(inviteCode)}${roomPassword ? `&password=${encodeURIComponent(roomPassword)}` : ''}`;
+    const inviteLink = buildInviteLink();
     const parts = [
       'Join my TypeArena friend battle.',
       `Invite code: ${inviteCode}`,
@@ -2824,52 +2804,19 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           )}
 
           {!practicePage && (
-          <div className="friend-battle-card">
-            <div className="live-board__header">
-              <h2>Friend Battles + Private Rooms</h2>
-            </div>
-            <div className="friend-battle-grid">
-              {hasSignatureInvites && (
-                <input
-                  value={friendBattle.customInviteCode}
-                  onChange={(event) =>
-                    setFriendBattle((prev) => ({ ...prev, customInviteCode: event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12) }))
-                  }
-                  placeholder="Your custom invite code"
-                />
-              )}
-              <input
-                value={friendBattle.inviteCode}
-                onChange={(event) =>
-                  setFriendBattle((prev) => ({ ...prev, inviteCode: event.target.value.toUpperCase() }))
-                }
-                placeholder="Invite code"
-              />
-              <input
-                value={friendBattle.password}
-                onChange={(event) =>
-                  setFriendBattle((prev) => ({ ...prev, password: event.target.value }))
-                }
-                placeholder="Private room password"
-              />
-            </div>
-            <div className="results-actions">
-              <button className="btn btn-primary" onClick={createFriendBattle} disabled={loadingLive || currentUser === undefined || !currentUser?.id}>
-                Create Private Room
-              </button>
-              <button className="btn btn-outline-primary" onClick={joinFriendBattle} disabled={loadingLive || !friendBattle.inviteCode.trim()}>
-                Join With Invite
-              </button>
-              <button className="btn btn-success" onClick={shareToWhatsApp} disabled={!liveRoom?.inviteCode && !friendBattle.inviteCode}>
-                Share on WhatsApp
-              </button>
-            </div>
-            <p className="results-challenge">
-              {hasSignatureInvites
-                ? 'Your Signature Invite Pass is active. You can create a private room with your own custom code.'
-                : 'Invite code and private password work here for private matches. Buy Signature Invite Pass to create your own custom room code.'}
-            </p>
-          </div>
+            <PrivateRoomPanel
+              hasSignatureInvites={hasSignatureInvites}
+              friendBattle={friendBattle}
+              setFriendBattle={setFriendBattle}
+              createFriendBattle={createFriendBattle}
+              joinFriendBattle={joinFriendBattle}
+              shareToWhatsApp={shareToWhatsApp}
+              copyInviteCode={copyInviteCode}
+              copyInviteLink={copyInviteLink}
+              loadingLive={loadingLive}
+              currentUser={currentUser}
+              liveRoom={liveRoom}
+            />
           )}
 
           {notice && (
@@ -2965,7 +2912,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 {spectateData.text.slice(0, 200)}…
               </div>
             )}
-            <p style={{ marginTop:'0.5rem', fontSize:'0.72rem', color:'var(--arena-muted)', opacity:0.6 }}>Refreshes every 2 seconds. You cannot interact with the race.</p>
+            <p style={{ marginTop:'0.5rem', fontSize:'0.72rem', color:'var(--arena-muted)', opacity:0.6 }}>Refreshes every 3 seconds. You cannot interact with the race.</p>
           </div>
         </div>
       )}
@@ -2982,8 +2929,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </>
           ) : (
             <>
-              <h1>Queued for Live Race</h1>
-              <p className="results-challenge">{notice?.message || 'Waiting for an opponent to join your room.'}</p>
+              <h1>{liveRoom?.isPrivate ? 'Private Room Ready' : 'Queued for Live Race'}</h1>
+              <p className="results-challenge">
+                {notice?.message || (liveRoom?.isPrivate
+                  ? 'Your room is ready. Share the invite and wait for your opponent to connect.'
+                  : 'Waiting for an opponent to join your room.')}
+              </p>
               {queueElapsed > 0 && (
                 <p className="arena-queue-elapsed">
                   Waiting {queueElapsed}s
@@ -3000,6 +2951,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <div className="results-actions">
             <button className="btn btn-success" onClick={shareToWhatsApp}>
               Share on WhatsApp
+            </button>
+            <button className="btn btn-outline-light" onClick={copyInviteCode}>
+              Copy Code
+            </button>
+            <button className="btn btn-outline-light" onClick={copyInviteLink}>
+              Copy Link
             </button>
             {liveRoom?.isPrivate ? (
               <button className="btn btn-outline-danger" onClick={cancelPrivateRoom} disabled={loadingLive}>
