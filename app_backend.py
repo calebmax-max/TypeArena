@@ -5837,7 +5837,14 @@ def _fetch_thread_messages(conn, me: int, other_user_id: int, *, limit: int = 20
     return [_serialize_chat_message_row(row, me) for row in rows]
 
 
-def _create_chat_message(conn, sender: Dict[str, Any], recipient_id: int, body: str) -> tuple[Dict[str, Any], Dict[str, Any]]:
+def _create_chat_message(
+    conn,
+    sender: Dict[str, Any],
+    recipient_id: int,
+    body: str,
+    *,
+    client_msg_id: Optional[str] = None,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
     me = int(sender['id'])
     normalized_body = str(body or '').strip()
     if not normalized_body:
@@ -5867,6 +5874,8 @@ def _create_chat_message(conn, sender: Dict[str, Any], recipient_id: int, body: 
         row = cur.fetchone()
     conn.commit()
     message = _serialize_chat_message_row(row, me)
+    if client_msg_id:
+        message['clientMsgId'] = str(client_msg_id)
     return message, recipient
 
 
@@ -6064,6 +6073,7 @@ def chat_socket(ws):
             if event_type == 'message':
                 recipient_id = payload.get('recipientId')
                 body = payload.get('body')
+                client_msg_id = str(payload.get('clientMsgId') or '').strip()
                 try:
                     recipient_id_int = int(recipient_id)
                 except (TypeError, ValueError):
@@ -6072,7 +6082,13 @@ def chat_socket(ws):
                 conn = get_connection()
                 try:
                     try:
-                        message, recipient = _create_chat_message(conn, user, recipient_id_int, str(body or ''))
+                        message, recipient = _create_chat_message(
+                            conn,
+                            user,
+                            recipient_id_int,
+                            str(body or ''),
+                            client_msg_id=client_msg_id or None,
+                        )
                     except ValueError as exc:
                         _send_ws_payload(ws, {'type': 'error', 'message': str(exc)})
                         continue
@@ -6096,6 +6112,7 @@ def chat_send_message():
     payload = request.get_json(silent=True) or {}
     recipient_id = payload.get('recipientId')
     body = str(payload.get('body') or '').strip()
+    client_msg_id = str(payload.get('clientMsgId') or '').strip()
 
     try:
         recipient_id_int = int(recipient_id)
@@ -6108,7 +6125,13 @@ def chat_send_message():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         try:
-            msg_payload, recipient = _create_chat_message(conn, user, recipient_id_int, body)
+            msg_payload, recipient = _create_chat_message(
+                conn,
+                user,
+                recipient_id_int,
+                body,
+                client_msg_id=client_msg_id or None,
+            )
         except ValueError as exc:
             return jsonify({'message': str(exc)}), 400
         except LookupError as exc:

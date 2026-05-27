@@ -50,13 +50,7 @@ function formatLastSeen(isoValue) {
 }
 
 function getChatPollTimeoutSeconds() {
-  if (typeof window === 'undefined') return 25;
-  const hostname = String(window.location.hostname || '').toLowerCase();
-  const isLocalHost =
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1';
-  return isLocalHost ? 25 : 3;
+  return 3;
 }
 
 function buildWebSocketUrl(path) {
@@ -97,6 +91,50 @@ function upsertChatContact(players, nextContact) {
   };
   const remaining = players.filter((player) => String(player.id) !== String(nextContact.id));
   return [merged, ...remaining];
+}
+
+function mergeUnreadCountsIntoPlayers(players, counts) {
+  return players.map((player) => ({
+    ...player,
+    unreadCount: Number(counts?.[player.id] || 0),
+  }));
+}
+
+function sortChatMessages(messages) {
+  return [...messages].sort((left, right) => {
+    const leftTime = Date.parse(left?.sentAt || 0);
+    const rightTime = Date.parse(right?.sentAt || 0);
+    const safeLeft = Number.isNaN(leftTime) ? 0 : leftTime;
+    const safeRight = Number.isNaN(rightTime) ? 0 : rightTime;
+    if (safeLeft !== safeRight) {
+      return safeLeft - safeRight;
+    }
+    return String(left?.id || '').localeCompare(String(right?.id || ''));
+  });
+}
+
+function upsertChatMessage(messages, incomingMessage) {
+  if (!incomingMessage?.id) return sortChatMessages(messages);
+  const incomingId = String(incomingMessage.id);
+  const clientMsgId = String(incomingMessage.clientMsgId || '');
+  const matchId = clientMsgId || incomingId;
+
+  const existingIndex = messages.findIndex((message) => {
+    const messageId = String(message?.id || '');
+    const messageClientId = String(message?.clientMsgId || '');
+    return messageId === matchId || (clientMsgId && messageClientId === clientMsgId);
+  });
+
+  if (existingIndex >= 0) {
+    const nextMessages = [...messages];
+    nextMessages[existingIndex] = {
+      ...nextMessages[existingIndex],
+      ...incomingMessage,
+    };
+    return sortChatMessages(nextMessages);
+  }
+
+  return sortChatMessages([...messages, incomingMessage]);
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────
@@ -221,7 +259,22 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
       if (Array.isArray(data) && data.length > 0) {
         lastIdRef.current = Math.max(...data.map((m) => m.id));
       }
-      setMessages(Array.isArray(data) ? data : []);
+      setMessages((prev) => {
+        const nextMessages = Array.isArray(data) ? data : [];
+        const pendingMessages = prev.filter((message) => String(message.id || '').startsWith('tmp_'));
+        if (pendingMessages.length === 0) {
+          return sortChatMessages(nextMessages);
+        }
+
+        const seenIds = new Set(nextMessages.map((message) => String(message.id)));
+        const mergedMessages = [...nextMessages];
+        pendingMessages.forEach((message) => {
+          if (!seenIds.has(String(message.id))) {
+            mergedMessages.push(message);
+          }
+        });
+        return sortChatMessages(mergedMessages);
+      });
       if (sendSocketEvent) {
         sendSocketEvent({ type: 'mark_read', partnerId: partner.id });
       }
@@ -282,9 +335,6 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
     if (!socketEvent || socketEvent.type !== 'chat_message') return;
     const msg = socketEvent.message;
     if (!msg) return;
-    if (String(msg.senderId) === String(currentUserId)) {
-      return;
-    }
     const touchesThread =
       (
         String(msg.senderId) === String(partner.id) &&
@@ -295,14 +345,10 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
         String(msg.recipientId) === String(partner.id)
       );
     if (!touchesThread) return;
-    lastIdRef.current = Math.max(lastIdRef.current, Number(msg.id) || 0);
-    setMessages((prev) => {
-      const existing = new Set(prev.map((item) => String(item.id)));
-      if (existing.has(String(msg.id))) {
-        return prev.map((item) => (String(item.id) === String(msg.id) ? { ...item, ...msg } : item));
-      }
-      return [...prev, msg];
-    });
+    if (msg.id) {
+      lastIdRef.current = Math.max(lastIdRef.current, Number(msg.id) || 0);
+    }
+    setMessages((prev) => upsertChatMessage(prev, msg));
     if (String(msg.senderId) === String(partner.id) && sendSocketEvent) {
       sendSocketEvent({ type: 'mark_read', partnerId: partner.id });
     }
@@ -334,6 +380,7 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
     const tempId = `tmp_${Date.now()}`;
     const optimistic = {
       id: tempId,
+      clientMsgId: tempId,
       senderId: currentUserId,
       recipientId: partner.id,
       body,
@@ -344,15 +391,24 @@ function Thread({ partner, currentUserId, onBack, apiFetch, socketConnected, soc
     setMessages((prev) => [...prev, optimistic]);
 
     try {
-      const msg = await apiFetch('/api/chat/messages', {
-        method: 'POST',
-        body: JSON.stringify({ recipientId: partner.id, body }),
+      const sentViaSocket = sendSocketEvent({
+        type: 'message',
+        recipientId: partner.id,
+        body,
+        clientMsgId: tempId,
       });
-      if (msg && msg.id) {
-        // Update lastId so long-poll doesn't re-add this message
-        lastIdRef.current = Math.max(lastIdRef.current, msg.id);
-        // Replace temp with confirmed message
-        setMessages((prev) => prev.map((m) => m.id === tempId ? msg : m));
+
+      if (!sentViaSocket) {
+        const msg = await apiFetch('/api/chat/messages', {
+          method: 'POST',
+          body: JSON.stringify({ recipientId: partner.id, body, clientMsgId: tempId }),
+        });
+        if (msg && msg.id) {
+          // Update lastId so long-poll doesn't re-add this message
+          lastIdRef.current = Math.max(lastIdRef.current, msg.id);
+          // Replace temp with confirmed message
+          setMessages((prev) => prev.map((m) => (String(m.id) === tempId ? msg : m)));
+        }
       }
     } catch (error) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -544,6 +600,7 @@ export default function ChatWidget({ currentUser }) {
 
   const isLoggedIn = Boolean(currentUser?.id);
   const socketRef = useRef(null);
+  const socketConnectedRef = useRef(false);
 
   const apiFetchRef = useRef(makeApiFetch(currentUser?.id));
   useEffect(() => {
@@ -557,8 +614,12 @@ export default function ChatWidget({ currentUser }) {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return false;
     }
-    socket.send(JSON.stringify(payload));
-    return true;
+    try {
+      socket.send(JSON.stringify(payload));
+      return true;
+    } catch (_) {
+      return false;
+    }
   }, []);
 
   useEffect(() => {
@@ -580,6 +641,7 @@ export default function ChatWidget({ currentUser }) {
 
       socket.addEventListener('open', () => {
         if (!active) return;
+        socketConnectedRef.current = true;
         setSocketConnected(true);
         setListError('');
       });
@@ -596,12 +658,14 @@ export default function ChatWidget({ currentUser }) {
 
       socket.addEventListener('close', () => {
         if (!active) return;
+        socketConnectedRef.current = false;
         setSocketConnected(false);
         reconnectTimer = window.setTimeout(connect, 2000);
       });
 
       socket.addEventListener('error', () => {
         if (!active) return;
+        socketConnectedRef.current = false;
         setSocketConnected(false);
       });
     };
@@ -610,6 +674,7 @@ export default function ChatWidget({ currentUser }) {
 
     return () => {
       active = false;
+      socketConnectedRef.current = false;
       setSocketConnected(false);
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer);
@@ -650,9 +715,9 @@ export default function ChatWidget({ currentUser }) {
           setListError(error.message || 'Could not load chats.');
         });
     load();
-    const id = setInterval(load, 20000);
+    const id = setInterval(load, socketConnectedRef.current ? 60000 : 20000);
     return () => clearInterval(id);
-  }, [isLoggedIn, apiFetch]);
+  }, [isLoggedIn, apiFetch, socketConnected]);
 
   // Poll unread counts
   useEffect(() => {
@@ -662,16 +727,13 @@ export default function ChatWidget({ currentUser }) {
         .then((counts) => {
           setUnread(counts);
           setTotalUnread(Object.values(counts).reduce((s, n) => s + n, 0));
-          setPlayers((prev) => prev.map((player) => ({
-            ...player,
-            unreadCount: Number(counts?.[player.id] || 0),
-          })));
+          setPlayers((prev) => mergeUnreadCountsIntoPlayers(prev, counts));
         })
         .catch(() => {});
     load();
-    const id = setInterval(load, 8000);
+    const id = setInterval(load, socketConnectedRef.current ? 60000 : 8000);
     return () => clearInterval(id);
-  }, [isLoggedIn, apiFetch]);
+  }, [isLoggedIn, apiFetch, socketConnected]);
 
   // Clear unread for current thread
   useEffect(() => {
@@ -730,6 +792,19 @@ export default function ChatWidget({ currentUser }) {
           return { ...prev, [peerId]: nextCount };
         });
         setTotalUnread((count) => count + 1);
+      }
+      if (String(message.senderId) === String(currentUser?.id)) {
+        setPlayers((prev) =>
+          prev.map((player) =>
+            String(player.id) === String(message.recipientId)
+              ? {
+                  ...player,
+                  lastMessageAt: message.sentAt || player.lastMessageAt,
+                  unreadCount: Number(player.unreadCount || 0),
+                }
+              : player
+          )
+        );
       }
     }
   }, [socketEvent, currentUser?.id, open, partner]);
