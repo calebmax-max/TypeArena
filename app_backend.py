@@ -1087,6 +1087,9 @@ def _ensure_user_equipped_columns(cur) -> None:
     cur.execute("SHOW COLUMNS FROM users LIKE 'equipped_frame'")
     if not cur.fetchone():
         cur.execute("ALTER TABLE users ADD COLUMN equipped_frame VARCHAR(80) NULL AFTER equipped_effect")
+    cur.execute("SHOW COLUMNS FROM users LIKE 'equipped_cursor'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE users ADD COLUMN equipped_cursor VARCHAR(80) NULL AFTER equipped_frame")
 
 
 # ── Season reset helpers ──────────────────────────────────────────────────────
