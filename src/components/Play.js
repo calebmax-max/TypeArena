@@ -1020,6 +1020,9 @@ export default function Play({ practicePage = false }){
   const ghostIntervalRef = useRef(null);
   // ── Feature #10: Win streak ───────────────────────────────────────────────
   const [winStreak, setWinStreak] = useState(() => getWinStreak());
+  // Fix #13: unique SVG gradient ID per component instance — prevents collisions
+  // when React strict-mode mounts the component twice or when two instances coexist.
+  const sparkGradId = useRef(`sparkGrad-${Math.random().toString(36).slice(2)}`);
   // ────────────────────────────────────────────────────────────────────────────
 
   // activeKeys is stored in a ref and applied directly to DOM to avoid
@@ -1394,10 +1397,16 @@ const flushLiveHeartbeat = useCallback(async () => {
     isSubmittingRef.current = true;
 
     try {
-        const elapsed = Math.max(1, duration - timeLeft);
+        // Fix #9: read from refs instead of stale closure values so the final
+        // tick always gets the real last-known timeLeft / typingText / replayFrames.
+        const currentTypingText   = typingTextRef.current;
+        const currentTimeLeft     = timeLeftRef.current;
+        const currentReplayFrames = replayFramesRef.current;
+
+        const elapsed = Math.max(1, duration - currentTimeLeft);
         const sourceText = liveRoom?.text || generatedContent?.passage || MODE_CONFIG.find((item) => item.id === mode)?.description || '';
-        const wpm = calculateWPM(typingText, elapsed);
-        const accuracy = calculateAccuracy(sourceText, typingText);
+        const wpm = calculateWPM(currentTypingText, elapsed);
+        const accuracy = calculateAccuracy(sourceText, currentTypingText);
         
         const finalData = {
             id: generateRaceId(),
@@ -1424,7 +1433,7 @@ const flushLiveHeartbeat = useCallback(async () => {
                     ...finalData,
                     netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
                     coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
-                    replayFrames,
+                    replayFrames: currentReplayFrames,
                     shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
                     completedAt: new Date().toISOString(),
                     standings: [],
@@ -1459,7 +1468,7 @@ const flushLiveHeartbeat = useCallback(async () => {
         const pb = getPB(mode, language, duration);
         const isNewPBNow = !pb || wpm > pb.wpm;
         if (isNewPBNow) {
-            savePB(mode, language, duration, wpm, accuracy, replayFrames);
+            savePB(mode, language, duration, wpm, accuracy, currentReplayFrames);
             setIsNewPB(true);
         }
 
@@ -1483,7 +1492,7 @@ const flushLiveHeartbeat = useCallback(async () => {
             ...finalData,
             netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
             coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
-            replayFrames,
+            replayFrames: currentReplayFrames,
             shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
             completedAt: new Date().toISOString(),
         };
@@ -1501,7 +1510,8 @@ const flushLiveHeartbeat = useCallback(async () => {
     } finally {
         isSubmittingRef.current = false;
     }
-}, [commentatorEnabled, currentUser?.name, currentUser?.username, duration, timeLeft, liveRoom, generatedContent, mode, language, typingText, replayFrames, setPhase, buildRoomResultPayload, setRaceResult]);
+// Fix #9: removed timeLeft, typingText, replayFrames from deps — read via refs above.
+}, [commentatorEnabled, currentUser?.name, currentUser?.username, duration, liveRoom, generatedContent, mode, language, setPhase, buildRoomResultPayload, setRaceResult]);
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
@@ -1538,7 +1548,10 @@ const flushLiveHeartbeat = useCallback(async () => {
   }, [phase]);
 
   useEffect(() => {
-    if (!liveRoom?.id || phase === 'lobby' || phase === 'waiting') {
+    // Fix #10: removed `phase === 'waiting'` from the early-return guard.
+    // The 'waiting' phase was never actually set anywhere, making the guard dead code
+    // that would also block polling if the phase were ever used in future.
+    if (!liveRoom?.id || phase === 'lobby') {
       return undefined;
     }
 
@@ -2156,7 +2169,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
   };
 
-  const joinFriendBattle = async () => {
+  // Fix #11: useCallback so pendingRematch effect (and direct callers) always
+  // see the current friendBattle.inviteCode / password, not a stale closure.
+  const joinFriendBattle = useCallback(async () => {
     if (!currentUser?.id) {
       redirectToProfile();
       return;
@@ -2219,7 +2234,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     } finally {
       setLoadingLive(false);
     }
-  };
+  }, [currentUser?.id, duration, friendBattle.inviteCode, friendBattle.password, language, mode, navigate, redirectToProfile, refreshFeed, showNotice]);
 
   const shareToWhatsApp = () => {
     if (!liveRoom?.inviteCode && !friendBattle.inviteCode) {
@@ -2269,7 +2284,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       queuedAtRef.current = null;
       setPhase('lobby');
       setLoadingLive(false);
-      await refreshFeed();
+      // Fix #15: fire-and-forget — lobby is already reset above; awaiting here
+      // causes any refreshFeed rejection to surface as an unhandled promise rejection.
+      refreshFeed();
     }
   };
 
@@ -2283,6 +2300,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
     const value = event.target.value;
     const src = liveRoom?.text || (useCustomText && customText ? customText : null) || generatedContent?.passage || '';
+    // Fix #12: cap input at source length — typing past the end silently inflated
+    // WPM because extra characters contributed to the character count but were
+    // never visible or penalised in the accuracy calculation.
+    if (src && value.length > src.length) return;
     const newLen = value.length;
     const prevLen = typingText.length;
 
@@ -3017,6 +3038,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <p className="results-challenge" style={{ marginTop: '1rem', fontSize: '0.85rem', opacity: 0.7 }}>
             Results will appear automatically once both players finish.
           </p>
+          {/* Fix #14: give the user an escape route so they can never get permanently stuck */}
+          <div className="results-actions" style={{ marginTop: '1rem' }}>
+            <button className="btn btn-secondary" onClick={backToLobby}>
+              Back to Lobby
+            </button>
+          </div>
         </div>
       )}
 
@@ -3086,12 +3113,13 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   <span style={{ position:'absolute', top:0, left:0, fontSize:'0.62rem', color:'var(--arena-muted)', opacity:0.7 }}>{Math.round(maxW)} wpm</span>
                   <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display:'block', width:'100%' }} aria-label="WPM over time">
                     <defs>
-                      <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                      {/* Fix #13: use instance-unique ID to avoid gradient collision under strict mode */}
+                      <linearGradient id={sparkGradId.current} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="var(--arena-accent)" stopOpacity="0.22" />
                         <stop offset="100%" stopColor="var(--arena-accent)" stopOpacity="0" />
                       </linearGradient>
                     </defs>
-                    <path d={areaPath} fill="url(#sparkGrad)" />
+                    <path d={areaPath} fill={`url(#${sparkGradId.current})`} />
                     <polyline fill="none" stroke="var(--arena-accent)" strokeWidth="2" strokeLinejoin="round" points={polyline} />
                     {/* current dot */}
                     <circle cx={pts[pts.length-1][0]} cy={pts[pts.length-1][1]} r="3" fill="var(--arena-accent)" />
