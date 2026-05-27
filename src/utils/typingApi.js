@@ -794,9 +794,13 @@ const FALLBACK_PASSAGES = [
   },
 ];
 
+// Reduced from 8 s → 5 s so contentLoading clears faster on slow/cold backends.
+// Adjust here if your Render instance regularly needs more warm-up time.
+const CONTENT_LOAD_TIMEOUT_MS = 5000;
+
 export const generateRaceContent = async (mode, language) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), CONTENT_LOAD_TIMEOUT_MS);
   try {
     const response = await apiFetch(
       buildApiUrl(`/api/race-content/generate?mode=${encodeURIComponent(mode)}&language=${encodeURIComponent(language)}`),
@@ -805,15 +809,41 @@ export const generateRaceContent = async (mode, language) => {
     clearTimeout(timeoutId);
     return await parseResponse(response);
   } catch (error) {
+    // Always clear the timeout — even if abort fired it may not have been cleared yet.
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      console.warn('generateRaceContent timed out — using fallback passage.');
+      console.warn(`generateRaceContent timed out after ${CONTENT_LOAD_TIMEOUT_MS} ms — using fallback passage.`);
     } else {
       console.error('Error generating race content:', error);
     }
+    // Guaranteed fallback: this function NEVER rejects, so contentLoading
+    // always clears in the caller's finally block.
     return FALLBACK_PASSAGES[Math.floor(Math.random() * FALLBACK_PASSAGES.length)];
   }
 };
+
+/**
+ * Drop-in wrapper around generateRaceContent that is guaranteed to resolve
+ * within CONTENT_LOAD_TIMEOUT_MS + a small buffer, no matter what.
+ *
+ * Use this wherever you set contentLoading = true so the loading state can
+ * never get permanently stuck even if an unexpected synchronous throw occurs.
+ *
+ * Usage (in your component):
+ *   const content = await loadGeneratedContentSafe(mode, language);
+ */
+export const loadGeneratedContentSafe = (mode, language) =>
+  Promise.race([
+    generateRaceContent(mode, language),
+    // Hard-stop safety net: resolves to a fallback slightly after the inner
+    // abort fires, ensuring the Promise always settles.
+    new Promise((resolve) =>
+      setTimeout(
+        () => resolve(FALLBACK_PASSAGES[Math.floor(Math.random() * FALLBACK_PASSAGES.length)]),
+        CONTENT_LOAD_TIMEOUT_MS + 500
+      )
+    ),
+  ]);
 
 // --- Marketplace & Store Catalog APIs ---
 
