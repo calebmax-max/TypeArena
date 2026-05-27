@@ -11,6 +11,7 @@ import json
 import os
 import secrets
 import string
+import threading as _threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -1521,18 +1522,73 @@ def _is_password_hashed(password_value: str) -> bool:
     return value.startswith('pbkdf2:') or value.startswith('scrypt:')
 
 
+class _ConnectionPool:
+    """
+    Thread-safe pool of persistent pymysql connections.
+    Eliminates the ~100-300ms TCP+auth handshake cost on every request.
+    Connections are validated with ping() before being handed out.
+    """
+    def __init__(self, size: int = 8):
+        self._size = size
+        self._pool: list = []
+        self._lock = _threading.Lock()
+
+    def _make_conn(self):
+        if not DB_HOST or not DB_USER or not DB_NAME:
+            raise RuntimeError(
+                'Alwaysdata database environment variables are missing. '
+                'Set ALWAYSDATA_DB_HOST, ALWAYSDATA_DB_USER, ALWAYSDATA_DB_PASSWORD, and ALWAYSDATA_DB_NAME.'
+            )
+        return pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=False,
+        )
+
+    def get(self):
+        with self._lock:
+            if self._pool:
+                conn = self._pool.pop()
+                try:
+                    conn.ping(reconnect=True)
+                    return conn
+                except Exception:
+                    pass  # stale — fall through to make a new one
+        return self._make_conn()
+
+    def put(self, conn):
+        try:
+            conn.rollback()  # discard any uncommitted transaction
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return
+        with self._lock:
+            if len(self._pool) < self._size:
+                self._pool.append(conn)
+                return
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+_db_pool = _ConnectionPool(size=8)
+
+
 def get_connection() -> pymysql.connections.Connection:
-    if not DB_HOST or not DB_USER or not DB_NAME:
-        raise RuntimeError('Alwaysdata database environment variables are missing. Set ALWAYSDATA_DB_HOST, ALWAYSDATA_DB_USER, ALWAYSDATA_DB_PASSWORD, and ALWAYSDATA_DB_NAME.')
-    return pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        charset='utf8mb4',
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=False,
-    )
+    return _db_pool.get()
+
+
+def _return_connection(conn) -> None:
+    """Return a connection to the pool instead of closing it."""
+    _db_pool.put(conn)
 
 
 def _now_iso() -> str:
@@ -2368,32 +2424,30 @@ def _apply_user_performance_update(
     return updated_user
 
 
-def _persist_completed_live_race(room: Dict[str, Any]) -> None:
+def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
     if room.get('resultsPersisted'):
         return
 
     player_ids = [player['userId'] for player in room.get('players', [])]
     results = room.get('results', {})
-    
-    # NEW GUARD: If the room is already 'completed', we ignore the missing results
-    # check and proceed to persist whatever we have collected so far.
+
     is_completed = str(room.get('status') or '').lower() == 'completed'
-    
     if not is_completed:
         if not player_ids or any(player_id not in results for player_id in player_ids):
             return
 
     winner_user_id = room.get('winnerUserId')
     winner_prize = float(room.get('winnerPrize') or 0)
-    
-    conn = get_connection()
+
+    # Use the caller's connection if provided — avoids an extra TCP round-trip
+    _owns_conn = conn is None
+    if _owns_conn:
+        conn = get_connection()
     try:
         with conn.cursor() as cur:
             for player in room.get('players', []):
                 user_id = int(player['userId'])
-                # Use .get() safely to avoid KeyErrors if a result is missing
                 result = results.get(user_id, {})
-                
                 _apply_user_performance_update(
                     cur,
                     user_id=user_id,
@@ -2405,12 +2459,14 @@ def _persist_completed_live_race(room: Dict[str, Any]) -> None:
                     earnings=winner_prize if user_id == winner_user_id else 0,
                     did_win=user_id == winner_user_id,
                 )
-        conn.commit()
+        if _owns_conn:
+            conn.commit()
         room['resultsPersisted'] = True
     finally:
-        conn.close()
+        if _owns_conn:
+            _return_connection(conn)
 
-def _complete_live_race_if_ready(room: Dict[str, Any]) -> None:
+def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
     player_ids = [player['userId'] for player in room.get('players', [])]
     if len(player_ids) < 2:
         return
@@ -2430,9 +2486,13 @@ def _complete_live_race_if_ready(room: Dict[str, Any]) -> None:
     escrow_total = float(room.get('totalEscrow') or 0)
     winner_prize = escrow_total if room.get('isPrivate') and escrow_total > 0 else float(room.get('winnerPrize') or 0)
     if winner_prize <= 0:
+        _persist_completed_live_race(room, conn=conn)
         return
 
-    conn = get_connection()
+    # Use the caller's connection if provided — avoids an extra TCP round-trip
+    _owns_conn = conn is None
+    if _owns_conn:
+        conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute('SELECT * FROM users WHERE id=%s', (winner_user_id,))
@@ -2447,13 +2507,16 @@ def _complete_live_race_if_ready(room: Dict[str, Any]) -> None:
                 phone_number=str(winner.get('phone_number') or ''),
                 payout_code_prefix='livewin',
             )
-        conn.commit()
+        if _owns_conn:
+            conn.commit()
         room['winner'] = _safe_user(updated_winner)
         room['winnerPrize'] = winner_prize
     finally:
-        conn.close()
+        if _owns_conn:
+            _return_connection(conn)
+            conn = None  # don't pass a closed/returned conn to persist
 
-    _persist_completed_live_race(room)
+    _persist_completed_live_race(room, conn=conn)
 def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
     if not room or str(room.get('status') or '').lower() == 'completed':
         return False
@@ -2635,7 +2698,6 @@ def _load_live_room_from_row(row: Optional[Dict[str, Any]]) -> Optional[Dict[str
 
 
 def _save_live_room(cur, room: Dict[str, Any]) -> Dict[str, Any]:
-    _ensure_live_race_rooms_table(cur)
     room_id = str(room.get('id') or '').strip()
     if not room_id:
         raise ValueError('Live room is missing an id.')
@@ -2670,7 +2732,6 @@ def _get_live_room(cur, room_id: str) -> Optional[Dict[str, Any]]:
     if not normalized:
         return None
 
-    _ensure_live_race_rooms_table(cur)
     cur.execute('SELECT * FROM live_race_rooms WHERE room_id=%s LIMIT 1', (normalized,))
     room = _load_live_room_from_row(cur.fetchone())
     if room:
@@ -2687,7 +2748,6 @@ def _get_live_room_by_invite(cur, invite_code: str) -> Optional[Dict[str, Any]]:
     if not normalized:
         return None
 
-    _ensure_live_race_rooms_table(cur)
     cur.execute('SELECT * FROM live_race_rooms WHERE invite_code=%s LIMIT 1', (normalized,))
     room = _load_live_room_from_row(cur.fetchone())
     if room:
@@ -2700,7 +2760,6 @@ def _get_live_room_by_invite(cur, invite_code: str) -> Optional[Dict[str, Any]]:
 
 
 def _list_live_rooms(cur) -> list[Dict[str, Any]]:
-    _ensure_live_race_rooms_table(cur)
     cur.execute(
         '''
         SELECT *
@@ -2721,7 +2780,6 @@ def _delete_live_room(cur, room_id: str) -> None:
     normalized = str(room_id or '').strip()
     if not normalized:
         return
-    _ensure_live_race_rooms_table(cur)
     cur.execute('DELETE FROM live_race_rooms WHERE room_id=%s', (normalized,))
     LIVE_RACE_ROOMS.pop(normalized, None)
 
@@ -2749,7 +2807,10 @@ def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
         except ValueError:
             return None
         with conn.cursor() as cur:
-            cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+            cur.execute(
+                'SELECT id, username, email, balance, wpm, accuracy, total_races, wins, phone_number, auth_token, equipped_theme, equipped_cursor, equipped_badge FROM users WHERE id = %s',
+                (user_id,)
+            )
             return cur.fetchone()
 
     # 2. Bearer token issued at login / signup
@@ -2758,7 +2819,10 @@ def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
         token = auth[7:].strip()
         if token:
             with conn.cursor() as cur:
-                cur.execute('SELECT * FROM users WHERE auth_token = %s', (token,))
+                cur.execute(
+                    'SELECT id, username, email, balance, wpm, accuracy, total_races, wins, phone_number, auth_token, equipped_theme, equipped_cursor, equipped_badge FROM users WHERE auth_token = %s',
+                    (token,)
+                )
                 return cur.fetchone()
 
     return None
@@ -2833,7 +2897,7 @@ def admin_login():
             _get_admin_user(cur)
         conn.commit()
     finally:
-        conn.close()
+        _return_connection(conn)
 
     token = _issue_admin_token()
     return jsonify({'token': token, 'adminEmail': ADMIN_EMAIL})
@@ -2891,7 +2955,7 @@ def admin_create_tournament():
         conn.commit()
         return jsonify({'message': 'Tournament created successfully.', 'tournament': _serialize_tournament(tournament)}), 201
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.delete('/api/admin/tournaments/<int:tournament_id>')
@@ -2914,7 +2978,7 @@ def admin_delete_tournament(tournament_id: int):
         conn.commit()
         return jsonify({'message': 'Tournament deleted successfully.'})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.delete('/api/admin/tournaments')
@@ -2948,7 +3012,7 @@ def admin_delete_all_tournaments():
         conn.commit()
         return jsonify({'message': f'Cleared {total_deleted} tournament{"s" if total_deleted != 1 else ""}.', 'deletedCount': total_deleted})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.put('/api/admin/tournaments/<int:tournament_id>')
@@ -3009,7 +3073,7 @@ def admin_update_tournament(tournament_id: int):
         conn.commit()
         return jsonify({'message': 'Tournament updated successfully.', 'tournament': _serialize_tournament(updated)})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/admin/tournaments/<int:tournament_id>/participants')
@@ -3051,7 +3115,7 @@ def admin_tournament_participants(tournament_id: int):
         ]
         return jsonify(participants)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/admin/tournaments/<int:tournament_id>/force-start')
@@ -3141,7 +3205,7 @@ def admin_force_start_tournament(tournament_id: int):
             'prizePool': round(entry_fee * actual_count * WINNER_PRIZE_SHARE, 2),
         })
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/admin/tournaments/<int:tournament_id>/cancel')
@@ -3188,7 +3252,7 @@ def admin_cancel_tournament(tournament_id: int):
             'refundedPlayers': refunded_count,
         })
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/tournaments/<int:tournament_id>/winner')
@@ -3228,7 +3292,7 @@ def tournament_winner(tournament_id: int):
             }
         })
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/admin/wallet')
@@ -3264,7 +3328,7 @@ def admin_wallet_summary():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/admin/wallet/topup')
@@ -3316,7 +3380,7 @@ def admin_wallet_topup():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/admin/wallet/withdraw')
@@ -3371,7 +3435,7 @@ def admin_wallet_withdraw():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/admin/analytics')
@@ -3494,7 +3558,7 @@ def admin_analytics():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/admin/ai-settings')
@@ -3594,7 +3658,7 @@ def auth_signup():
         response['token'] = token
         return jsonify(response), 201
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/auth/login')
@@ -3639,7 +3703,7 @@ def auth_login():
             safe_user['adminToken'] = _issue_admin_token()
         return jsonify(safe_user)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/user/me')
@@ -3659,7 +3723,7 @@ def user_me():
         response['token'] = token
         return jsonify(response)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/auth/refresh')
@@ -3678,7 +3742,7 @@ def auth_refresh():
         response['token'] = token
         return jsonify(response)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/wallet/history')
@@ -3692,7 +3756,7 @@ def wallet_history():
             history = _get_recent_wallet_history(cur, user['id'])
         return jsonify(history)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/wallet/config')
@@ -3836,7 +3900,7 @@ def wallet_withdraw():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/wallet/topup')
@@ -3994,7 +4058,7 @@ def wallet_topup():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/mpesa_payment')
@@ -4122,7 +4186,7 @@ def mpesa_payment():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/mpesa/callback/topup')
@@ -4165,7 +4229,7 @@ def mpesa_topup_callback():
         conn.commit()
         return jsonify({'ResultCode': 0, 'ResultDesc': 'Callback processed successfully'})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/wallet/topup/verify')
@@ -4230,7 +4294,7 @@ def verify_wallet_topup():
                 }
             )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/wallet/topup/status')
@@ -4277,7 +4341,7 @@ def wallet_topup_status():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/wallet/withdraw/status')
@@ -4326,7 +4390,7 @@ def wallet_withdraw_status():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/stripe/webhook')
@@ -4368,7 +4432,7 @@ def stripe_webhook():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/prizes/payout')
@@ -4464,7 +4528,7 @@ def payout_prize_to_winner():
                 }
             )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/mpesa/callback/b2c-result')
@@ -4538,7 +4602,7 @@ def mpesa_b2c_result_callback():
         conn.commit()
         return jsonify({'ResultCode': 0, 'ResultDesc': 'B2C result callback processed'})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/mpesa/callback/b2c-timeout')
@@ -4596,7 +4660,7 @@ def mpesa_b2c_timeout_callback():
         conn.commit()
         return jsonify({'ResultCode': 0, 'ResultDesc': 'B2C timeout callback processed'})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/live-races')
@@ -4613,7 +4677,7 @@ def list_live_races():
             )
         return jsonify(rooms[:20])
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/live-races/queue')
@@ -4624,8 +4688,6 @@ def queue_live_race():
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
-        user_owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0)))
-        user_perks = _store_perks_from_owned_items(user_owned_items)
         with conn.cursor() as cur:
             mode = str(payload.get('mode') or 'standard').strip().lower()
             language = str(payload.get('language') or 'english').strip().lower()
@@ -4637,10 +4699,13 @@ def queue_live_race():
             winner_prize = float(payload.get('winnerPrize') or 0)
             stake_amount = 0.0
             winner_takes_all = False
-            _ensure_live_race_rooms_table(cur)
 
-            if is_private and invite_code and not user_perks.get('customInviteCodes'):
-                return jsonify({'message': 'Buy the Signature Invite Pass in the marketplace to create custom private room codes.'}), 400
+            # Only query store items when actually needed (custom invite code check)
+            if is_private and invite_code:
+                user_owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0)))
+                user_perks = _store_perks_from_owned_items(user_owned_items)
+                if not user_perks.get('customInviteCodes'):
+                    return jsonify({'message': 'Buy the Signature Invite Pass in the marketplace to create custom private room codes.'}), 400
 
             text = _generate_live_battle_passage(mode, language, is_private=is_private)
             player_snapshot = {
@@ -4676,11 +4741,21 @@ def queue_live_race():
                     )
 
             if not is_private:
-                for room in _list_live_rooms(cur):
+                # Filter in SQL — avoids deserializing up to 100 rooms in Python
+                cur.execute(
+                    '''
+                    SELECT * FROM live_race_rooms
+                    WHERE status = 'waiting' AND is_private = 0
+                    ORDER BY created_at ASC
+                    LIMIT 20
+                    ''',
+                )
+                for row in cur.fetchall():
+                    room = _load_live_room_from_row(row)
+                    if not room:
+                        continue
                     if (
-                        room['status'] == 'waiting'
-                        and not room.get('isPrivate')
-                        and room['mode'] == mode
+                        room['mode'] == mode
                         and room['language'] == language
                         and room['duration'] == duration
                         and room.get('tournamentId') == tournament_id
@@ -4740,7 +4815,7 @@ def queue_live_race():
                 }
             ), 201
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/live-races/<room_id>')
@@ -4751,16 +4826,19 @@ def get_live_race(room_id: str):
             room = _get_live_room(cur, room_id)
             if not room:
                 return jsonify({'message': 'Live race room not found.'}), 404
-            _finalize_live_room_if_expired(room)
+            expired = _finalize_live_room_if_expired(room)
             user_id_raw = request.headers.get('X-User-Id')
             viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
-            if viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}:
+            is_spectator = viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}
+            if is_spectator:
                 room['spectators'] = int(room.get('spectators') or 0) + 1
-            _save_live_room(cur, room)
-            conn.commit()
+            # Only persist when something meaningful changed
+            if expired or is_spectator:
+                _save_live_room(cur, room)
+                conn.commit()
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/live-races/invite/<invite_code>')
@@ -4778,7 +4856,7 @@ def get_live_race_by_invite(invite_code: str):
             viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/live-races/<room_id>/cancel')
@@ -4822,7 +4900,7 @@ def cancel_live_race(room_id: str):
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/live-races/<room_id>/heartbeat')
@@ -4837,6 +4915,7 @@ def update_live_race_progress(room_id: str):
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         payload = request.get_json(silent=True) or {}
+        status_before = room.get('status')
         for player in room.get('players', []):
             if player['userId'] == user['id']:
                 player['progress'] = max(0, min(100, int(payload.get('progress') or 0)))
@@ -4845,13 +4924,17 @@ def update_live_race_progress(room_id: str):
                 break
         if room['status'] == 'countdown':
             room['status'] = 'racing'
-        _finalize_live_room_if_expired(room)
-        with conn.cursor() as cur:
-            _save_live_room(cur, room)
-        conn.commit()
+        expired = _finalize_live_room_if_expired(room)
+        status_changed = room.get('status') != status_before
+        # Only write to DB when status transitions (countdown→racing, racing→completed)
+        # or when the room just expired. Progress-only ticks skip the write entirely.
+        if status_changed or expired:
+            with conn.cursor() as cur:
+                _save_live_room(cur, room)
+            conn.commit()
         return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/live-races/<room_id>/submit')
@@ -4880,13 +4963,13 @@ def submit_live_race(room_id: str):
             'finishedAt': _now_iso(),
             'finishedAtTs': datetime.utcnow().timestamp(),
         }
-        _complete_live_race_if_ready(room)
+        _complete_live_race_if_ready(room, conn=conn)
         with conn.cursor() as cur:
             _save_live_room(cur, room)
         conn.commit()
         return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/race-content/generate')
@@ -4924,7 +5007,7 @@ def store_catalog():
             items.append(enriched)
         return jsonify({'items': items})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/store/purchase')
@@ -4986,7 +5069,7 @@ def store_purchase():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/store/bundle-purchase')
@@ -5076,7 +5159,7 @@ def store_bundle_purchase():
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/tournaments')
@@ -5092,7 +5175,7 @@ def get_tournaments():
         conn.commit()
         return jsonify([_serialize_tournament(r, owned_items) for r in rows])
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/tournaments/<int:tournament_id>/join')
@@ -5274,7 +5357,7 @@ def join_tournament(tournament_id: int):
             }
         )
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/season/snapshots')
@@ -5318,7 +5401,7 @@ def season_snapshots():
         ]
         return jsonify(data)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/leaderboard')
@@ -5433,7 +5516,7 @@ def leaderboard():
 
         return jsonify(board)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 
@@ -5486,7 +5569,7 @@ def presence_ping():
         conn.commit()
         return jsonify({'ok': True})
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/presence/online')
@@ -5521,7 +5604,7 @@ def presence_online():
         ]
         return jsonify(online)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/chat/messages/<int:other_user_id>')
@@ -5569,7 +5652,7 @@ def chat_get_messages(other_user_id: int):
         ]
         return jsonify(messages)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 # ── Long-poll infrastructure (must be defined BEFORE chat_send_message) ──────
@@ -5666,7 +5749,7 @@ def chat_send_message():
         _notify_user(me)
         return jsonify(msg_payload), 201
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/chat/poll/<int:other_user_id>')
@@ -5687,7 +5770,7 @@ def chat_long_poll(other_user_id: int):
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
     finally:
-        conn.close()
+        _return_connection(conn)
 
     try:
         since_id = int(request.args.get('since', 0))
@@ -5780,7 +5863,7 @@ def chat_unread_counts():
         counts = {int(row['sender_id']): int(row['cnt']) for row in rows}
         return jsonify(counts)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.post('/api/races/submit')
@@ -5862,7 +5945,7 @@ def submit_race():
             }
         ), 201
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.get('/api/users/<int:user_id>/races')
@@ -5897,7 +5980,7 @@ def user_races(user_id: int):
         ]
         return jsonify(data)
     finally:
-        conn.close()
+        _return_connection(conn)
 
 
 @app.put('/api/users/<int:user_id>')
@@ -5924,7 +6007,7 @@ def update_user(user_id: int):
         conn.commit()
         return jsonify(_safe_user(updated))
     finally:
-        conn.close()
+        _return_connection(conn)
 def _frontend_file_response(path: str = ''):
     if not BUILD_DIR.exists():
         return jsonify({'message': 'Frontend build not found on server. Upload the build/ directory.'}), 404
@@ -5977,16 +6060,16 @@ def _bootstrap_db() -> None:
         try:
             with conn.cursor() as cur:
                 _ensure_chat_tables(cur)
+                _ensure_live_race_rooms_table(cur)
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_admin_wallet_transactions_table(cur)
-                _ensure_live_race_rooms_table(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_user_equipped_columns(cur)
                 _ensure_season_tables(cur)
             conn.commit()
         finally:
-            conn.close()
+            _return_connection(conn)
     except Exception as exc:  # noqa: BLE001
         app.logger.warning('Bootstrap DB warning (non-fatal): %s', exc)
 
