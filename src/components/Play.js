@@ -616,12 +616,6 @@ const speakSequence = (sentences, opts = {}) => {
   speak(0);
 };
 
-// Convenience: single random line from a pool (legacy call sites)
-// eslint-disable-next-line no-unused-vars
-const speakCommentary = (lines, opts = {}) => {
-  speakSequence([_pick(lines)], opts);
-};
-
 // ---------------------------------------------------------------------------
 // Commentator script library — arrays of SHORT punchy sentences per moment
 // Each entry in the outer array is one possible "take" (array of sentences).
@@ -1123,10 +1117,9 @@ export default function Play({ practicePage = false }){
     if (!pendingRematch || phase !== 'lobby') return;
     setPendingRematch(false);
     joinFriendBattle();
-  // joinFriendBattle is stable (useCallback); intentionally excluding it from
-  // deps to avoid re-triggering when it recreates due to other state changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingRematch, phase]);
+  // joinFriendBattle is a useCallback — include it so the effect always calls
+  // the latest version with up-to-date friendBattle.inviteCode / password.
+  }, [pendingRematch, phase, joinFriendBattle]);
 
   const redirectToProfile = useCallback(() => {
     const redirectPath = `${location.pathname}${location.search || ''}`;
@@ -1245,7 +1238,7 @@ export default function Play({ practicePage = false }){
     };
     loadGeneratedContent();
     return () => { cancelled = true; };
-  }, [language, mode, phase, generatedContent]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [language, mode, phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   
   // Refs that mirror fast-changing state so useCallback dependencies stay stable
@@ -1851,6 +1844,18 @@ const flushLiveHeartbeat = useCallback(async () => {
     showNotice(null);
     setRaceOver(false);
     setTimeLeft(duration);
+    // Always reset race-session state for a clean start (same as startPracticeRace)
+    setStreak(0);
+    setWpmHistory([]);
+    setIsNewPB(false);
+    setMistakeMap({});
+    setFocusLost(false);
+
+    // Load ghost frames from stored PB
+    const pbEntry = getPB(resolvedMode, language, duration);
+    setGhostFrames(Array.isArray(pbEntry?.frames) ? pbEntry.frames : []);
+    setGhostIndex(0);
+    window.clearInterval(ghostIntervalRef.current);
 
     // The lobby useEffect already pre-loads generatedContent; reuse it and
     // just record the ID so the rotation pool advances correctly.
@@ -1875,52 +1880,10 @@ const flushLiveHeartbeat = useCallback(async () => {
     setTimeout(() => inputRef.current?.focus(), 150);
   }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, language, mode, redirectToProfile, showNotice]);
 
+  // startPracticeRace is a convenience wrapper that starts in the current mode.
   const startPracticeRace = useCallback(() => {
-    if (!currentUser?.id) {
-      redirectToProfile();
-      return;
-    }
-    isLeavingRef.current = false;
-    isSubmittingRef.current = false;
-
-    setLiveRoom(null);
-    setTypingText('');
-    setReplayFrames([]);
-    setRaceResult(null);
-    showNotice(null);
-    setRaceOver(false);
-    setTimeLeft(duration);
-    setStreak(0);
-    setWpmHistory([]);
-    setIsNewPB(false);
-    setMistakeMap({});
-    setFocusLost(false);
-    // ── NEW #E: load ghost frames from stored PB ───────────────────────────
-    const pbEntry = getPB(mode, language, duration);
-    setGhostFrames(Array.isArray(pbEntry?.frames) ? pbEntry.frames : []);
-    setGhostIndex(0);
-    window.clearInterval(ghostIntervalRef.current);
-    // Record the current passage as used so the next race gets a fresh one.
-    // The lobby useEffect already loaded generatedContent; no extra fetch needed.
-    if (generatedContent?.id || generatedContent?.contentId) {
-      recordUsedContentId(
-        generatedContent.id ?? generatedContent.contentId,
-        mode,
-        language,
-        generatedContent.totalContentCount || 0
-      );
-    }
-    commentatorMilestonesRef.current = { m25: false, m50: false, m75: false };
-    if (commentatorEnabled) {
-      const _racerName = currentUser?.username || currentUser?.name || null;
-      const _raceScript = _racerName
-        ? [_racerName + '!', ..._pick(SCRIPT.raceStart)]
-        : _pick(SCRIPT.raceStart);
-      speakSequence(_raceScript, { force: true, rate: 1.15, pitch: 0.90, gap: 160 });
-    }
-    setPhase('racing');
-    setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, language, mode, redirectToProfile, showNotice]);
+    startPracticeRaceWithMode(mode);
+  }, [startPracticeRaceWithMode, mode]);
 
   // ── NEW #E: inject ghost cursor blink animation once ──────────────────────
   useEffect(() => {
@@ -1981,16 +1944,17 @@ Stats:
 
 Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name specific words or patterns to practise. Format as a short numbered list. No preamble, no sign-off. Plain text only, no markdown.`;
 
-    fetch('https://api.anthropic.com/v1/messages', {
+    // SECURITY: never call the Anthropic API directly from the browser — the key
+    // would be visible to every user. Route through your own backend proxy instead.
+    fetch('/api/ai-coaching', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+      body: JSON.stringify({ prompt }),
     })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`AI coaching request failed: ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         const text = (data.content || []).map((b) => b.text || '').join('').trim();
         setAiCoaching(text || null);
