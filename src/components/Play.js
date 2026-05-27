@@ -867,6 +867,70 @@ const normalizeKeyboardKey = (key) => {
   return key;
 };
 
+const TypingCharacter = React.memo(function TypingCharacter({
+  char,
+  isCurrent,
+  isGhost,
+  isTyped,
+}) {
+  let className = 'char untyped';
+  if (isTyped) {
+    className = 'char correct';
+  } else if (isCurrent) {
+    className = 'char current';
+  }
+
+  return (
+    <span className={isGhost ? `${className} char--ghost` : className}>
+      {char === ' ' ? '\u00A0' : char}
+    </span>
+  );
+});
+
+const KeyboardDeck = React.memo(function KeyboardDeck({
+  phase,
+  normalizeKeyboardKey: normalizeKeyboardKeyProp,
+}) {
+  const activeKeys = useActiveKeyboard({
+    phase,
+    normalizeKeyboardKey: normalizeKeyboardKeyProp,
+  });
+
+  const activeKeySet = useMemo(() => new Set(activeKeys), [activeKeys]);
+
+  return (
+    <div className="keyboard-preview">
+      <div className="keyboard-preview__header">
+        <h3>Live Keyboard Deck</h3>
+        <p>Your equipped keyboard skin is rendered here while you type.</p>
+      </div>
+      <div className="keyboard-board" aria-label="On-screen keyboard">
+        {KEYBOARD_LAYOUT.map((row, rowIndex) => (
+          <div key={`row-${rowIndex}`} className="keyboard-row">
+            {row.map((keyLabel, keyIndex) => {
+              const normalizedKey = normalizeKeyboardKeyProp(keyLabel);
+              const isActive = activeKeySet.has(normalizedKey);
+              const keyClass = [
+                'keyboard-key',
+                keyLabel === 'Backspace' || keyLabel === 'Tab' || keyLabel === 'CapsLock' || keyLabel === 'Enter' || keyLabel === 'Shift'
+                  ? 'keyboard-key--wide'
+                  : '',
+                keyLabel === 'Space' ? 'keyboard-key--space' : '',
+                isActive ? 'is-active' : '',
+              ].filter(Boolean).join(' ');
+              return (
+                <div key={`${keyLabel}-${keyIndex}`} className={keyClass}>
+                  <span>{keyLabel === 'Space' ? 'Space Bar' : keyLabel}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+});
+
 // ---------------------------------------------------------------------------
 // ReplayPlayer — scrubable replay of all collected frames
 // ---------------------------------------------------------------------------
@@ -1018,13 +1082,6 @@ export default function Play({ practicePage = false }){
   // when React strict-mode mounts the component twice or when two instances coexist.
   const sparkGradId = useRef(`sparkGrad-${Math.random().toString(36).slice(2)}`);
   // ────────────────────────────────────────────────────────────────────────────
-
-  const activeKeys = useActiveKeyboard({
-    phase,
-    normalizeKeyboardKey,
-    onBlur: () => setFocusLost(true),
-    onFocus: () => setFocusLost(false),
-  });
 
   const inputRef = useRef(null);
   const timerRef = useRef(null);
@@ -1198,6 +1255,16 @@ export default function Play({ practicePage = false }){
   useEffect(() => { typingTextRef.current   = typingText;   }, [typingText]);
   useEffect(() => { timeLeftRef.current     = timeLeft;     }, [timeLeft]);
   useEffect(() => { replayFramesRef.current = replayFrames; }, [replayFrames]);
+  useEffect(() => {
+    const handleWindowBlur = () => setFocusLost(true);
+    const handleWindowFocus = () => setFocusLost(false);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, []);
 
   const getModeDescription = useCallback(
     (modeId) => MODE_CONFIG.find((item) => item.id === modeId)?.description || '',
@@ -2286,29 +2353,29 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     || generatedContent?.passage
     || 'Type fast, type clean, and own the round.';
   // ── NEW #E: ghost position — character the ghost has reached ────────────
+  const sourceChars = useMemo(() => sourceText.split(''), [sourceText]);
   const ghostLen = ghostFrames.length > 0
     ? (ghostFrames[ghostIndex]?.typedText || '').length
     : -1;
 
   const renderedText = useMemo(() => (
-    sourceText.split('').map((char, index) => {
-      let className = 'char untyped';
-      if (index < typingText.length) {
-        className = typingText[index] === char ? 'char correct' : 'char incorrect';
-      } else if (index === typingText.length) {
-        className = 'char current';
-      }
-      // Ghost cursor: tag the character the ghost is sitting on
-      const isGhost = ghostLen >= 0 && index === ghostLen && index !== typingText.length;
+    sourceChars.map((char, index) => {
+      const isTyped = index < typingText.length;
+      const isCurrent = index === typingText.length;
+      const isGhost = ghostLen >= 0 && index === ghostLen && !isCurrent;
       return (
-        <span key={index} className={isGhost ? `${className} char--ghost` : className}>
-          {char === ' ' ? '\u00A0' : char}
-        </span>
+        <TypingCharacter
+          key={index}
+          char={char}
+          isCurrent={isCurrent}
+          isGhost={isGhost}
+          isTyped={isTyped}
+        />
       );
     })
   // ghostLen re-renders the ghost position as ghostIndex advances
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [sourceText, typingText, ghostLen]);
+  ), [sourceChars, typingText, ghostLen]);
 
   // Consistency score: 100 minus coefficient of variation of WPM history (lower variance = higher score)
   const consistencyScore = useMemo(() => {
@@ -3129,35 +3196,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             )}
           </div>
 
-          <div className="keyboard-preview">
-            <div className="keyboard-preview__header">
-              <h3>Live Keyboard Deck</h3>
-              <p>Your equipped keyboard skin is rendered here while you type.</p>
-            </div>
-            <div className="keyboard-board" aria-label="On-screen keyboard">
-              {KEYBOARD_LAYOUT.map((row, rowIndex) => (
-                <div key={`row-${rowIndex}`} className="keyboard-row">
-                  {row.map((keyLabel, keyIndex) => {
-                    const normalizedKey = normalizeKeyboardKey(keyLabel);
-                    const isActive = activeKeys.includes(normalizedKey);
-                    const keyClass = [
-                      'keyboard-key',
-                      keyLabel === 'Backspace' || keyLabel === 'Tab' || keyLabel === 'CapsLock' || keyLabel === 'Enter' || keyLabel === 'Shift'
-                        ? 'keyboard-key--wide'
-                        : '',
-                      keyLabel === 'Space' ? 'keyboard-key--space' : '',
-                      isActive ? 'is-active' : '',
-                    ].filter(Boolean).join(' ');
-                    return (
-                      <div key={`${keyLabel}-${keyIndex}`} className={keyClass}>
-                        <span>{keyLabel === 'Space' ? 'Space Bar' : keyLabel}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
+          <KeyboardDeck phase={phase} normalizeKeyboardKey={normalizeKeyboardKey} />
 
           <div className="results-actions">
             <button className="btn btn-danger" onClick={finishRace}>

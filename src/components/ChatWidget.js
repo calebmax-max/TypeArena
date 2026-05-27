@@ -539,7 +539,7 @@ function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, 
 }
 
 // ── Widget root ──────────────────────────────────────────────────────────────
-export default function ChatWidget({ currentUser }) {
+function ChatWidget({ currentUser }) {
   const [open, setOpen] = useState(false);
   const [players, setPlayers] = useState([]);
   const [partner, setPartner] = useState(null);
@@ -995,3 +995,5 @@ export default function ChatWidget({ currentUser }) {
     </>
   );
 }
+
+export default React.memo(ChatWidget);

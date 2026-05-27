@@ -35,7 +35,7 @@ export const warmNavigation = () => {
   }
 
   warmupStarted = true;
-  const routesToWarm = ['play', 'tournaments', 'leaderboard', 'marketplace', 'profile', 'results', 'spectate', 'admin'];
+  const routesToWarm = ['play', 'leaderboard', 'tournaments', 'marketplace', 'profile', 'results', 'spectate', 'admin'];
 
   routesToWarm.forEach((routeName) => {
     void preloadRoute(routeName);

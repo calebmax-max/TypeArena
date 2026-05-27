@@ -53,6 +53,16 @@ const writeCache = (data) => {
   } catch {}
 };
 
+export const primeLeaderboardCache = async () => {
+  try {
+    const data = await fetchLeaderboard(100);
+    writeCache(Array.isArray(data) ? data : []);
+    return data;
+  } catch {
+    return null;
+  }
+};
+
 // ─── Tier helpers ─────────────────────────────────────────────────────────────
 
 const normTier = (tier = '') => tier.toLowerCase();

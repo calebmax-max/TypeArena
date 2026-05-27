@@ -211,6 +211,11 @@ function AppLayout() {
   }, []);
 
   useEffect(() => {
+    void preloadRoute('play');
+    void preloadRoute('leaderboard');
+  void preloadPlayContent();
+    import('./components/Leaderboard').then((module) => module.primeLeaderboardCache?.()).catch(() => {});
+
     const warmup = () => warmNavigation();
     const idleId = typeof window.requestIdleCallback === 'function'
       ? window.requestIdleCallback(warmup, { timeout: 2500 })
