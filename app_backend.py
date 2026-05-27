@@ -5927,6 +5927,9 @@ _chat_waiters: dict = {}          # reference-count for cleanup
 _chat_conds_lock = _threading.Lock()
 _chat_ws_clients: dict[int, set[Any]] = {}
 _chat_ws_lock = _threading.Lock()
+_chat_event_worker_lock = _threading.Lock()
+_chat_event_worker_started = False
+_chat_event_last_seen_id = 0
 
 
 def _get_or_create_cond(user_id: int) -> _threading.Condition:
@@ -5999,6 +6002,125 @@ def _broadcast_ws_payload(user_id: int, payload: Dict[str, Any]) -> None:
                 _chat_ws_clients.pop(user_id, None)
 
 
+def _ensure_chat_event_queue_table(cur) -> None:
+    cur.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS chat_ws_events (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            event_type VARCHAR(40) NOT NULL,
+            payload LONGTEXT NOT NULL,
+            origin_pid INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_chat_ws_events_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        '''
+    )
+
+
+def _publish_chat_event(event_type: str, payload: Dict[str, Any]) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                INSERT INTO chat_ws_events (event_type, payload, origin_pid)
+                VALUES (%s, %s, %s)
+                ''',
+                (str(event_type), json.dumps(payload, separators=(',', ':')), os.getpid()),
+            )
+        conn.commit()
+    finally:
+        _return_connection(conn)
+
+
+def _dispatch_chat_ws_event(event_type: str, payload: Dict[str, Any]) -> None:
+    event_type = str(event_type or '').strip().lower()
+    if event_type == 'chat_message':
+        message = payload.get('message')
+        sender = payload.get('sender')
+        recipient = payload.get('recipient')
+        if message and sender and recipient:
+            _push_chat_message_to_clients(message, sender, recipient)
+        return
+
+    if event_type == 'chat_read':
+        target_user_id = payload.get('targetUserId')
+        try:
+            target_user_id_int = int(target_user_id)
+        except (TypeError, ValueError):
+            return
+        _broadcast_ws_payload(
+            target_user_id_int,
+            {
+                'type': 'chat_read',
+                'partnerId': payload.get('partnerId'),
+                'readerId': payload.get('readerId'),
+                'ts': payload.get('ts') or _now_iso(),
+            },
+        )
+
+
+def _chat_event_relay_loop() -> None:
+    global _chat_event_last_seen_id
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute('SELECT COALESCE(MAX(id), 0) AS max_id FROM chat_ws_events')
+                row = cur.fetchone() or {}
+                _chat_event_last_seen_id = int(row.get('max_id') or 0)
+        finally:
+            _return_connection(conn)
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning('Chat event relay warm-up failed: %s', exc)
+
+    while True:
+        try:
+            conn = get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        '''
+                        SELECT id, event_type, payload, origin_pid
+                        FROM chat_ws_events
+                        WHERE id > %s
+                        ORDER BY id ASC
+                        LIMIT 200
+                        ''',
+                        (_chat_event_last_seen_id,),
+                    )
+                    rows = cur.fetchall()
+            finally:
+                _return_connection(conn)
+
+            if rows:
+                for row in rows:
+                    event_id = int(row['id'])
+                    _chat_event_last_seen_id = max(_chat_event_last_seen_id, event_id)
+                    if int(row.get('origin_pid') or 0) == os.getpid():
+                        continue
+                    try:
+                        payload = json.loads(row.get('payload') or '{}')
+                    except Exception:
+                        payload = {}
+                    _dispatch_chat_ws_event(row.get('event_type') or '', payload if isinstance(payload, dict) else {})
+
+            time.sleep(0.25)
+        except Exception as exc:  # noqa: BLE001
+            app.logger.warning('Chat event relay error: %s', exc)
+            time.sleep(1.0)
+
+
+def _start_chat_event_worker() -> None:
+    global _chat_event_worker_started
+    with _chat_event_worker_lock:
+        if _chat_event_worker_started:
+            return
+        worker = _threading.Thread(target=_chat_event_relay_loop, daemon=True)
+        worker.start()
+        _chat_event_worker_started = True
+
+
 def _push_chat_message_to_clients(message: Dict[str, Any], sender: Dict[str, Any], recipient: Dict[str, Any]) -> None:
     sender_id = int(sender['id'])
     recipient_id = int(recipient['id'])
@@ -6029,6 +6151,39 @@ def _push_chat_message_to_clients(message: Dict[str, Any], sender: Dict[str, Any
             'type': 'chat_message',
             'message': {**message, 'mine': True},
             'contact': recipient_contact,
+        },
+    )
+
+
+def _publish_chat_message_event(message: Dict[str, Any], sender: Dict[str, Any], recipient: Dict[str, Any]) -> None:
+    _publish_chat_event(
+        'chat_message',
+        {
+            'message': message,
+            'sender': _serialize_chat_contact_row(
+                sender,
+                is_online=True,
+                unread_count=1,
+                last_message_at=message.get('sentAt'),
+            ),
+            'recipient': _serialize_chat_contact_row(
+                recipient,
+                is_online=True,
+                unread_count=0,
+                last_message_at=message.get('sentAt'),
+            ),
+        },
+    )
+
+
+def _publish_chat_read_event(target_user_id: int, partner_id: int, reader_id: int) -> None:
+    _publish_chat_event(
+        'chat_read',
+        {
+            'targetUserId': int(target_user_id),
+            'partnerId': int(partner_id),
+            'readerId': int(reader_id),
+            'ts': _now_iso(),
         },
     )
 
@@ -6103,6 +6258,7 @@ def chat_socket(ws):
                         'ts': _now_iso(),
                     },
                 )
+                _publish_chat_read_event(partner_id_int, user_id, user_id)
                 _send_ws_payload(
                     ws,
                     {
@@ -6137,6 +6293,7 @@ def chat_socket(ws):
                         'ts': _now_iso(),
                     },
                 )
+                _publish_chat_read_event(partner_id_int, user_id, user_id)
                 continue
 
             if event_type == 'message':
@@ -6169,6 +6326,7 @@ def chat_socket(ws):
                 _notify_user(recipient_id_int)
                 _notify_user(user_id)
                 _push_chat_message_to_clients(message, user, recipient)
+                _publish_chat_message_event(message, user, recipient)
                 continue
 
             _send_ws_payload(ws, {'type': 'error', 'message': 'Unsupported WebSocket event.'})
@@ -6209,6 +6367,7 @@ def chat_send_message():
         _notify_user(recipient_id_int)
         _notify_user(int(user['id']))
         _push_chat_message_to_clients(msg_payload, user, recipient)
+        _publish_chat_message_event(msg_payload, user, recipient)
         return jsonify(msg_payload), 201
     finally:
         _return_connection(conn)
@@ -6517,6 +6676,7 @@ def _bootstrap_db() -> None:
         try:
             with conn.cursor() as cur:
                 _ensure_chat_tables(cur)
+                _ensure_chat_event_queue_table(cur)
                 _ensure_live_race_rooms_table(cur)
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
@@ -6527,6 +6687,7 @@ def _bootstrap_db() -> None:
             conn.commit()
         finally:
             _return_connection(conn)
+        _start_chat_event_worker()
     except Exception as exc:  # noqa: BLE001
         app.logger.warning('Bootstrap DB warning (non-fatal): %s', exc)
 

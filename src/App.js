@@ -14,6 +14,7 @@ import './css/Loader.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
 import { fetchSiteMarquee } from './utils/typingApi';
+import { preloadPlayContent, preloadRoute, warmNavigation } from './utils/navigationPrefetch';
 
 
 
@@ -209,6 +210,30 @@ function AppLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    const warmup = () => warmNavigation();
+    const idleId = typeof window.requestIdleCallback === 'function'
+      ? window.requestIdleCallback(warmup, { timeout: 2500 })
+      : window.setTimeout(warmup, 1500);
+
+    return () => {
+      if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      } else {
+        window.clearTimeout(idleId);
+      }
+    };
+  }, []);
+
+  const preloadPlayPage = () => {
+    void preloadRoute('play');
+    void preloadPlayContent();
+  };
+
+  const preloadByRoute = (routeName) => () => {
+    void preloadRoute(routeName);
+  };
+
   const handleSignOut = () => {
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem('token');
@@ -241,19 +266,19 @@ function AppLayout() {
             </div>
           </div>
           <nav className="navbar-nav navbar-nav--persistent ms-auto">
-            <NavLink to="/play" className={navLinkClassName}>Play</NavLink>
-            <NavLink to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
-            <NavLink to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
-            <NavLink to="/marketplace" className={navLinkClassName}>Marketplace</NavLink>
+            <NavLink to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
+            <NavLink to="/tournaments" className={navLinkClassName} onMouseEnter={preloadByRoute('tournaments')} onFocus={preloadByRoute('tournaments')} onTouchStart={preloadByRoute('tournaments')}>Tournaments</NavLink>
+            <NavLink to="/leaderboard" className={navLinkClassName} onMouseEnter={preloadByRoute('leaderboard')} onFocus={preloadByRoute('leaderboard')} onTouchStart={preloadByRoute('leaderboard')}>Leaderboard</NavLink>
+            <NavLink to="/marketplace" className={navLinkClassName} onMouseEnter={preloadByRoute('marketplace')} onFocus={preloadByRoute('marketplace')} onTouchStart={preloadByRoute('marketplace')}>Marketplace</NavLink>
             {currentUser ? (
               <>
-                <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`}>Profile</NavLink>
+                <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`} onMouseEnter={preloadByRoute('profile')} onFocus={preloadByRoute('profile')} onTouchStart={preloadByRoute('profile')}>Profile</NavLink>
                 <button onClick={handleSignOut} className="nav-link btn btn-link navbar-desktop-only">
                   Sign Out
                 </button>
               </>
             ) : (
-              <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`}>Sign In</NavLink>
+              <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`} onMouseEnter={preloadByRoute('profile')} onFocus={preloadByRoute('profile')} onTouchStart={preloadByRoute('profile')}>Sign In</NavLink>
             )}
           </nav>
         </div>
@@ -272,7 +297,7 @@ function AppLayout() {
         <ChatWidget currentUser={currentUser} />
         <Suspense fallback={<RouteLoader />}>
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Home currentUser={currentUser} />} />
             <Route path="/play" element={<Play />} />
             <Route path="/practice" element={<Play practicePage />} />
             <Route path="/tournaments" element={<Tournaments />} />

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchLiveRaces } from '../utils/typingApi';
+import { buildHeaders, fetchLiveRaces } from '../utils/typingApi';
+import { buildApiUrl } from '../utils/api';
+import { preloadPlayContent, preloadRoute } from '../utils/navigationPrefetch';
 import '../styles/Home.css';
 
 const DEMO_SENTENCES = [
@@ -132,9 +134,62 @@ function useLivePlayerCount() {
   return count;
 }
 
-export default function Home() {
+function useOnlinePresence(currentUser) {
+  const [onlineUsers, setOnlineUsers] = useState([]);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setOnlineUsers([]);
+      return undefined;
+    }
+
+    let active = true;
+
+    const load = async () => {
+      try {
+        const response = await fetch(buildApiUrl('/api/presence/online'), {
+          headers: buildHeaders(),
+        });
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        if (active) {
+          setOnlineUsers(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        // Keep the previous presence snapshot if the network blips.
+      }
+    };
+
+    load();
+    const interval = window.setInterval(load, 5000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [currentUser?.id]);
+
+  return onlineUsers;
+}
+
+export default function Home({ currentUser }) {
   const heroRef = useRef(null);
   const liveCount = useLivePlayerCount();
+  const onlineUsers = useOnlinePresence(currentUser);
+  const visibleOnlineUsers = onlineUsers.filter((user) => !user.isMe);
+  const onlineCount = visibleOnlineUsers.length;
+  const heroBadgeLabel = currentUser?.id
+    ? `${onlineCount} online`
+    : `${liveCount === null ? '—' : liveCount} live now`;
+  const preloadPlayPage = () => {
+    void preloadRoute('play');
+    void preloadPlayContent();
+  };
+  const preloadTournamentsPage = () => {
+    void preloadRoute('tournaments');
+  };
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -175,17 +230,30 @@ export default function Home() {
               <span className="pill">Daily Tourneys</span>
             </div>
             <div className="hero-cta reveal">
-              <Link to="/play" className="btn-primary-hero">Start Typing →</Link>
-              <Link to="/tournaments" className="btn-ghost-hero">Browse Tournaments</Link>
+              <Link to="/play" className="btn-primary-hero" onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Start Typing →</Link>
+              <Link to="/tournaments" className="btn-ghost-hero" onMouseEnter={preloadTournamentsPage} onFocus={preloadTournamentsPage} onTouchStart={preloadTournamentsPage}>Browse Tournaments</Link>
             </div>
           </div>
 
           <div className="hero-demo reveal">
             <LiveTypingDemo />
             <div className="floating-badge badge-1">
-              🔥 {liveCount === null ? '—' : liveCount} live now
+              🔥 {heroBadgeLabel}
             </div>
-            
+            <div className="floating-badge badge-2">
+              {currentUser?.id ? (
+                visibleOnlineUsers.slice(0, 4).map((user) => (
+                  <span key={user.id} title={user.username} className="hero-online-avatar">
+                    {String(user.username || '?').slice(0, 1).toUpperCase()}
+                  </span>
+                ))
+              ) : (
+                <span className="hero-online-text">Sign in to see live presence</span>
+              )}
+              {currentUser?.id && onlineCount > 4 && (
+                <span className="hero-online-more">+{onlineCount - 4}</span>
+              )}
+            </div>
           </div>
         </div>
       </section>
@@ -236,8 +304,8 @@ export default function Home() {
         <h2>Ready to prove your speed?</h2>
         <p>Thousands of typists compete for real prizes every day. Your first race starts in seconds.</p>
         <div className="cta-buttons">
-          <Link to="/play" className="btn-primary-hero">Enter the Arena</Link>
-          <Link to="/tournaments" className="btn-ghost-hero">View Schedule</Link>
+          <Link to="/play" className="btn-primary-hero" onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Enter the Arena</Link>
+          <Link to="/tournaments" className="btn-ghost-hero" onMouseEnter={preloadTournamentsPage} onFocus={preloadTournamentsPage} onTouchStart={preloadTournamentsPage}>View Schedule</Link>
         </div>
       </section>
     </div>

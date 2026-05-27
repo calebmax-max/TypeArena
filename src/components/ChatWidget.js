@@ -553,6 +553,7 @@ export default function ChatWidget({ currentUser }) {
   const isLoggedIn = Boolean(currentUser?.id);
   const socketRef = useRef(null);
   const socketConnectedRef = useRef(false);
+  const socketEventQueueRef = useRef([]);
 
   const apiFetchRef = useRef(makeApiFetch(currentUser?.id));
   useEffect(() => {
@@ -602,7 +603,8 @@ export default function ChatWidget({ currentUser }) {
         if (!active) return;
         try {
           const payload = JSON.parse(event.data);
-          setSocketEvent(payload);
+          socketEventQueueRef.current.push(payload);
+          setSocketEvent((current) => current || payload);
         } catch (_) {
           setSocketEvent({ type: 'error', message: 'Invalid socket payload.' });
         }
@@ -637,6 +639,14 @@ export default function ChatWidget({ currentUser }) {
       }
     };
   }, [isLoggedIn, currentUser?.id]);
+
+  useEffect(() => {
+    if (socketEvent) return;
+    const nextEvent = socketEventQueueRef.current.shift();
+    if (nextEvent) {
+      setSocketEvent(nextEvent);
+    }
+  }, [socketEvent]);
 
   // Presence ping
   useEffect(() => {
@@ -686,12 +696,13 @@ export default function ChatWidget({ currentUser }) {
 
   useEffect(() => {
     if (!socketEvent) return;
+    let consumed = false;
     if (socketEvent.type === 'error') {
       setListError(socketEvent.message || 'Chat connection error.');
-      return;
+      consumed = true;
     }
     if (socketEvent.type === 'connected' || socketEvent.type === 'pong') {
-      return;
+      consumed = true;
     }
     if (socketEvent.type === 'chat_state') {
       setPlayers(Array.isArray(socketEvent.contacts) ? socketEvent.contacts : []);
@@ -699,7 +710,7 @@ export default function ChatWidget({ currentUser }) {
       setUnread(nextUnread);
       setTotalUnread(Object.values(nextUnread).reduce((sum, value) => sum + Number(value || 0), 0));
       setListError('');
-      return;
+      consumed = true;
     }
     if (socketEvent.type === 'chat_thread') {
       const partnerId = socketEvent.partnerId;
@@ -719,10 +730,10 @@ export default function ChatWidget({ currentUser }) {
           )));
         }
       }
-      return;
+      consumed = true;
     }
     if (socketEvent.type === 'chat_read') {
-      return;
+      consumed = true;
     }
     if (socketEvent.type === 'chat_message') {
       const message = socketEvent.message;
@@ -756,9 +767,13 @@ export default function ChatWidget({ currentUser }) {
                   unreadCount: Number(player.unreadCount || 0),
                 }
               : player
-          )
+            )
         );
       }
+      consumed = true;
+    }
+    if (consumed) {
+      setSocketEvent(null);
     }
   }, [socketEvent, currentUser?.id, open, partner, unread]);
 
