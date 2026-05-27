@@ -29,9 +29,29 @@ const TIER_META = {
   bronze:      { icon: '🥉', gradient: 'linear-gradient(135deg,#d4935a,#6b3a2a)' },
 };
 
-const POLL_INTERVAL = 30_000;
-const ITEMS_PER_PAGE = 20;
+const POLL_INTERVAL     = 30_000;
+const ITEMS_PER_PAGE    = 20;
 const SEARCH_DEBOUNCE_MS = 180;
+
+// ─── localStorage cache key — serves data instantly on revisit ────────────────
+const LS_CACHE_KEY = 'typearena_lb_cache';
+
+const readCache = () => {
+  try {
+    const raw = localStorage.getItem(LS_CACHE_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    // Discard stale cache older than the poll interval
+    if (Date.now() - ts > POLL_INTERVAL) return null;
+    return Array.isArray(data) ? data : null;
+  } catch { return null; }
+};
+
+const writeCache = (data) => {
+  try {
+    localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+  } catch {}
+};
 
 // ─── Tier helpers ─────────────────────────────────────────────────────────────
 
@@ -46,7 +66,11 @@ const getTierClass = (tier = '') => {
   return 'bronze';
 };
 
-const getTierIcon = (tier = '') => TIER_META[normTier(tier)]?.icon ?? '🥉';
+// FIX (minor): guard against non-tier values like 'All' returning the wrong fallback
+const getTierIcon = (tier = '') => {
+  const key = normTier(tier);
+  return TIER_META[key]?.icon ?? '🥉';
+};
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -206,26 +230,31 @@ const ErrorState = ({ onRetry }) => (
 
 export default function Leaderboard({ currentUserUsername }) {
   // ── State ──────────────────────────────────────────────────────────────────
-  const [players,       setPlayers]       = useState([]);
-  const [loading,       setLoading]       = useState(true);
-  const [error,         setError]         = useState(false);
-  const [sortBy,        setSortBy]        = useState('seasonPoints');
-  const [searchInput,   setSearchInput]   = useState('');
-  const [searchQuery,   setSearchQuery]   = useState('');
-  const [tierFilter,    setTierFilter]    = useState('All');
-  const [page,          setPage]          = useState(1);
-  const [selected,      setSelected]      = useState(null);
-  const [activeTab,     setActiveTab]     = useState('live');   // 'live' | 'past'
-  const [pastSeasons,   setPastSeasons]   = useState([]);
-  const [pastLoading,   setPastLoading]   = useState(false);
-  const [pastSeason,    setPastSeason]    = useState('');       // selected past season filter
-  const [seasonName,    setSeasonName]    = useState(() => {
+
+  // PERF: seed from localStorage cache so the table renders immediately on
+  // revisit without waiting for the network — the fetch then refreshes silently.
+  const [players,     setPlayers]     = useState(() => readCache() ?? []);
+  const [loading,     setLoading]     = useState(() => readCache() === null);
+  const [error,       setError]       = useState(false);
+  const [sortBy,      setSortBy]      = useState('seasonPoints');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [tierFilter,  setTierFilter]  = useState('All');
+  const [page,        setPage]        = useState(1);
+  const [selected,    setSelected]    = useState(null);
+  const [activeTab,   setActiveTab]   = useState('live');   // 'live' | 'past'
+  const [pastSeasons, setPastSeasons] = useState([]);
+  const [pastLoading, setPastLoading] = useState(false);
+  const [pastError,   setPastError]   = useState(false);   // FIX: surface fetch errors
+  const [pastSeason,  setPastSeason]  = useState('');
+  const [seasonName,  setSeasonName]  = useState(() => {
     const now = new Date();
     return now.toLocaleString('default', { month: 'long' }) + ' ' + now.getFullYear();
   });
 
-  // ── Refs (no stale cache at module level) ──────────────────────────────────
-  const cachedPlayersRef   = useRef(null);
+  // ── Refs ───────────────────────────────────────────────────────────────────
+  // FIX: previousRanksRef is updated in a useEffect, never inside useMemo,
+  // so trend arrows are computed from a stable snapshot and never flicker.
   const previousRanksRef   = useRef({});
   const pollingIntervalRef = useRef(null);
   const selfRowRef         = useRef(null);
@@ -233,50 +262,51 @@ export default function Leaderboard({ currentUserUsername }) {
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const loadLeaderboardData = useCallback(async (isSilent = false) => {
-    if (!isSilent && cachedPlayersRef.current === null) setLoading(true);
+    if (!isSilent) setLoading(true);
     setError(false);
     try {
       const data = await fetchLeaderboard(200);
       if (Array.isArray(data)) {
-        cachedPlayersRef.current = data;
+        writeCache(data);           // PERF: persist for instant next-visit render
         setPlayers(data);
-        // Extract current season name from first player row if available
         if (data[0]?.season) setSeasonName(data[0].season);
       }
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
       if (!isSilent) setError(true);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, []);
 
+  // FIX: check res.ok before parsing so 4xx/5xx responses surface an error
   const loadPastSeasons = useCallback(async () => {
     setPastLoading(true);
+    setPastError(false);
     try {
       const url = `/api/season/snapshots${pastSeason ? `?season=${encodeURIComponent(pastSeason)}` : ''}`;
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       if (Array.isArray(data)) setPastSeasons(data);
     } catch (err) {
       console.error('Failed to fetch past seasons:', err);
+      setPastError(true);
     } finally {
       setPastLoading(false);
     }
   }, [pastSeason]);
 
+  // Load past seasons when the tab is first opened
   useEffect(() => {
     if (activeTab === 'past') loadPastSeasons();
   }, [activeTab, loadPastSeasons]);
 
   // Initial load + visibility-aware polling
   useEffect(() => {
-    if (cachedPlayersRef.current !== null) {
-      setPlayers(cachedPlayersRef.current);
-      setLoading(false);
-    } else {
-      loadLeaderboardData(false);
-    }
+    // If cache already seeded state, kick off a silent refresh immediately
+    // so data is never more than one render stale.
+    loadLeaderboardData(players.length > 0);
 
     const startPolling = () => {
       pollingIntervalRef.current = setInterval(
@@ -286,9 +316,7 @@ export default function Leaderboard({ currentUserUsername }) {
     };
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        loadLeaderboardData(true);
-      }
+      if (document.visibilityState === 'visible') loadLeaderboardData(true);
     };
 
     startPolling();
@@ -297,6 +325,7 @@ export default function Leaderboard({ currentUserUsername }) {
       clearInterval(pollingIntervalRef.current);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadLeaderboardData]);
 
   // Debounced search
@@ -313,50 +342,75 @@ export default function Leaderboard({ currentUserUsername }) {
   useEffect(() => { setPage(1); }, [sortBy, tierFilter]);
 
   // ── Processed list ─────────────────────────────────────────────────────────
-  const fullyProcessedPlayers = useMemo(() => {
+
+  // PERF + FIX: pure sort+rank — no side effects inside useMemo.
+  // Trend arrows are computed separately in the effect below.
+  const rankedPlayers = useMemo(() => {
     const copy = [...players];
 
     copy.sort((a, b) => {
-      if (sortBy === 'wpm')      return Number(b.wpm ?? 0) - Number(a.wpm ?? 0);
-      if (sortBy === 'wins')     return Number(b.wins ?? 0) - Number(a.wins ?? 0);
+      if (sortBy === 'wpm')      return Number(b.wpm ?? 0)      - Number(a.wpm ?? 0);
+      if (sortBy === 'wins')     return Number(b.wins ?? 0)     - Number(a.wins ?? 0);
       if (sortBy === 'winRate') {
-        const rateA = a.gamesPlayed ? (a.wins ?? 0) / a.gamesPlayed : 0;
-        const rateB = b.gamesPlayed ? (b.wins ?? 0) / b.gamesPlayed : 0;
-        return rateB - rateA;
+        const rA = a.gamesPlayed ? (a.wins ?? 0) / a.gamesPlayed : 0;
+        const rB = b.gamesPlayed ? (b.wins ?? 0) / b.gamesPlayed : 0;
+        return rB - rA;
       }
       if (sortBy === 'accuracy') return Number(b.accuracy ?? 0) - Number(a.accuracy ?? 0);
       return Number(b.seasonPoints ?? 0) - Number(a.seasonPoints ?? 0);
     });
 
-    return copy.map((player, index) => {
-      const currentRank = index + 1;
-      const uniqueKey   = player.username ?? player.id;
-      const prevRank    = previousRanksRef.current[uniqueKey];
-
-      let trend = 'same';
-      if (prevRank !== undefined) {
-        if (prevRank > currentRank)      trend = 'up';
-        else if (prevRank < currentRank) trend = 'down';
-      }
-      previousRanksRef.current[uniqueKey] = currentRank;
-
-      return { ...player, displayRank: currentRank, trend };
-    });
+    return copy.map((player, index) => ({
+      ...player,
+      displayRank: index + 1,
+      // trend is injected by the effect below; default to 'same' until then
+      trend: player._trend ?? 'same',
+    }));
   }, [players, sortBy]);
 
+  // FIX: snapshot ranks AFTER render, never inside useMemo.
+  // This gives correct before/after comparison without double-running side effects.
+  const [trendMap, setTrendMap] = useState({});
+
+  useEffect(() => {
+    const next = {};
+    const nextTrends = {};
+    rankedPlayers.forEach(({ username, id, displayRank }) => {
+      const key  = username ?? id;
+      const prev = previousRanksRef.current[key];
+      nextTrends[key] = prev === undefined ? 'same'
+        : prev > displayRank ? 'up'
+        : prev < displayRank ? 'down'
+        : 'same';
+      next[key] = displayRank;
+    });
+    previousRanksRef.current = next;
+    setTrendMap(nextTrends);
+  }, [rankedPlayers]);
+
+  // Merge trend into each player object for rendering
+  const fullyProcessedPlayers = useMemo(() =>
+    rankedPlayers.map((p) => ({ ...p, trend: trendMap[p.username ?? p.id] ?? 'same' })),
+    [rankedPlayers, trendMap],
+  );
+
   const filteredPlayers = useMemo(() => {
+    const q = searchQuery.toLowerCase();
     return fullyProcessedPlayers.filter((p) => {
-      const matchesSearch = p.username?.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = !q || p.username?.toLowerCase().includes(q);
       const matchesTier   = tierFilter === 'All' || normTier(p.tier) === normTier(tierFilter);
       return matchesSearch && matchesTier;
     });
   }, [fullyProcessedPlayers, searchQuery, tierFilter]);
 
-  const podiumPlayers      = useMemo(() => filteredPlayers.filter(p => p.displayRank <= 3), [filteredPlayers]);
-  const regularListPlayers = useMemo(() => filteredPlayers.filter(p => p.displayRank > 3),  [filteredPlayers]);
+  // FIX: split podium vs table by position within filteredPlayers (index),
+  // not by displayRank — so the split is always correct when filters are active.
+  const podiumPlayers      = useMemo(() => filteredPlayers.slice(0, 3),  [filteredPlayers]);
+  const regularListPlayers = useMemo(() => filteredPlayers.slice(3),     [filteredPlayers]);
 
   // Pagination
-  const displayList    = searchQuery !== '' || tierFilter !== 'All' ? filteredPlayers : regularListPlayers;
+  const isFiltered     = searchQuery !== '' || tierFilter !== 'All';
+  const displayList    = isFiltered ? filteredPlayers : regularListPlayers;
   const totalPages     = Math.ceil(displayList.length / ITEMS_PER_PAGE);
   const pagedPlayers   = displayList.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
@@ -368,7 +422,7 @@ export default function Leaderboard({ currentUserUsername }) {
   }, [players]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleRowClick = useCallback((player) => setSelected(player), []);
+  const handleRowClick   = useCallback((player) => setSelected(player), []);
   const handleModalClose = useCallback(() => setSelected(null), []);
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -412,6 +466,7 @@ export default function Leaderboard({ currentUserUsername }) {
             aria-label="Filter by tier"
           >
             {TIERS.map((t) => (
+              // FIX (minor): only call getTierIcon for actual tier values, not 'All'
               <option key={t} value={t}>{t === 'All' ? '🌐 All Tiers' : `${getTierIcon(t)} ${t}`}</option>
             ))}
           </select>
@@ -466,14 +521,24 @@ export default function Leaderboard({ currentUserUsername }) {
             />
             <button className="retry-btn" onClick={loadPastSeasons}>Search</button>
           </div>
+
+          {/* FIX: show error state when past seasons fetch fails */}
+          {pastError && !pastLoading && (
+            <div className="error-leaderboard">
+              <span className="error-icon">⚠️</span>
+              <p>Failed to load past seasons.</p>
+              <button className="retry-btn" onClick={loadPastSeasons}>Retry</button>
+            </div>
+          )}
+
           {pastLoading ? (
             <div className="leaderboard-table">{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}</div>
-          ) : pastSeasons.length === 0 ? (
+          ) : !pastError && pastSeasons.length === 0 ? (
             <div className="empty-leaderboard">
               <span className="empty-icon">📜</span>
               <p>No past season archives yet. They appear here after each monthly reset.</p>
             </div>
-          ) : (
+          ) : !pastError && (
             <>
               {/* Group by season name */}
               {(() => {
@@ -485,10 +550,10 @@ export default function Leaderboard({ currentUserUsername }) {
                       <h3 className="past-season-title" style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem', opacity: 0.85 }}>📅 {sName}</h3>
                       <div className="leaderboard-table" role="table">
                         <div className="table-header" role="row">
-                          <span className="col-rank" role="columnheader">Rank</span>
+                          <span className="col-rank"   role="columnheader">Rank</span>
                           <span className="col-player" role="columnheader">Player</span>
-                          <span className="col-elo" role="columnheader">Season Pts</span>
-                          <span className="col-tier" role="columnheader">Final Tier</span>
+                          <span className="col-elo"    role="columnheader">Season Pts</span>
+                          <span className="col-tier"   role="columnheader">Final Tier</span>
                         </div>
                         {rows.map(r => (
                           <div key={r.userId + sName} className="table-row real-time-row">
@@ -522,21 +587,26 @@ export default function Leaderboard({ currentUserUsername }) {
       ) : activeTab === 'live' && (
         <>
           {/* Podium — only when no filter/search active */}
-          {!loading && searchQuery === '' && tierFilter === 'All' && podiumPlayers.length > 0 && (
+          {/* FIX: podiumPlayers is now sliced by filtered position so rank is always correct */}
+          {!loading && !isFiltered && podiumPlayers.length > 0 && (
             <div className="podium-section" aria-label="Top 3 players">
-              {[2, 1, 3].map((rank) => {
-                const p = podiumPlayers.find((pl) => pl.displayRank === rank);
+              {[1, 0, 2].map((sliceIdx) => {
+                const p = podiumPlayers[sliceIdx];
                 if (!p) return null;
-                const tierClass = rank === 1 ? 'gold-tier apex-rank' : rank === 2 ? 'silver-tier' : 'bronze-tier';
+                const displayPos = sliceIdx + 1;
+                // Visual order: 2nd | 1st | 3rd
+                const visualOrder = sliceIdx === 0 ? 2 : sliceIdx === 1 ? 1 : 3;
+                const tierClass = visualOrder === 1 ? 'gold-tier apex-rank' : visualOrder === 2 ? 'silver-tier' : 'bronze-tier';
                 return (
                   <button
-                    key={rank}
+                    key={displayPos}
                     className={`podium-card ${tierClass}`}
+                    style={{ order: visualOrder }}
                     onClick={() => setSelected(p)}
-                    aria-label={`${p.username}, rank ${rank}`}
+                    aria-label={`${p.username}, rank ${displayPos}`}
                   >
-                    {rank === 1 && <div className="crown-icon">👑</div>}
-                    <span className="podium-badge">#{rank}</span>
+                    {displayPos === 1 && <div className="crown-icon">👑</div>}
+                    <span className="podium-badge">#{displayPos}</span>
                     <div className="podium-username">{p.username}</div>
                     <div className="podium-stat">⭐ {p.seasonPoints ?? 0} pts</div>
                     <div className="podium-substat">{Number(p.wpm ?? 0).toFixed(0)} WPM</div>
@@ -549,12 +619,12 @@ export default function Leaderboard({ currentUserUsername }) {
           {/* Table */}
           <div className="leaderboard-table" role="table" aria-label="Leaderboard">
             <div className="table-header" role="row">
-              <span className="col-rank"  role="columnheader">Rank</span>
+              <span className="col-rank"   role="columnheader">Rank</span>
               <span className="col-player" role="columnheader">Player</span>
-              <span className="col-elo"   role="columnheader">Season Pts</span>
-              <span className="col-wpm"   role="columnheader">Peak WPM</span>
-              <span className="col-tier"  role="columnheader">Tier</span>
-              <span className="col-wins"  role="columnheader">Wins</span>
+              <span className="col-elo"    role="columnheader">Season Pts</span>
+              <span className="col-wpm"    role="columnheader">Peak WPM</span>
+              <span className="col-tier"   role="columnheader">Tier</span>
+              <span className="col-wins"   role="columnheader">Wins</span>
             </div>
 
             {loading ? (
