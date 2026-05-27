@@ -34,6 +34,7 @@ import {
   fetchWalletHistory,
   fetchWalletTopupStatus,
   fetchWalletWithdrawStatus,
+  getStoredUserSnapshot,
   loginUser,
   signupUser,
   verifyWalletTopupSession,
@@ -238,14 +239,14 @@ function Notice({ message, type = 'info' }) {
 export default function TypeProfile() {
   const navigate = useNavigate();
 
-  const [currentUser,   setCurrentUser]   = useState(null);
+  const [currentUser,   setCurrentUser]   = useState(() => getStoredUserSnapshot());
   const [showAuthForm,  setShowAuthForm]   = useState(false);
   const [authMode,      setAuthMode]       = useState('login');
   const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '' });
   const [raceHistory,   setRaceHistory]    = useState([]);
   const [walletHistory, setWalletHistory]  = useState([]);
   const [walletConfig,  setWalletConfig]   = useState({ topUpMethods: [], withdrawMethods: [] });
-  const [loading,       setLoading]        = useState(true);
+  const [loading,       setLoading]        = useState(() => !getStoredUserSnapshot());
   const [topUpAmount,   setTopUpAmount]    = useState('');
   const [topUpAccount,  setTopUpAccount]   = useState('');
   const [topUpMethod,   setTopUpMethod]    = useState('stripe_checkout');

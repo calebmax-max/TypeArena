@@ -12,6 +12,7 @@ import {
   generateRaceContent,
   fetchLiveRaceRoom,
   fetchLiveRaces,
+  getStoredUserSnapshot,
   queueLiveRace,
   submitLiveRaceResult,
   submitRaceResult,
@@ -924,7 +925,10 @@ export default function Play({ practicePage = false }){
   const [raceResult, setRaceResult] = useState(null);
   const [generatedContent, setGeneratedContent] = useState(null);
   const [replayFrames, setReplayFrames] = useState([]);
-  const [currentUser, setCurrentUser] = useState(undefined); // undefined=loading, null=guest, object=user
+  const [currentUser, setCurrentUser] = useState(() => {
+    const stored = getStoredUserSnapshot();
+    return stored ?? undefined;
+  }); // undefined=loading, null=guest, object=user
   const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [showPracticeModes, setShowPracticeModes] = useState(false);
   const [raceOver, setRaceOver] = useState(false);

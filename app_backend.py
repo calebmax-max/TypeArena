@@ -78,6 +78,13 @@ STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
 DEFAULT_ADMIN_EMAIL = 'caleb@gmail.com'
 DEFAULT_ADMIN_PASSWORD = 'Caleb123'
+LEADERBOARD_CACHE_TTL_MS = 20_000
+_leaderboard_cache: Dict[str, Any] = {
+    'key': None,
+    'expires_at': 0,
+    'payload': None,
+}
+_leaderboard_cache_lock = _threading.Lock()
 ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', DEFAULT_ADMIN_EMAIL).strip() or DEFAULT_ADMIN_EMAIL
 ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', DEFAULT_ADMIN_PASSWORD)
 ADMIN_TOKENS: set[str] = set()
@@ -1056,6 +1063,32 @@ def _owned_store_items_for_user(conn, user_id: int) -> list[str]:
     return [str(row.get('item_id') or '') for row in rows if row.get('item_id')]
 
 
+def _owned_store_items_for_users(conn, user_ids: list[int] | tuple[int, ...]) -> Dict[int, list[str]]:
+    ids = [int(user_id) for user_id in user_ids if int(user_id or 0) > 0]
+    if not ids:
+        return {}
+
+    placeholders = ', '.join(['%s'] * len(ids))
+    owned_map: Dict[int, list[str]] = {user_id: [] for user_id in ids}
+    with conn.cursor() as cur:
+        _ensure_store_purchase_table(cur)
+        cur.execute(
+            f'''
+            SELECT user_id, item_id
+            FROM store_purchases
+            WHERE user_id IN ({placeholders})
+            ORDER BY purchased_at DESC
+            ''',
+            tuple(ids),
+        )
+        for row in cur.fetchall():
+            user_id = int(row.get('user_id') or 0)
+            item_id = str(row.get('item_id') or '').strip()
+            if user_id > 0 and item_id:
+                owned_map.setdefault(user_id, []).append(item_id)
+    return owned_map
+
+
 def _ensure_tournament_duration_column(cur) -> None:
     cur.execute("SHOW COLUMNS FROM tournaments LIKE 'match_duration_mins'")
     if not cur.fetchone():
@@ -1238,6 +1271,10 @@ def _increment_season_stats(cur, *, user_id: int, wpm: float, accuracy: float, e
         """,
         (current_season, 1 if did_win else 0, max(0.0, earnings), user_id),
     )
+    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+    refreshed_user = cur.fetchone()
+    if refreshed_user:
+        _refresh_season_points_for_user(cur, refreshed_user)
 
 
 def _refresh_season_points_for_user(cur, user: dict) -> int:
@@ -2026,11 +2063,11 @@ def _wallet_capabilities() -> Dict[str, Any]:
     }
 
 
-def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
+def _safe_user_with_owned_items(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...]) -> Dict[str, Any]:
     total_races = int(user.get('total_races') or 0)
     wins = int(user.get('wins') or 0)
-    owned_items = _owned_store_items_for_user(conn, int(user.get('id') or 0)) if conn else []
-    perks = _store_perks_from_owned_items(owned_items)
+    owned_list = list(owned_items or [])
+    perks = _store_perks_from_owned_items(owned_list)
     is_admin = _is_admin_email(user.get('email') or '')
     return {
         'id': user['id'],
@@ -2045,10 +2082,10 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
         'balance': float(user.get('balance') or 0),
         'tier': _tier_for_user(user),
         'season': _season_name(),
-        'seasonPoints': _season_points_for_user(user, owned_items),
+        'seasonPoints': int(user.get('season_points_stored') or _season_points_for_user(user, owned_list)),
         'premium': wins >= 10 or float(user.get('balance') or 0) >= 5000,
         'aiCoachTip': _coach_tip_for_user(user),
-        'ownedStoreItems': owned_items,
+        'ownedStoreItems': owned_list,
         'storePerks': perks,
         'equippedItems': {
             'avatar': user.get('equipped_avatar') or '',
@@ -2060,6 +2097,11 @@ def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
             'cursor': user.get('equipped_cursor') or '',
         },
     }
+
+
+def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
+    owned_items = _owned_store_items_for_user(conn, int(user.get('id') or 0)) if conn else []
+    return _safe_user_with_owned_items(user, owned_items)
 
 
 def _serialize_tournament(row: Dict[str, Any], user_owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> Dict[str, Any]:
@@ -5054,6 +5096,10 @@ def store_purchase():
                 equip_field = _equip_field_for_category(item.get('category'))
                 if equip_field:
                     cur.execute(f'UPDATE users SET {equip_field}=%s WHERE id=%s', (item['id'], user['id']))
+                cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                updated_user = cur.fetchone()
+                if updated_user:
+                    _refresh_season_points_for_user(cur, updated_user)
                     cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
                     updated_user = cur.fetchone()
             except ValueError as exc:
@@ -5416,61 +5462,21 @@ def leaderboard():
     except ValueError:
         limit = 100
 
+    cache_key = f'leaderboard:{limit}'
+    now_ms = int(time.time() * 1000)
+    with _leaderboard_cache_lock:
+        if (
+            _leaderboard_cache.get('key') == cache_key
+            and _leaderboard_cache.get('expires_at', 0) > now_ms
+            and _leaderboard_cache.get('payload') is not None
+        ):
+            return jsonify(_leaderboard_cache['payload'])
+
     conn = get_connection()
     try:
-        # Trigger season rollover if the month has changed
         _ensure_season_reset(conn)
         with conn.cursor() as cur:
             cur.execute(
-                '''
-                SELECT
-                    u.*,
-                    COALESCE(rh.live_races, 0) AS live_races,
-                    COALESCE(rh.live_earnings, 0) AS live_earnings,
-                    COALESCE(tj.tournament_entries, 0) AS tournament_entries,
-                    COALESCE(pp.tournament_payouts, 0) AS tournament_payouts
-                FROM users u
-                LEFT JOIN (
-                    SELECT
-                        user_id,
-                        COUNT(*) AS live_races,
-                        COALESCE(SUM(earnings), 0) AS live_earnings
-                    FROM race_history
-                    GROUP BY user_id
-                ) rh ON rh.user_id = u.id
-                LEFT JOIN (
-                    SELECT
-                        user_id,
-                        COUNT(*) AS tournament_entries
-                    FROM tournament_joins
-                    WHERE paid_amount > 0
-                    GROUP BY user_id
-                ) tj ON tj.user_id = u.id
-                LEFT JOIN (
-                    SELECT
-                        user_id,
-                        COALESCE(SUM(amount), 0) AS tournament_payouts
-                    FROM prize_payouts
-                    WHERE status = 'completed' AND tournament_id IS NOT NULL
-                    GROUP BY user_id
-                ) pp ON pp.user_id = u.id
-                ORDER BY u.wins DESC, u.wpm DESC, u.accuracy DESC
-                LIMIT %s
-                ''',
-                (limit,),
-            )
-            users = cur.fetchall()
-
-        # Recompute season_points_stored for all users pulled into the board
-        # so the stored value stays fresh on every leaderboard load.
-        for u in users:
-            with conn.cursor() as refresh_cur:
-                _refresh_season_points_for_user(refresh_cur, u)
-        conn.commit()
-
-        # Re-fetch with updated season_points_stored so sorting is accurate
-        with conn.cursor() as cur2:
-            cur2.execute(
                 """
                 SELECT
                     u.*,
@@ -5481,43 +5487,54 @@ def leaderboard():
                 FROM users u
                 LEFT JOIN (
                     SELECT user_id, COUNT(*) AS live_races, COALESCE(SUM(earnings), 0) AS live_earnings
-                    FROM race_history GROUP BY user_id
+                    FROM race_history
+                    GROUP BY user_id
                 ) rh ON rh.user_id = u.id
                 LEFT JOIN (
                     SELECT user_id, COUNT(*) AS tournament_entries
-                    FROM tournament_joins WHERE paid_amount > 0 GROUP BY user_id
+                    FROM tournament_joins
+                    WHERE paid_amount > 0
+                    GROUP BY user_id
                 ) tj ON tj.user_id = u.id
                 LEFT JOIN (
                     SELECT user_id, COALESCE(SUM(amount), 0) AS tournament_payouts
-                    FROM prize_payouts WHERE status = 'completed' AND tournament_id IS NOT NULL GROUP BY user_id
+                    FROM prize_payouts
+                    WHERE status = 'completed' AND tournament_id IS NOT NULL
+                    GROUP BY user_id
                 ) pp ON pp.user_id = u.id
                 ORDER BY u.season_points_stored DESC, u.wins DESC, u.wpm DESC
                 LIMIT %s
                 """,
                 (limit,),
             )
-            users = cur2.fetchall()
+            users = cur.fetchall()
 
+        owned_by_user = _owned_store_items_for_users(conn, [int(u.get('id') or 0) for u in users])
         board = []
-        for idx, u in enumerate(users, start=1):
-            owned_items = _owned_store_items_for_user(conn, int(u.get('id') or 0))
-            # Inject rank so _tier_for_user can assign Grandmaster to top-5
-            u_with_rank = dict(u)
-            u_with_rank['_season_rank'] = idx
-            row = _safe_user(u_with_rank, conn)
-            tournament_entries = int(u.get('tournament_entries') or 0)
-            tournament_payouts = float(u.get('tournament_payouts') or 0)
-            live_races = int(u.get('live_races') or 0)
-            live_earnings = float(u.get('live_earnings') or 0)
-            row['tournamentEntries'] = tournament_entries
-            row['tournamentPayouts'] = tournament_payouts
-            row['liveRaces'] = live_races
-            row['liveEarnings'] = live_earnings
-            row['seasonPoints'] = int(u.get('season_points_stored') or 0)
+        for idx, user in enumerate(users, start=1):
+            user_with_rank = dict(user)
+            user_with_rank['_season_rank'] = idx
+            row = _safe_user_with_owned_items(
+                user_with_rank,
+                owned_by_user.get(int(user.get('id') or 0), []),
+            )
+            row['tournamentEntries'] = int(user.get('tournament_entries') or 0)
+            row['tournamentPayouts'] = float(user.get('tournament_payouts') or 0)
+            row['liveRaces'] = int(user.get('live_races') or 0)
+            row['liveEarnings'] = float(user.get('live_earnings') or 0)
+            row['seasonPoints'] = int(user.get('season_points_stored') or 0)
             row['rank'] = idx
             row['weeklyRank'] = idx
             board.append(row)
 
+        with _leaderboard_cache_lock:
+            _leaderboard_cache.update(
+                {
+                    'key': cache_key,
+                    'expires_at': int(time.time() * 1000) + LEADERBOARD_CACHE_TTL_MS,
+                    'payload': board,
+                }
+            )
         return jsonify(board)
     finally:
         _return_connection(conn)

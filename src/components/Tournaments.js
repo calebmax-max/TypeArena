@@ -1,9 +1,25 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchCurrentUser, fetchTournaments, fetchTournamentWinner, joinTournament } from '../utils/typingApi';
+import { fetchCurrentUser, fetchTournaments, fetchTournamentWinner, getStoredUserSnapshot, joinTournament } from '../utils/typingApi';
 import '../styles/Tournaments.css';
 
 const FILTERS = ['all', 'active', 'upcoming', 'full', 'completed'];
+const TOURNAMENTS_CACHE_KEY = 'typearena_tournaments_cache';
+
+const readTournamentCache = () => {
+  try {
+    const raw = localStorage.getItem(TOURNAMENTS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeTournamentCache = (items) => {
+  try {
+    localStorage.setItem(TOURNAMENTS_CACHE_KEY, JSON.stringify(items));
+  } catch {}
+};
 
 function LobbyBar({ joined, max }) {
   const pct = Math.min(100, Math.round((joined / max) * 100));
@@ -177,9 +193,9 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
 
 export default function Tournaments() {
   const navigate = useNavigate();
-  const [tournaments, setTournaments] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [tournaments, setTournaments] = useState(() => readTournamentCache());
+  const [currentUser, setCurrentUser] = useState(() => getStoredUserSnapshot());
+  const [loading, setLoading] = useState(() => readTournamentCache().length === 0);
   const [processingId, setProcessingId] = useState(null);
   const [notice, setNotice] = useState(null);
   const [filter, setFilter] = useState('all');
@@ -208,8 +224,10 @@ export default function Tournaments() {
       try {
         const [user, data] = await Promise.all([fetchCurrentUser(), fetchTournaments()]);
         if (cancelled) return;
+        const nextTournaments = withLiveStatus(Array.isArray(data) ? data : []);
         setCurrentUser(user);
-        setTournaments(withLiveStatus(Array.isArray(data) ? data : []));
+        setTournaments(nextTournaments);
+        writeTournamentCache(nextTournaments);
       } catch (_) {
         // silent refresh failures — don't disrupt the user
       } finally {

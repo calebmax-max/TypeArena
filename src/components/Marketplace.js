@@ -1,6 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchCurrentUser, fetchStoreCatalog, purchaseStoreBundle, purchaseStoreItem } from '../utils/typingApi';
+import { fetchCurrentUser, fetchStoreCatalog, getStoredUserSnapshot, purchaseStoreBundle, purchaseStoreItem } from '../utils/typingApi';
 import '../styles/Marketplace.css';
+
+const MARKETPLACE_CACHE_KEY = 'typearena_marketplace_cache';
+
+const readMarketplaceCache = () => {
+  try {
+    const raw = localStorage.getItem(MARKETPLACE_CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeMarketplaceCache = (items) => {
+  try {
+    localStorage.setItem(MARKETPLACE_CACHE_KEY, JSON.stringify(items));
+  } catch {}
+};
 
 const CATEGORY_COPY = {
   all: { label: 'All Drops', description: 'A sharper, more premium store lineup for serious TypeArena players.' },
@@ -177,8 +194,8 @@ function MarketplacePreview({ item }) {
 }
 
 export default function Marketplace() {
-  const [catalog, setCatalog] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [catalog, setCatalog] = useState(() => readMarketplaceCache());
+  const [currentUser, setCurrentUser] = useState(() => getStoredUserSnapshot());
   const [notice, setNotice] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [busyItemId, setBusyItemId] = useState('');
@@ -188,7 +205,9 @@ export default function Marketplace() {
   const loadData = async () => {
     const [user, store] = await Promise.all([fetchCurrentUser(), fetchStoreCatalog()]);
     setCurrentUser(user);
-    setCatalog(store.items || []);
+    const nextCatalog = store.items || [];
+    setCatalog(nextCatalog);
+    writeMarketplaceCache(nextCatalog);
   };
 
   useEffect(() => {

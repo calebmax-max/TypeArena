@@ -23,6 +23,8 @@ const getStoredUser = () => {
   return safeJsonParse(raw, null);
 };
 
+export const getStoredUserSnapshot = () => getStoredUser();
+
 const syncAdminSessionFromUser = (user) => {
   if (user?.adminToken) {
     localStorage.setItem(ADMIN_TOKEN_KEY, user.adminToken);

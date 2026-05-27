@@ -1,21 +1,14 @@
 import './App.css';
 import { BrowserRouter, Routes, Route, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import Home from './components/Home';
-import Play from './components/Play';
-import Tournaments from './components/Tournaments';
-import Leaderboard from './components/Leaderboard';
-import Profile from './components/TypeProfile';
-import AdminPanel from './components/AdminPanel';
-import Marketplace from './components/Marketplace';
-import Results from './components/Results';
 import ChatWidget from './components/ChatWidget';
 
 // Inside your layout/App component, pass in currentUser:
 
 
 import Notfound from './components/Notfound';
-import Spectate from './components/Spectate';
+import './css/Loader.css';
 // inside your <Routes>:
 
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -33,6 +26,30 @@ const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Private friend battles are live now.',
   'Wallet top-up, tournaments, and marketplace are active.',
 ];
+
+const Play = lazy(() => import('./components/Play'));
+const Tournaments = lazy(() => import('./components/Tournaments'));
+const Leaderboard = lazy(() => import('./components/Leaderboard'));
+const Profile = lazy(() => import('./components/TypeProfile'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const Marketplace = lazy(() => import('./components/Marketplace'));
+const Results = lazy(() => import('./components/Results'));
+const Spectate = lazy(() => import('./components/Spectate'));
+
+function RouteLoader() {
+  return (
+    <div className="profile-container" style={{ minHeight: '60vh', display: 'grid', placeItems: 'center' }}>
+      <div style={{ display: 'grid', gap: '1rem', justifyItems: 'center' }}>
+        <div className="loader" aria-hidden="true">
+          <div className="slider" style={{ '--i': 0 }} />
+          <div className="slider" style={{ '--i': 1 }} />
+          <div className="slider" style={{ '--i': 2 }} />
+        </div>
+        <p className="auth-notice" style={{ margin: 0 }}>Loading arena page...</p>
+      </div>
+    </div>
+  );
+}
 
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -253,19 +270,21 @@ function AppLayout() {
       
       <main>
         <ChatWidget currentUser={currentUser} />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/play" element={<Play />} />
-          <Route path="/practice" element={<Play practicePage />} />
-          <Route path="/tournaments" element={<Tournaments />} />
-          <Route path="/leaderboard" element={<Leaderboard />} />
-          <Route path="/marketplace" element={<Marketplace />} />
-          <Route path="/admin" element={<AdminPanel />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/spectate/:roomId" element={<Spectate />} />
-          <Route path="/results/:raceId" element={<Results />} />
-          <Route path="*" element={<Notfound />} />
-        </Routes>
+        <Suspense fallback={<RouteLoader />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/play" element={<Play />} />
+            <Route path="/practice" element={<Play practicePage />} />
+            <Route path="/tournaments" element={<Tournaments />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/marketplace" element={<Marketplace />} />
+            <Route path="/admin" element={<AdminPanel />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/spectate/:roomId" element={<Spectate />} />
+            <Route path="/results/:raceId" element={<Results />} />
+            <Route path="*" element={<Notfound />} />
+          </Routes>
+        </Suspense>
       </main>
 
       <footer className="bg-dark text-white text-center py-4 mt-5">
