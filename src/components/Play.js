@@ -1818,10 +1818,14 @@ const flushLiveHeartbeat = useCallback(async () => {
     }, liveRoom?.startedAt ? LIVE_CLOCK_SYNC_INTERVAL_MS : LOCAL_RACE_TICK_INTERVAL_MS);
 
     return () => window.clearInterval(timerRef.current);
-    // liveRoom intentionally excluded — use liveRoomRef.current inside the interval
-    // so heartbeat updates don't restart the interval and spawn duplicates
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [duration, liveRoom?.id, liveRoom?.startedAt, phase, syncRoomClock]);
+  // Bug 2 fix: liveRoom?.startedAt removed from deps — every heartbeat returned a new room
+  // object (same startedAt value) which caused the interval to be cleared and recreated,
+  // dropping a tick and making the on-screen timer stutter or drift by up to 1s per heartbeat.
+  // liveRoom?.id is kept so the timer resets when entering a new room. syncRoomClock at
+  // effect-setup time handles the initial startedAt alignment; liveRoomRef is read inside
+  // the interval for subsequent ticks without causing the effect to re-run.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duration, liveRoom?.id, phase, syncRoomClock]);
 
   const refreshFeed = useCallback(async () => {
     const rooms = await fetchLiveRaces().catch(() => []);
@@ -2287,6 +2291,22 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     // WPM because extra characters contributed to the character count but were
     // never visible or penalised in the accuracy calculation.
     if (src && value.length > src.length) return;
+
+    // Bug 1 fix: finish the race immediately when the player types the last character.
+    // Without this, the race only ended when the countdown timer hit 0, so a player
+    // who completed the passage early would sit idle until the clock ran out, and
+    // their WPM was calculated against the full duration rather than their actual time.
+    if (src && value.length === src.length && !isSubmittingRef.current && !raceOver) {
+      setTypingText(value);
+      setReplayFrames((prev) => [
+        ...prev.slice(-299),
+        { typedText: value, timestamp: new Date().toISOString() },
+      ]);
+      window.clearInterval(timerRef.current);
+      setRaceOver(true);
+      finishRaceRef.current();
+      return;
+    }
     const newLen = value.length;
     const prevLen = typingText.length;
 
