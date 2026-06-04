@@ -1120,7 +1120,7 @@ export default function Play({ practicePage = false }){
     setNotice(message ? { message, type } : null);
   }, []);
 
-  const { liveFeed, refreshFeed } = useLiveFeed({
+  const { liveFeed, liveFeedError, refreshFeed } = useLiveFeed({
     phase,
     fetchLiveRaces,
     pollIntervalMs: LOBBY_FEED_POLL_INTERVAL_MS,
@@ -1474,79 +1474,6 @@ export default function Play({ practicePage = false }){
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
-  /* useLiveRaceSession now owns polling, countdown, and heartbeat cleanup.
-  useEffect(() => {
-    // Fix #10: removed `phase === 'waiting'` from the early-return guard.
-    // The 'waiting' phase was never actually set anywhere, making the guard dead code
-    // that would also block polling if the phase were ever used in future.
-    if (!liveRoom?.id || phase === 'lobby') {
-      return undefined;
-    }
-
-    const roomId = liveRoom.id;
-
-    // During results phase, only keep polling if standings are still incomplete
-    if (phase === 'results') {
-      const allDone = liveRoom?.players?.every((p) => Boolean(p?.result));
-      if (allDone) return undefined;
-    }
-
-    const interval = window.setInterval(async () => {
-      if (document.visibilityState !== 'visible' || roomPollInFlightRef.current) {
-        return;
-      }
-      roomPollInFlightRef.current = true;
-      try {
-        const room = await fetchLiveRaceRoom(roomId);
-        if (isLeavingRef.current) return;
-        setLiveRoom(room);
-        if (room.status === 'completed' || phase === 'results') {
-          const finalPayload = buildRoomResultPayload(room);
-          if (finalPayload) {
-            sessionStorage.setItem(LATEST_RACE_RESULT_KEY, JSON.stringify(finalPayload));
-            setRaceResult(finalPayload);
-          }
-          if (room.status === 'completed') setPhase('results');
-          return;
-        }
-        syncRoomClock(room);
-        if (phase === 'queued') {
-          if (room.status === 'racing' || (room.status !== 'waiting' && countdownRemaining <= 0)) {
-            setPhase('racing');
-            setTimeout(() => inputRef.current?.focus(), 150);
-          }
-        }
-      } catch (error) {
-        console.error('Live room polling error:', error);
-      } finally {
-        roomPollInFlightRef.current = false;
-      }
-    }, phase === 'queued'
-      ? LIVE_ROOM_POLL_QUEUED_MS
-      : phase === 'results'
-        ? LIVE_ROOM_POLL_RESULTS_MS
-        : LIVE_ROOM_POLL_ACTIVE_MS);
-
-    return () => window.clearInterval(interval);
-  // liveRoom.id is captured as roomId above — the full object is intentionally excluded
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildRoomResultPayload, countdownRemaining, liveRoom?.id, liveRoom?.players, phase, syncRoomClock]);
-
-  useEffect(() => {
-    if (phase === 'queued' && liveRoom?.status === 'countdown') {
-      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} seconds…`, 'info');
-      if (countdownRemaining <= 0) {
-        setPhase('racing');
-        setTimeout(() => inputRef.current?.focus(), 150);
-      }
-    }
-  }, [countdownRemaining, liveRoom?.status, phase, showNotice]);
-
-  useEffect(() => () => {
-    window.clearTimeout(heartbeatTimerRef.current);
-  }, []);
-
-  */
   // Stop music when component unmounts (navigate away)
   useEffect(() => () => { _orchestra.stop(); }, []);
 
@@ -1641,55 +1568,6 @@ export default function Play({ practicePage = false }){
 
     return () => window.clearInterval(interval);
   }, [phase]);
-
-  /* useLiveRaceSession now owns live-room completion transitions.
-  useEffect(() => {
-  // Only auto-advance to results from an active game phase, never from lobby
-  if (
-    liveRoom?.status === 'completed' &&
-    phase !== 'results' &&
-    phase !== 'lobby' &&
-    !isLeavingRef.current
-  ) {
-    const finalPayload = buildRoomResultPayload(liveRoom);
-
-    if (finalPayload) {
-      sessionStorage.setItem(
-        LATEST_RACE_RESULT_KEY,
-        JSON.stringify(finalPayload)
-      );
-
-      setRaceResult(finalPayload);
-    }
-
-    setPhase('results');
-    return;
-  }
-
-  if (phase === 'queued' && liveRoom?.status === 'countdown') {
-    syncRoomClock(liveRoom);
-
-    const countdownTimer = window.setInterval(() => {
-      syncRoomClock(liveRoom);
-    }, LIVE_CLOCK_SYNC_INTERVAL_MS);
-
-    return () => window.clearInterval(countdownTimer);
-  }
-
-  if (phase !== 'racing') {
-    window.clearInterval(timerRef.current);
-    return undefined;
-  }
-
-}, [
-  buildRoomResultPayload,
-  liveRoom,
-  phase,
-  syncRoomClock
-]);
-
-    
-  */
 
   useEffect(() => {
     // Run the race timer during active racing — for both live rooms and solo/practice races
@@ -1935,215 +1813,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   }, [resetLiveSession, showNotice]);
   backToLobbyRef.current = backToLobby;
 
-  /* useLiveRaceSession now owns live room start/join/cancel/rematch flows.
-  const startLiveRace = useCallback(async () => {
-    if (currentUser === undefined) return;
-    if (!currentUser?.id) {
-      redirectToProfile();
-      return;
-    }
-    isLeavingRef.current = false;
-    isSubmittingRef.current = false;
-
-    setLoadingLive(true);
-    showNotice(null);
-    try {
-      const excludeContentIds = getUsedContentIds(mode, language);
-      const response = await queueLiveRace({
-        mode,
-        language,
-        duration,
-        // winnerPrize is calculated server-side; this is a UI hint only
-        winnerPrize: Math.round((duration / 60) * 150),
-        excludeContentIds,
-        // #6 skill-based matchmaking
-        wpmMin: wpmFilter.min > 0 ? wpmFilter.min : undefined,
-        wpmMax: wpmFilter.max < 300 ? wpmFilter.max : undefined,
-      });
-      setLiveRoom(response.room);
-      // Record the picked content so it won't repeat until all passages are used
-      recordUsedContentId(
-        response.room?.contentId,
-        mode,
-        language,
-        response.totalContentCount || 0
-      );
-      setTypingText('');
-      setReplayFrames([]);
-      setRaceResult(null);
-      setRaceOver(false);
-      setPhase('queued');
-      queuedAtRef.current = Date.now();
-      setQueueElapsed(0);
-      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
-      setTimeLeft(Number(response.room?.duration || duration));
-      showNotice(
-        response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player…',
-        response.matched ? 'success' : 'info'
-      );
-      refreshFeed();
-    } catch (error) {
-      showNotice(error.message || 'Could not join a live race.', 'error');
-    } finally {
-      setLoadingLive(false);
-    }
-  }, [currentUser, duration, language, mode, redirectToProfile, refreshFeed, showNotice, wpmFilter]);
-
-  const createFriendBattle = async () => {
-    if (currentUser === undefined) return;
-    if (!currentUser?.id) {
-      redirectToProfile();
-      return;
-    }
-
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    isLeavingRef.current = false;
-    isSubmittingRef.current = false;
-    setLiveRoom(null);
-
-    setLoadingLive(true);
-    showNotice(null);
-    try {
-      const excludeContentIds = getUsedContentIds(mode, language);
-      const response = await queueLiveRace({
-        mode,
-        language,
-        duration,
-        isPrivate: true,
-        inviteCode: friendBattle.customInviteCode.trim(),
-        password: friendBattle.password,
-        excludeContentIds,
-      });
-      
-      if (!response || !response.room) {
-        throw new Error("Server response missing room details.");
-      }
-
-      setLiveRoom(response.room);
-      // Record the picked content so it won't repeat until all passages are used
-      recordUsedContentId(
-        response.room?.contentId,
-        mode,
-        language,
-        response.totalContentCount || 0
-      );
-      setTypingText('');
-      setReplayFrames([]);
-      setRaceResult(null);
-      setRaceOver(false);
-      setPhase('queued');
-      queuedAtRef.current = Date.now();
-      setQueueElapsed(0);
-      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
-      setTimeLeft(Number(response.room?.duration || duration));
-      setFriendBattle((prev) => ({ ...prev, inviteCode: response.room.inviteCode || '' }));
-      showNotice(
-        response.message || `Private room created. Share invite code ${response.room.inviteCode} with your opponent.`,
-        'success'
-      );
-      refreshFeed();
-    } catch (error) {
-      console.error("Error creating friend battle:", error);
-      setPhase('lobby');
-      // Fix #2: error is a plain Error from fetch — error.response is always undefined.
-      // Use error.message directly instead of the Axios-style error.response?.data path.
-      showNotice(
-        error.message || 'Could not create friend battle.',
-        'error'
-      );
-    } finally {
-      setLoadingLive(false);
-    }
-  };
-
-  // Fix #11: useCallback so pendingRematch effect (and direct callers) always
-  // see the current friendBattle.inviteCode / password, not a stale closure.
-  const joinFriendBattle = useCallback(async () => {
-    if (currentUser === undefined) return;
-    if (!currentUser?.id) {
-      redirectToProfile();
-      return;
-    }
-    isLeavingRef.current = false;
-    isSubmittingRef.current = false;
-
-    setLoadingLive(true);
-    showNotice(null);
-    try {
-      const response = await queueLiveRace({
-        inviteCode: friendBattle.inviteCode.trim(),
-        password: friendBattle.password,
-      });
-      setLiveRoom(response.room);
-      // Record the content used so the player won't see it again until all are cycled
-      recordUsedContentId(
-        response.room?.contentId,
-        response.room?.mode || mode,
-        response.room?.language || language,
-        response.totalContentCount || 0
-      );
-      setTypingText('');
-      setRaceResult(null);
-      setRaceOver(false);
-      setMode(response.room.mode || mode);
-      setLanguage(response.room.language || language);
-      setDuration(Number(response.room.duration || duration));
-      setPhase('queued');
-      queuedAtRef.current = Date.now();
-      setQueueElapsed(0);
-      setCountdownRemaining(Number(response.room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
-      setTimeLeft(Number(response.room?.duration || duration));
-      showNotice(
-        response.message || (
-          response.matched
-            ? 'Joined successfully. Opponent connected — race is starting.'
-            : 'Joined successfully. Waiting for the host to start.'
-        ),
-        response.matched ? 'success' : 'info'
-      );
-      refreshFeed();
-    } catch (error) {
-      const inviteCode = friendBattle.inviteCode.trim().toUpperCase();
-      const redirectParams = new URLSearchParams();
-      if (inviteCode) redirectParams.set('invite', inviteCode);
-      if (friendBattle.password) redirectParams.set('password', friendBattle.password);
-      const redirectPath = `/play${redirectParams.toString() ? `?${redirectParams.toString()}` : ''}`;
-      const message = error.message || 'Could not join friend battle.';
-
-      if (/unauthorized|sign in/i.test(message)) {
-        showNotice('Please sign in first. Taking you to your profile.', 'info');
-        navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}`);
-      } else if (/insufficient funds|need kes/i.test(message)) {
-        showNotice('Top up your wallet to join this room. Taking you to your profile.', 'warning');
-        navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}&topup=1`);
-      } else {
-        showNotice(message, 'error');
-      }
-    } finally {
-      setLoadingLive(false);
-    }
-  }, [currentUser, duration, friendBattle.inviteCode, friendBattle.password, language, mode, navigate, redirectToProfile, refreshFeed, showNotice]);
-
-  // Rematch useEffect is placed after the comment block below ↓
-
-  */
-  // Fix #2 (Issue 2):
-  // copyTextToClipboard, copyInviteCode, copyInviteLink, and shareToWhatsApp that
-  // previously appeared here (before the */ closing of the large commented-out block)
-  // were outside the comment and caused "Identifier has already been declared" crashes.
-  // They have been removed; the correct useCallback versions below are the only copies.
-  //
-  // Fix #3 (Issue 3): cancelPrivateRoom was also outside the comment block and
-  // referenced undeclared variables (cancelLiveRaceRoom, heartbeatTimerRef, setLiveRoom,
-  // setQueueElapsed, queuedAtRef). It is now delegated entirely to useLiveRaceSession,
-  // which already exposes a cancelPrivateRoom in its return value (line 1289).
-
-  // Bug F fix: rematch useEffect — was previously inside the large commented-out block
-  // so it never ran. joinFriendBattle is defined in the hook (destructured above), so
-  // this effect can safely reference it here in live code.
+  // Rematch handling stays in the hook; this effect just consumes the local flag.
   useEffect(() => {
     if (!pendingRematch || phase !== 'lobby') return;
     setPendingRematch(false);
@@ -2815,6 +2485,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 Refresh
               </button>
             </div>
+            {liveFeedError && (
+              <p className="results-challenge" style={{ marginTop: 0, color: 'hsl(0 75% 68%)' }}>
+                Live feed is unavailable right now. Showing the last known rooms.
+              </p>
+            )}
             <div className="live-board__grid">
               {liveFeed.slice(0, 6).map((room) => (
                 <div key={room.id} className="result-card live-card">

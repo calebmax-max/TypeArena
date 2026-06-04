@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export function useLiveFeed({ phase, fetchLiveRaces, pollIntervalMs }) {
   const [liveFeed, setLiveFeed] = useState([]);
+  const [error, setError] = useState(null);
   const inFlightRef = useRef(false);
 
   const refreshFeed = useCallback(async () => {
@@ -11,8 +12,11 @@ export function useLiveFeed({ phase, fetchLiveRaces, pollIntervalMs }) {
 
     inFlightRef.current = true;
     try {
-      const rooms = await fetchLiveRaces().catch(() => []);
+      const rooms = await fetchLiveRaces();
       setLiveFeed(Array.isArray(rooms) ? rooms : []);
+      setError(null);
+    } catch (err) {
+      setError(err?.message || 'Could not refresh the live feed.');
     } finally {
       inFlightRef.current = false;
     }
@@ -35,5 +39,5 @@ export function useLiveFeed({ phase, fetchLiveRaces, pollIntervalMs }) {
     };
   }, [pollIntervalMs, refreshFeed]);
 
-  return { liveFeed, refreshFeed };
+  return { liveFeed, liveFeedError: error, refreshFeed };
 }

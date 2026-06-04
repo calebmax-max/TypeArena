@@ -11,11 +11,7 @@ export default function Results() {
     try {
       const raw = sessionStorage.getItem(LATEST_RACE_RESULT_KEY);
       if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      // Clear immediately after reading so it can never bounce the user
-      // back to this page on a future navigation or page refresh
-      sessionStorage.removeItem(LATEST_RACE_RESULT_KEY);
-      return parsed;
+      return JSON.parse(raw);
     } catch (error) {
       return null;
     }
