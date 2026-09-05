@@ -64,6 +64,7 @@ export function useLiveRaceSession({
   const isLeavingRef = useRef(false);
   const queuedAtRef = useRef(null);
   const liveRoomRef = useRef(null);
+  const serverClockOffsetRef = useRef(0);
 
   const clearTransientLiveState = useCallback(() => {
     setTypingText('');
@@ -188,13 +189,15 @@ export function useLiveRaceSession({
     }
 
     const countdownSeconds = Number(room.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
+    const serverNowMs = Date.parse(room.serverNow || '');
+    serverClockOffsetRef.current = Number.isFinite(serverNowMs) ? serverNowMs - Date.now() : 0;
     const startedAtMs = new Date(room.startedAt).getTime();
     if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) {
       setCountdownRemaining(countdownSeconds);
       return;
     }
 
-    const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
+    const elapsedSeconds = Math.max(0, (Date.now() + serverClockOffsetRef.current - startedAtMs) / 1000);
     const remainingCountdown = Math.max(0, Math.ceil(countdownSeconds - elapsedSeconds));
     const raceElapsed = Math.max(0, Math.floor(elapsedSeconds - countdownSeconds));
 
@@ -705,6 +708,7 @@ export function useLiveRaceSession({
     liveRoom,
     setLiveRoom,
     liveRoomRef,
+    serverClockOffsetRef,
     loadingLive,
     countdownRemaining,
     queueElapsed,

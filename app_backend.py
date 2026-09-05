@@ -1828,6 +1828,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'spectators': spectator_count,
         'createdAt': room['createdAt'],
         'startedAt': room.get('startedAt'),
+        'serverNow': _now_iso(),
         'completedAt': room.get('completedAt'),
     }
 

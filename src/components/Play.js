@@ -1338,6 +1338,7 @@ export default function Play({ practicePage = false }){
   const {
     liveRoom,
     liveRoomRef,
+    serverClockOffsetRef,
     loadingLive,
     countdownRemaining,
     queueElapsed,
@@ -1629,7 +1630,7 @@ export default function Play({ practicePage = false }){
         syncRoomClock(currentRoom);
 
         const startedAtMs = new Date(currentRoom.startedAt).getTime();
-        const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
+        const elapsedSeconds = Math.max(0, (Date.now() + serverClockOffsetRef.current - startedAtMs) / 1000);
         const countdownSeconds = Number(currentRoom.countdown || 10);
         const raceRemaining = Math.max(0, Number(currentRoom.duration || duration) - Math.floor(elapsedSeconds - countdownSeconds));
 
