@@ -1340,6 +1340,7 @@ export default function Play({ practicePage = false }){
     liveRoomRef,
     serverClockOffsetRef,
     loadingLive,
+    liveAction,
     countdownRemaining,
     queueElapsed,
     isSubmittingRef,
@@ -2499,6 +2500,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               copyInviteCode={copyInviteCode}
               copyInviteLink={copyInviteLink}
               loadingLive={loadingLive}
+                liveAction={liveAction}
               currentUser={currentUser}
               liveRoom={liveRoom}
             />

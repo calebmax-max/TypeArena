@@ -259,6 +259,30 @@
   opacity: 0.35;
 }
 
+.friend-battle-status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+  color: var(--arena-accent);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+
+.friend-battle-status__dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--arena-accent);
+  box-shadow: 0 0 0 0 var(--arena-glow);
+  animation: friendBattlePulse 1.4s ease-out infinite;
+}
+
+@keyframes friendBattlePulse {
+  70% { box-shadow: 0 0 0 0.45rem transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
 .friend-battle-grid {
   display: flex;
   flex-wrap: wrap;

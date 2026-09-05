@@ -10,6 +10,7 @@ export default function PrivateRoomPanel({
   copyInviteCode,
   copyInviteLink,
   loadingLive,
+  liveAction,
   currentUser,
   liveRoom,
 }) {
@@ -65,6 +66,14 @@ export default function PrivateRoomPanel({
           Copy Link
         </button>
       </div>
+      {loadingLive && (
+        <div className="friend-battle-status" role="status" aria-live="polite">
+          <span className="friend-battle-status__dot" aria-hidden="true" />
+          {liveAction === 'creating' && 'Creating your private room…'}
+          {liveAction === 'joining' && 'Joining the private room…'}
+          {liveAction === 'matching' && 'Finding an opponent…'}
+        </div>
+      )}
       <p className="results-challenge">
         {hasSignatureInvites
           ? 'Your Signature Invite Pass is active. You can create a private room with your own custom code.'

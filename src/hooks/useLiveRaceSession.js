@@ -52,6 +52,7 @@ export function useLiveRaceSession({
 }) {
   const [liveRoom, setLiveRoom] = useState(null);
   const [loadingLive, setLoadingLive] = useState(false);
+  const [liveAction, setLiveAction] = useState(null);
   const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [queueElapsed, setQueueElapsed] = useState(0);
   const [pendingRematch, setPendingRematch] = useState(false);
@@ -284,6 +285,7 @@ export function useLiveRaceSession({
     isLeavingRef.current = false;
     isSubmittingRef.current = false;
     setLoadingLive(true);
+    setLiveAction('matching');
     showNotice(null);
 
     try {
@@ -312,6 +314,7 @@ export function useLiveRaceSession({
       showNotice(error.message || 'Could not join a live race.', 'error');
     } finally {
       setLoadingLive(false);
+      setLiveAction(null);
     }
   }, [
     currentUser,
@@ -338,6 +341,7 @@ export function useLiveRaceSession({
     isSubmittingRef.current = false;
     setLiveRoom(null);
     setLoadingLive(true);
+    setLiveAction('creating');
     showNotice(null);
 
     try {
@@ -361,7 +365,7 @@ export function useLiveRaceSession({
           totalContentCount: response.totalContentCount || 0,
         },
         {
-          message: response.message || `Private room created. Share invite code ${response.room.inviteCode} with your opponent.`,
+          message: `Private room created. Waiting for your opponent to join with invite code ${response.room.inviteCode}.`,
           type: 'success',
         }
       );
@@ -373,6 +377,7 @@ export function useLiveRaceSession({
       showNotice(error.message || 'Could not create friend battle.', 'error');
     } finally {
       setLoadingLive(false);
+      setLiveAction(null);
     }
   }, [
     currentUser,
@@ -400,6 +405,7 @@ export function useLiveRaceSession({
     isLeavingRef.current = false;
     isSubmittingRef.current = false;
     setLoadingLive(true);
+    setLiveAction('joining');
     showNotice(null);
 
     try {
@@ -447,6 +453,7 @@ export function useLiveRaceSession({
       }
     } finally {
       setLoadingLive(false);
+      setLiveAction(null);
     }
   }, [
     currentUser,
@@ -710,6 +717,7 @@ export function useLiveRaceSession({
     liveRoomRef,
     serverClockOffsetRef,
     loadingLive,
+    liveAction,
     countdownRemaining,
     queueElapsed,
     pendingRematch,

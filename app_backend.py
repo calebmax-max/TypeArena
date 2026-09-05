@@ -3047,6 +3047,16 @@ def _load_live_room_from_row(row: Optional[Dict[str, Any]]) -> Optional[Dict[str
     if not isinstance(room, dict):
         return None
 
+    raw_results = room.get('results')
+    if isinstance(raw_results, dict):
+        normalized_results = {}
+        for user_id, result in raw_results.items():
+            try:
+                normalized_results[int(user_id)] = result
+            except (TypeError, ValueError):
+                continue
+        room['results'] = normalized_results
+
     room['inviteCode'] = str(room.get('inviteCode') or row.get('invite_code') or '').upper()
     room['status'] = str(room.get('status') or row.get('status') or 'waiting')
     room['isPrivate'] = bool(room.get('isPrivate') if 'isPrivate' in room else row.get('is_private'))
