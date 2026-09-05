@@ -20,6 +20,7 @@ function LiveTypingDemo() {
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const [wpm, setWpm] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  const deleteDelayRef = useRef(null);
 
   const currentSentence = DEMO_SENTENCES[sentenceIndex];
 
@@ -32,11 +33,14 @@ function LiveTypingDemo() {
           setCharIndex(charIndex + 1);
           setWpm(Math.floor(60 + Math.random() * 40));
         } else {
-          setTimeout(() => setIsDeleting(true), 1600);
+          deleteDelayRef.current = window.setTimeout(() => {
+            setIsDeleting(true);
+            deleteDelayRef.current = null;
+          }, 1600);
         }
       } else {
         if (displayed.length > 0) {
-          setDisplayed(displayed.slice(0, -1));
+          setDisplayed((prev) => prev.slice(0, -1));
         } else {
           setIsDeleting(false);
           setCharIndex(0);
@@ -44,7 +48,13 @@ function LiveTypingDemo() {
         }
       }
     }, speed);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (deleteDelayRef.current) {
+        clearTimeout(deleteDelayRef.current);
+        deleteDelayRef.current = null;
+      }
+    };
   }, [charIndex, isDeleting, displayed, currentSentence]);
 
   return (
@@ -53,7 +63,7 @@ function LiveTypingDemo() {
         <span className="dot dot-red" />
         <span className="dot dot-yellow" />
         <span className="dot dot-green" />
-        <span className="terminal-label">TypeArena — Live Race</span>
+        <span className="terminal-label">TypeArena - Live Race</span>
       </div>
       <div className="terminal-body">
         <div className="terminal-prompt">
@@ -182,7 +192,7 @@ export default function Home({ currentUser }) {
   const onlineCount = visibleOnlineUsers.length;
   const heroBadgeLabel = currentUser?.id
     ? `${onlineCount} online`
-    : `${liveCount === null ? '—' : liveCount} live now`;
+    : `${liveCount === null ? 'N/A' : liveCount} live now`;
   const preloadPlayPage = () => {
     void preloadRoute('play');
     void preloadPlayContent();
@@ -192,6 +202,11 @@ export default function Home({ currentUser }) {
   };
 
   useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      document.querySelectorAll('.reveal').forEach((el) => el.classList.add('in-view'));
+      return undefined;
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((e) => {

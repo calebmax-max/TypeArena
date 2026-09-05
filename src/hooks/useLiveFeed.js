@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export function useLiveFeed({ phase, fetchLiveRaces, pollIntervalMs }) {
+export function useLiveFeed({ phase, fetchLiveRaces, pollIntervalMs, enabled = true }) {
   const [liveFeed, setLiveFeed] = useState([]);
   const [error, setError] = useState(null);
   const inFlightRef = useRef(false);
 
   const refreshFeed = useCallback(async () => {
-    if (phase === 'racing' || document.visibilityState !== 'visible' || inFlightRef.current) {
+    if (!enabled || phase === 'racing' || document.visibilityState !== 'visible' || inFlightRef.current) {
       return;
     }
 
@@ -20,7 +20,7 @@ export function useLiveFeed({ phase, fetchLiveRaces, pollIntervalMs }) {
     } finally {
       inFlightRef.current = false;
     }
-  }, [fetchLiveRaces, phase]);
+  }, [enabled, fetchLiveRaces, phase]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -37,7 +37,7 @@ export function useLiveFeed({ phase, fetchLiveRaces, pollIntervalMs }) {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.clearInterval(intervalId);
     };
-  }, [pollIntervalMs, refreshFeed]);
+  }, [enabled, pollIntervalMs, refreshFeed]);
 
   return { liveFeed, liveFeedError: error, refreshFeed };
 }

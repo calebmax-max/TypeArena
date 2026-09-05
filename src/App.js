@@ -134,9 +134,11 @@ function AppLayout() {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(null);
   const [siteMarqueeItems, setSiteMarqueeItems] = useState(DEFAULT_SITE_MARQUEE_ITEMS);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    setMenuOpen(false);
   }, [location.key]);
 
   useEffect(() => {
@@ -154,7 +156,6 @@ function AppLayout() {
       try {
         const headers = {
           'Content-Type': 'application/json',
-          'X-User-Id': String(stored.id),
         };
         const token = localStorage.getItem('token');
         if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -254,39 +255,22 @@ function AppLayout() {
 
   return (
     <div className="App">
-      <header className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
-        <div className="container-fluid">
-          <div className="navbar-topbar">
-            <Link to="/" className="navbar-brand fw-bold">
-              TypeArena
-            </Link>
-            <div className="navbar-auth-mobile">
-              {currentUser ? (
-                <NavLink to="/profile" className="nav-link nav-link--auth-mobile">
-                  Profile
-                </NavLink>
-              ) : (
-                <NavLink to="/profile" className="nav-link nav-link--auth-mobile">
-                  Sign In
-                </NavLink>
-              )}
-            </div>
-          </div>
-          <nav className="navbar-nav navbar-nav--persistent ms-auto">
+      <header className="arena-navbar">
+        <div className="arena-navbar__inner">
+          <Link to="/" className="arena-brand" aria-label="TypeArena home">
+            <span className="arena-brand__mark">TA</span>
+            <span className="arena-brand__copy"><strong>TypeArena</strong><small>Compete. Type. Win.</small></span>
+          </Link>
+          <button type="button" className={`arena-menu-toggle${menuOpen ? ' is-open' : ''}`} aria-expanded={menuOpen} aria-controls="arena-primary-nav" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} onClick={() => setMenuOpen((open) => !open)}>
+            <span /><span /><span />
+          </button>
+          <nav id="arena-primary-nav" className={`arena-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
             <NavLink to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
             <NavLink to="/tournaments" className={navLinkClassName} onMouseEnter={preloadByRoute('tournaments')} onFocus={preloadByRoute('tournaments')} onTouchStart={preloadByRoute('tournaments')}>Tournaments</NavLink>
             <NavLink to="/leaderboard" className={navLinkClassName} onMouseEnter={preloadByRoute('leaderboard')} onFocus={preloadByRoute('leaderboard')} onTouchStart={preloadByRoute('leaderboard')}>Leaderboard</NavLink>
             <NavLink to="/marketplace" className={navLinkClassName} onMouseEnter={preloadByRoute('marketplace')} onFocus={preloadByRoute('marketplace')} onTouchStart={preloadByRoute('marketplace')}>Marketplace</NavLink>
-            {currentUser ? (
-              <>
-                <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`} onMouseEnter={preloadByRoute('profile')} onFocus={preloadByRoute('profile')} onTouchStart={preloadByRoute('profile')}>Profile</NavLink>
-                <button onClick={handleSignOut} className="nav-link btn btn-link navbar-desktop-only">
-                  Sign Out
-                </button>
-              </>
-            ) : (
-              <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} navbar-desktop-only`} onMouseEnter={preloadByRoute('profile')} onFocus={preloadByRoute('profile')} onTouchStart={preloadByRoute('profile')}>Sign In</NavLink>
-            )}
+            <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`} onMouseEnter={preloadByRoute('profile')} onFocus={preloadByRoute('profile')} onTouchStart={preloadByRoute('profile')}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
+            {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout">Sign Out</button>}
           </nav>
         </div>
       </header>
@@ -319,9 +303,12 @@ function AppLayout() {
         </Suspense>
       </main>
 
-      <footer className="bg-dark text-white text-center py-4 mt-5">
-        <p>&copy; 2026 TypeArena. All rights reserved.</p>
-        <p>Compete. Type. Win.</p>
+      <footer className="arena-footer">
+        <div className="arena-footer__inner">
+          <div><strong>TypeArena</strong><p>Skill-based typing races for people who like a little pressure.</p></div>
+          <div className="arena-footer__links"><Link to="/play">Play a race</Link><Link to="/tournaments">Tournaments</Link><Link to="/leaderboard">Leaderboard</Link><Link to="/profile">Your profile</Link></div>
+        </div>
+        <p className="arena-footer__bottom">&copy; 2026 TypeArena. Compete. Type. Win.</p>
       </footer>
     </div>
   );

@@ -44,8 +44,8 @@ ALWAYSDATA_DB_USER=your_mysql_username
 ALWAYSDATA_DB_PASSWORD=your_mysql_password
 ALWAYSDATA_DB_NAME=faithmutheu1_db
 
-TYPEARENA_ADMIN_EMAIL=caleb@gmail.com
-TYPEARENA_ADMIN_PASSWORD=Caleb123
+TYPEARENA_ADMIN_EMAIL=your-admin-email@example.com
+TYPEARENA_ADMIN_PASSWORD=use-a-strong-secret
 
 REACT_APP_API_URL=/api
 ```

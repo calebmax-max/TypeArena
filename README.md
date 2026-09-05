@@ -53,8 +53,10 @@ Add the required backend environment variables in Render:
 - `ALWAYSDATA_DB_NAME`
 - `TYPEARENA_ADMIN_EMAIL`
 - `TYPEARENA_ADMIN_PASSWORD`
+- `TYPEARENA_ADMIN_TOKEN_SECRET`
+- `TYPEARENA_ALLOWED_ORIGINS`
 
-Keep any payment or AI variables you need there too.
+Keep any payment or AI variables you need there too, including public HTTPS callback and Stripe redirect URLs.
 
 ### 2. Deploy the frontend on Netlify
 
@@ -88,5 +90,7 @@ That means the frontend can stay on one origin while forwarding API requests to 
 - `ALWAYSDATA_DB_NAME`
 - `TYPEARENA_ADMIN_EMAIL`
 - `TYPEARENA_ADMIN_PASSWORD`
+- `TYPEARENA_ADMIN_TOKEN_SECRET`
+- `TYPEARENA_ALLOWED_ORIGINS`
 
 Use [.env.example](/c:/Users/USER/Desktop/type/.env.example) as the template for the rest of the optional settings.

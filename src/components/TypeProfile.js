@@ -27,7 +27,6 @@ import React, {
 import { useNavigate } from 'react-router-dom';
 import {
   addFundsToWallet,
-  adminLogin,
   fetchCurrentUser,
   fetchRaceHistory,
   fetchWalletConfig,
@@ -256,11 +255,13 @@ export default function TypeProfile() {
   const [withdrawMethod,  setWithdrawMethod]  = useState('paypal');
   const [walletNotice,  setWalletNotice]   = useState('');
   const [authNotice,    setAuthNotice]     = useState('');
+  const [authLoading,   setAuthLoading]   = useState(false);
   const [showPassword,  setShowPassword]   = useState(false);
   const [activeTab,     setActiveTab]      = useState('wallet');
   const [walletSection, setWalletSection]  = useState('topup'); // 'topup' | 'withdraw'
   const [topUpLoading,     setTopUpLoading]     = useState(false);
   const [withdrawLoading,  setWithdrawLoading]  = useState(false);
+  const profileRequestRef = useRef(0);
 
   // ── Audio / experience settings (persisted in localStorage, read by Play) ──
   const [soundEnabled,       setSoundEnabled]       = useState(() => localStorage.getItem('typearena_sound')       !== 'false');
@@ -288,13 +289,13 @@ export default function TypeProfile() {
   }, []);
 
   const loadProfile = useCallback(async () => {
+    const requestId = profileRequestRef.current + 1;
+    profileRequestRef.current = requestId;
     try {
       const user = await fetchCurrentUser();
+      // An older session request must not overwrite a newer login result.
+      if (requestId !== profileRequestRef.current) return;
       setCurrentUser(user);
-      // Unblock the loading spinner as soon as the user identity is known.
-      // Wallet config, race history, and wallet history then load in the
-      // background so the profile shell renders immediately rather than
-      // waiting for all three secondary API calls to complete.
       setLoading(false);
       if (user?.id) {
         const [cfg, history, wallet] = await Promise.all([
@@ -302,6 +303,7 @@ export default function TypeProfile() {
           fetchRaceHistory(user.id),
           fetchWalletHistory(),
         ]);
+        if (requestId !== profileRequestRef.current) return;
         setWalletConfig(cfg || { topUpMethods: [], withdrawMethods: [] });
         setRaceHistory(history || []);
         setWalletHistory(wallet?.items || []);
@@ -311,11 +313,11 @@ export default function TypeProfile() {
         setWalletHistory([]);
       }
     } catch (err) {
+      if (requestId !== profileRequestRef.current) return;
       console.error('Failed to load profile:', err);
       setLoading(false);
     }
   }, []);
-
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
   useEffect(() => {
@@ -374,47 +376,33 @@ export default function TypeProfile() {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    if (authLoading) return;
+    setAuthLoading(true);
+    setAuthNotice('');
     try {
-      // Only attempt the admin endpoint when logging in (not signing up).
-      // This avoids an extra network round-trip for every regular sign-in.
-      if (authMode === 'login') {
-        try {
-          const adminResult = await adminLogin(formData.email, formData.password);
-          if (adminResult?.token) {
-            setAuthNotice('');
-            setFormData({ email: '', password: '', username: '', phoneNumber: '' });
-            navigate('/admin');
-            return;
-          }
-        } catch { /* not an admin account — fall through to normal login */ }
-      }
-
       const user = authMode === 'login'
         ? await loginUser(formData.email, formData.password)
         : await signupUser(formData.username, formData.email, formData.password, formData.phoneNumber);
 
-      window.dispatchEvent(new Event(USER_CHANGE_EVENT));
       applyFreshUserState(user);
 
       if (authMode === 'login' && user?.adminToken) {
-        setShowAuthForm(false);
         setFormData({ email: '', password: '', username: '', phoneNumber: '' });
-        setAuthNotice('');
         navigate('/admin');
         return;
       }
 
       setShowAuthForm(false);
       setFormData({ email: '', password: '', username: '', phoneNumber: '' });
-      setAuthNotice('');
-      await loadProfile();
+      void loadProfile();
       const redirect = new URLSearchParams(window.location.search).get('redirect');
       if (redirect) navigate(redirect);
     } catch (err) {
       setAuthNotice(err.message || 'Authentication failed.');
+    } finally {
+      setAuthLoading(false);
     }
   };
-
   // Cancellation flag: flipped to true when the component unmounts so any
   // in-flight M-Pesa or withdrawal polling loop stops updating state.
   const pollCancelledRef = useRef(false);
@@ -614,8 +602,8 @@ export default function TypeProfile() {
 
                 <Notice message={authNotice} type="error" />
 
-                <button type="submit" className="tp-btn tp-btn--primary">
-                  {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                                <button type="submit" className="tp-btn tp-btn--primary" disabled={authLoading}>
+                  {authLoading ? 'Signing in...' : (authMode === 'login' ? 'Sign In' : 'Create Account')}
                 </button>
                 <button type="button" className="tp-btn tp-btn--ghost" onClick={() => setShowAuthForm(false)}>
                   Back

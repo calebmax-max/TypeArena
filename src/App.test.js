@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 jest.mock('react-router-dom', () => ({
   BrowserRouter: ({ children }) => children,
@@ -9,13 +9,28 @@ jest.mock('react-router-dom', () => ({
       {children}
     </a>
   ),
+  NavLink: ({ children, to, className, ...props }) => (
+    <a href={to} className={typeof className === 'function' ? className({ isActive: false }) : className} {...props}>
+      {children}
+    </a>
+  ),
   useLocation: () => ({
     pathname: '/',
     key: 'test',
   }),
   useNavigate: () => jest.fn(),
+  useParams: () => ({ roomId: 'test-room' }),
 }), { virtual: true });
 
+jest.mock('./utils/typingApi', () => ({
+  ...jest.requireActual('./utils/typingApi'),
+  fetchSiteMarquee: jest.fn().mockResolvedValue({ items: [] }),
+}));
+jest.mock('./utils/navigationPrefetch', () => ({
+  preloadPlayContent: jest.fn(),
+  preloadRoute: jest.fn(),
+  warmNavigation: jest.fn(),
+}));
 jest.mock('./components/Play', () => () => <div>Play Page</div>);
 jest.mock('./components/Tournaments', () => () => <div>Tournaments Page</div>);
 jest.mock('./components/Leaderboard', () => () => <div>Leaderboard Page</div>);
@@ -27,11 +42,11 @@ jest.mock('./components/Notfound', () => () => <div>Not Found</div>);
 
 import App from './App';
 
-test('renders the current TypeArena navigation and home content', () => {
+test('renders the current TypeArena navigation and home content', async () => {
   render(<App />);
 
+  await waitFor(() => expect(screen.getByText(/start typing/i)).toBeInTheDocument());
   expect(screen.getAllByText(/typearena/i).length).toBeGreaterThan(0);
-  expect(screen.getByText(/start typing/i)).toBeInTheDocument();
   expect(screen.getAllByText(/private friend battles are live now/i).length).toBeGreaterThan(0);
-  expect(screen.getByText(/sign in/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/sign in/i).length).toBeGreaterThan(0);
 });

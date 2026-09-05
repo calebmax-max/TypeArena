@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import math
 from flask_sock import Sock
 from dotenv import load_dotenv
 load_dotenv()
@@ -27,10 +28,12 @@ from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__, static_folder=None)
-CORS(app, origins=[
-    "http://localhost:3000",
-    "https://your-frontend.onrender.com"
-])
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('TYPEARENA_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+    if origin.strip()
+]
+CORS(app, origins=ALLOWED_ORIGINS)
 
 BASE_DIR = Path(__file__).resolve().parent
 BUILD_DIR = BASE_DIR / 'build'
@@ -42,17 +45,17 @@ DB_USER = os.getenv('ALWAYSDATA_DB_USER', '').strip()
 DB_PASSWORD = os.getenv('ALWAYSDATA_DB_PASSWORD', '')
 DB_NAME = os.getenv('ALWAYSDATA_DB_NAME', '').strip()
 
-MPESA_SIMULATE = os.getenv('MPESA_SIMULATE', 'true').lower() == 'true'
+MPESA_SIMULATE = os.getenv('MPESA_SIMULATE', 'false').lower() == 'true'
 MPESA_CONSUMER_KEY = os.getenv('MPESA_CONSUMER_KEY', '')
 MPESA_CONSUMER_SECRET = os.getenv('MPESA_CONSUMER_SECRET', '')
 MPESA_SHORTCODE = os.getenv('MPESA_SHORTCODE', '174379')
 MPESA_PASSKEY = os.getenv('MPESA_PASSKEY', '')
-MPESA_CALLBACK_URL = os.getenv('MPESA_CALLBACK_URL', 'http://localhost:3001/api/mpesa/callback/topup')
+MPESA_CALLBACK_URL = os.getenv('MPESA_CALLBACK_URL', '').strip()
 MPESA_B2C_SHORTCODE = os.getenv('MPESA_B2C_SHORTCODE', MPESA_SHORTCODE)
 MPESA_B2C_INITIATOR_NAME = os.getenv('MPESA_B2C_INITIATOR_NAME', '')
 MPESA_B2C_SECURITY_CREDENTIAL = os.getenv('MPESA_B2C_SECURITY_CREDENTIAL', '')
-MPESA_B2C_RESULT_URL = os.getenv('MPESA_B2C_RESULT_URL', 'http://localhost:3001/api/mpesa/callback/b2c-result')
-MPESA_B2C_TIMEOUT_URL = os.getenv('MPESA_B2C_TIMEOUT_URL', 'http://localhost:3001/api/mpesa/callback/b2c-timeout')
+MPESA_B2C_RESULT_URL = os.getenv('MPESA_B2C_RESULT_URL', '').strip()
+MPESA_B2C_TIMEOUT_URL = os.getenv('MPESA_B2C_TIMEOUT_URL', '').strip()
 MPESA_BASE_URL = os.getenv('MPESA_BASE_URL', 'https://sandbox.safaricom.co.ke')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-5.2')
@@ -72,12 +75,10 @@ PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', '')
 PAYPAL_BASE_URL = os.getenv('PAYPAL_BASE_URL', 'https://api-m.sandbox.paypal.com')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
 STRIPE_BASE_URL = os.getenv('STRIPE_BASE_URL', 'https://api.stripe.com/v1')
-STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', 'http://localhost:3000/profile?checkout=success')
-STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', 'http://localhost:3000/profile?checkout=cancel')
+STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', '').strip()
+STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
-DEFAULT_ADMIN_EMAIL = 'caleb@gmail.com'
-DEFAULT_ADMIN_PASSWORD = 'Caleb123'
 LEADERBOARD_CACHE_TTL_MS = 20_000
 _leaderboard_cache: Dict[str, Any] = {
     'key': None,
@@ -85,9 +86,10 @@ _leaderboard_cache: Dict[str, Any] = {
     'payload': None,
 }
 _leaderboard_cache_lock = _threading.Lock()
-ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', DEFAULT_ADMIN_EMAIL).strip() or DEFAULT_ADMIN_EMAIL
-ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', DEFAULT_ADMIN_PASSWORD)
-ADMIN_TOKENS: set[str] = set()
+ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
+ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
+ADMIN_TOKEN_TTL_SECONDS = 8 * 60 * 60
+ADMIN_TOKEN_SECRET = os.getenv('TYPEARENA_ADMIN_TOKEN_SECRET', '').strip()
 TOURNAMENT_MATCH_SIZE = 2
 TOURNAMENT_START_DELAY_SECONDS = 30
 WINNER_PRIZE_SHARE = 0.60
@@ -97,7 +99,7 @@ LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
 sock = Sock(app)
 # 💡 FIX: Grant explicit permission to your React port (typically 3000)
-app.config['SOCK_ALLOWED_ORIGINS'] = ['localhost:3000', 'http://localhost:3000']
+app.config['SOCK_ALLOWED_ORIGINS'] = ALLOWED_ORIGINS
 
 
 def _is_admin_email(email: str) -> bool:
@@ -139,11 +141,21 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _issue_admin_token() -> str:
-    token = secrets.token_urlsafe(24)
-    ADMIN_TOKENS.add(token)
-    return token
+def _admin_token_secret() -> bytes:
+    # Reuse the explicit admin password only as a compatibility fallback.
+    secret = ADMIN_TOKEN_SECRET or ADMIN_PASSWORD
+    return secret.encode('utf-8')
 
+
+def _issue_admin_token() -> str:
+    issued_at = int(time.time())
+    payload = json.dumps(
+        {'iat': issued_at, 'exp': issued_at + ADMIN_TOKEN_TTL_SECONDS, 'nonce': secrets.token_urlsafe(18)},
+        separators=(',', ':'),
+    ).encode('utf-8')
+    encoded = base64.urlsafe_b64encode(payload).decode('ascii').rstrip('=')
+    signature = hmac.new(_admin_token_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest()
+    return f'{encoded}.{signature}'
 
 def _build_live_mode_passages(parts: Dict[str, list[str]]) -> list[str]:
     intros = list(parts.get('intros') or [])
@@ -1826,15 +1838,17 @@ def _is_password_hashed(password_value: str) -> bool:
 
 
 class _ConnectionPool:
+    """Bounded pool of reusable MySQL connections.
+
+    A bounded pool is important on hosted MySQL plans where opening a new
+    connection for every concurrent request can exhaust max_user_connections.
     """
-    Thread-safe pool of persistent pymysql connections.
-    Eliminates the ~100-300ms TCP+auth handshake cost on every request.
-    Connections are validated with ping() before being handed out.
-    """
-    def __init__(self, size: int = 8):
-        self._size = size
+    def __init__(self, size: int = 2, wait_seconds: float = 3.0):
+        self._size = max(1, int(size))
+        self._wait_seconds = max(0.1, float(wait_seconds))
         self._pool: list = []
-        self._lock = _threading.Lock()
+        self._active = 0
+        self._condition = _threading.Condition()
 
     def _make_conn(self):
         if not DB_HOST or not DB_USER or not DB_NAME:
@@ -1853,36 +1867,68 @@ class _ConnectionPool:
         )
 
     def get(self):
-        with self._lock:
-            if self._pool:
-                conn = self._pool.pop()
+        deadline = time.monotonic() + self._wait_seconds
+        while True:
+            with self._condition:
+                if self._pool:
+                    conn = self._pool.pop()
+                    self._active += 1
+                elif self._active < self._size:
+                    conn = None
+                    self._active += 1
+                else:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RuntimeError('Database connection pool is busy')
+                    self._condition.wait(timeout=remaining)
+                    continue
+
+            if conn is not None:
                 try:
-                    conn.ping(reconnect=True)
+                    conn.ping(reconnect=False)
                     return conn
                 except Exception:
-                    pass  # stale — fall through to make a new one
-        return self._make_conn()
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    with self._condition:
+                        self._active -= 1
+                        self._condition.notify()
+                    continue
+
+            try:
+                return self._make_conn()
+            except Exception:
+                with self._condition:
+                    self._active -= 1
+                    self._condition.notify()
+                raise
 
     def put(self, conn):
+        healthy = True
         try:
-            conn.rollback()  # discard any uncommitted transaction
+            conn.rollback()
         except Exception:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            return
-        with self._lock:
-            if len(self._pool) < self._size:
+            healthy = False
+
+        with self._condition:
+            self._active = max(0, self._active - 1)
+            if healthy and len(self._pool) < self._size:
                 self._pool.append(conn)
-                return
-        try:
-            conn.close()
-        except Exception:
-            pass
+            else:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._condition.notify()
 
 
-_db_pool = _ConnectionPool(size=8)
+try:
+    _db_pool_size = max(1, min(4, int(os.getenv('TYPEARENA_DB_POOL_SIZE', '4'))))
+except (TypeError, ValueError):
+    _db_pool_size = 4
+_db_pool = _ConnectionPool(size=_db_pool_size)
 
 
 def get_connection() -> pymysql.connections.Connection:
@@ -2281,7 +2327,7 @@ def _withdrawal_fee_for_method(amount: float, payout_method: str) -> float:
 
 
 def _wallet_capabilities() -> Dict[str, Any]:
-    stripe_ready = bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)
+    stripe_ready = bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET and STRIPE_SUCCESS_URL and STRIPE_CANCEL_URL)
     simulated_payments_enabled = bool(MPESA_SIMULATE)
     mpesa_topup_ready = bool(
         simulated_payments_enabled
@@ -3036,12 +3082,13 @@ def _save_live_room(cur, room: Dict[str, Any]) -> Dict[str, Any]:
     return _hydrate_live_room(room_copy) or room_copy
 
 
-def _get_live_room(cur, room_id: str) -> Optional[Dict[str, Any]]:
+def _get_live_room(cur, room_id: str, for_update: bool = False) -> Optional[Dict[str, Any]]:
     normalized = str(room_id or '').strip()
     if not normalized:
         return None
 
-    cur.execute('SELECT * FROM live_race_rooms WHERE room_id=%s LIMIT 1', (normalized,))
+    query = 'SELECT * FROM live_race_rooms WHERE room_id=%s LIMIT 1'
+    cur.execute(query + (' FOR UPDATE' if for_update else ''), (normalized,))
     room = _load_live_room_from_row(cur.fetchone())
     if room:
         return room
@@ -3052,12 +3099,13 @@ def _get_live_room(cur, room_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _get_live_room_by_invite(cur, invite_code: str) -> Optional[Dict[str, Any]]:
+def _get_live_room_by_invite(cur, invite_code: str, for_update: bool = False) -> Optional[Dict[str, Any]]:
     normalized = str(invite_code or '').strip().upper()
     if not normalized:
         return None
 
-    cur.execute('SELECT * FROM live_race_rooms WHERE invite_code=%s LIMIT 1', (normalized,))
+    query = 'SELECT * FROM live_race_rooms WHERE invite_code=%s LIMIT 1'
+    cur.execute(query + (' FOR UPDATE' if for_update else ''), (normalized,))
     room = _load_live_room_from_row(cur.fetchone())
     if room:
         return room
@@ -3108,39 +3156,36 @@ def _issue_user_token(cur, user_id: int) -> str:
 
 
 def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
-    # 1. Legacy internal header (WebSocket / server-side calls)
-    raw_user_id = request.headers.get('X-User-Id')
-    if raw_user_id:
-        try:
-            user_id = int(raw_user_id)
-        except ValueError:
-            return None
-        with conn.cursor() as cur:
-            cur.execute(
-                'SELECT * FROM users WHERE id = %s',
-                (user_id,)
-            )
-            return cur.fetchone()
-
-    # 2. Bearer token issued at login / signup
+    # Browser requests must authenticate with a server-issued bearer token.
     auth = request.headers.get('Authorization', '')
-    if auth.startswith('Bearer '):
-        token = auth[7:].strip()
-        if token:
-            with conn.cursor() as cur:
-                cur.execute(
-                    'SELECT * FROM users WHERE auth_token = %s',
-                    (token,)
-                )
-                return cur.fetchone()
+    if not auth.startswith('Bearer '):
+        return None
 
-    return None
+    token = auth[7:].strip()
+    if not token:
+        return None
 
+    with conn.cursor() as cur:
+        cur.execute(
+            'SELECT * FROM users WHERE auth_token = %s',
+            (token,),
+        )
+        return cur.fetchone()
 
 def _is_admin_request() -> bool:
-    token = request.headers.get('X-Admin-Token', '')
-    return token in ADMIN_TOKENS
-
+    token = request.headers.get('X-Admin-Token', '').strip()
+    if not token or not _admin_token_secret():
+        return False
+    try:
+        encoded, signature = token.split('.', 1)
+        expected = hmac.new(_admin_token_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return False
+        padding = '=' * (-len(encoded) % 4)
+        payload = json.loads(base64.urlsafe_b64decode((encoded + padding).encode('ascii')))
+        return int(payload.get('exp', 0)) > int(time.time())
+    except (ValueError, TypeError, json.JSONDecodeError, UnicodeError):
+        return False
 
 def _get_admin_user(cur) -> Optional[Dict[str, Any]]:
     if not ADMIN_EMAIL:
@@ -3651,7 +3696,7 @@ def admin_wallet_topup():
     except (TypeError, ValueError):
         return jsonify({'message': 'Invalid amount'}), 400
 
-    if amount_value <= 0:
+    if not math.isfinite(amount_value) or amount_value <= 0:
         return jsonify({'message': 'Amount must be greater than zero'}), 400
 
     note = str(payload.get('note') or 'Manual admin wallet top-up').strip()
@@ -3703,7 +3748,7 @@ def admin_wallet_withdraw():
     except (TypeError, ValueError):
         return jsonify({'message': 'Invalid amount'}), 400
 
-    if amount_value <= 0:
+    if not math.isfinite(amount_value) or amount_value <= 0:
         return jsonify({'message': 'Amount must be greater than zero'}), 400
 
     note = str(payload.get('note') or 'Manual admin wallet withdrawal').strip()
@@ -4064,12 +4109,9 @@ def user_me():
             user = _get_user_from_header(conn)
             if not user:
                 return jsonify({'message': 'Unauthorized'}), 401
-            # Re-issue a fresh token on every session restore so pre-deploy
-            # tokens (auth_token = NULL) self-heal without forcing a re-login.
-            with conn.cursor() as cur:
-                _ensure_auth_token_column(cur)
-                token = _issue_user_token(cur, user['id'])
-            conn.commit()
+            # Session validation must be read-only. Rotating the token here lets
+            # concurrent App/Play requests invalidate one another.
+            token = request.headers.get('Authorization', '')[7:].strip()
             response = _safe_user(user, conn)
             response['token'] = token
             return jsonify(response)
@@ -4140,7 +4182,7 @@ def wallet_withdraw():
     except (TypeError, ValueError):
         return jsonify({'message': 'Invalid amount'}), 400
 
-    if amount_value <= 0:
+    if not math.isfinite(amount_value) or amount_value <= 0:
         return jsonify({'message': 'Amount must be greater than zero'}), 400
 
     conn = get_connection()
@@ -4279,7 +4321,7 @@ def wallet_topup():
     except (TypeError, ValueError):
         return jsonify({'message': 'Invalid amount'}), 400
 
-    if amount_value <= 0:
+    if not math.isfinite(amount_value) or amount_value <= 0:
         return jsonify({'message': 'Amount must be greater than zero'}), 400
 
     conn = get_connection()
@@ -4436,7 +4478,7 @@ def mpesa_payment():
     except (TypeError, ValueError):
         return jsonify({'message': 'A valid amount is required.'}), 400
 
-    if amount_value <= 0:
+    if not math.isfinite(amount_value) or amount_value <= 0:
         return jsonify({'message': 'Amount must be greater than zero.'}), 400
 
     phone_number = _normalize_mpesa_phone(payload.get('phone') or payload.get('phoneNumber') or '')
@@ -4803,6 +4845,9 @@ def stripe_webhook():
 
 @app.post('/api/prizes/payout')
 def payout_prize_to_winner():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
     payload = request.get_json(silent=True) or {}
     user_id = payload.get('userId')
     tournament_id = payload.get('tournamentId')
@@ -4839,7 +4884,7 @@ def payout_prize_to_winner():
                 except (TypeError, ValueError):
                     return jsonify({'message': 'Provide a tournamentId or a valid amount.'}), 400
 
-            if amount_value <= 0:
+            if not math.isfinite(amount_value) or amount_value <= 0:
                 return jsonify({'message': 'Amount must be greater than zero.'}), 400
 
             # ── Double-payout guard ──────────────────────────────────────────
@@ -5031,10 +5076,10 @@ def mpesa_b2c_timeout_callback():
 
 @app.get('/api/live-races')
 def list_live_races():
-    user_id_raw = request.headers.get('X-User-Id')
-    viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
     conn = get_connection()
     try:
+        viewer = _get_user_from_header(conn)
+        viewer_user_id = int(viewer['id']) if viewer else None
         with conn.cursor() as cur:
             rooms = sorted(
                 (_serialize_live_room(room, viewer_user_id=viewer_user_id) for room in _list_live_rooms(cur)),
@@ -5090,7 +5135,7 @@ def queue_live_race():
             }
 
             if invite_code:
-                room = _get_live_room_by_invite(cur, invite_code)
+                room = _get_live_room_by_invite(cur, invite_code, for_update=True)
                 if not room and not is_private:
                     return jsonify({'message': 'Friend battle room not found.'}), 404
                 if room and room.get('password') and room.get('password') != room_password:
@@ -5202,8 +5247,8 @@ def get_live_race(room_id: str):
             if not room:
                 return jsonify({'message': 'Live race room not found.'}), 404
             expired = _finalize_live_room_if_expired(room)
-            user_id_raw = request.headers.get('X-User-Id')
-            viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
+            viewer = _get_user_from_header(conn)
+            viewer_user_id = int(viewer['id']) if viewer else None
             is_spectator = viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}
             if is_spectator:
                 room['spectators'] = int(room.get('spectators') or 0) + 1
@@ -5227,8 +5272,8 @@ def get_live_race_by_invite(invite_code: str):
             _finalize_live_room_if_expired(room)
             _save_live_room(cur, room)
             conn.commit()
-            user_id_raw = request.headers.get('X-User-Id')
-            viewer_user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
+            viewer = _get_user_from_header(conn)
+            viewer_user_id = int(viewer['id']) if viewer else None
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
     finally:
         _return_connection(conn)
@@ -5239,7 +5284,7 @@ def cancel_live_race(room_id: str):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            room = _get_live_room(cur, room_id)
+            room = _get_live_room(cur, room_id, for_update=True)
             if not room:
                 return jsonify({'message': 'Live race room not found.'}), 404
         user = _get_user_from_header(conn)
@@ -5283,7 +5328,7 @@ def update_live_race_progress(room_id: str):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            room = _get_live_room(cur, room_id)
+            room = _get_live_room(cur, room_id, for_update=True)
             if not room:
                 return jsonify({'message': 'Live race room not found.'}), 404
         user = _get_user_from_header(conn)
@@ -5291,19 +5336,38 @@ def update_live_race_progress(room_id: str):
             return jsonify({'message': 'Unauthorized'}), 401
         payload = request.get_json(silent=True) or {}
         status_before = room.get('status')
-        for player in room.get('players', []):
-            if player['userId'] == user['id']:
-                player['progress'] = max(0, min(100, int(payload.get('progress') or 0)))
-                player['currentWpm'] = max(0, float(payload.get('currentWpm') or 0))
-                player['currentAccuracy'] = max(0, min(100, float(payload.get('currentAccuracy') or 0)))
-                break
+        player = next((item for item in room.get('players', []) if item.get('userId') == user['id']), None)
+        if not player:
+            return jsonify({'message': 'You are not a participant in this race room.'}), 403
+        try:
+            progress = float(payload.get('progress') or 0)
+            current_wpm = float(payload.get('currentWpm') or 0)
+            current_accuracy = float(payload.get('currentAccuracy') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'message': 'Invalid live race progress.'}), 400
+        if (
+            not math.isfinite(progress) or not math.isfinite(current_wpm) or not math.isfinite(current_accuracy)
+            or progress < 0 or progress > 100 or current_wpm < 0 or current_wpm > 300
+            or current_accuracy < 0 or current_accuracy > 100
+        ):
+            return jsonify({'message': 'Progress, WPM, and accuracy values are out of range.'}), 400
+        evidence = player.setdefault('_antiCheat', {'maxProgress': 0.0, 'samples': [], 'lastPersistAt': 0.0})
+        evidence['maxProgress'] = max(float(evidence.get('maxProgress') or 0), progress)
+        now_ts = datetime.utcnow().timestamp()
+        samples = evidence.setdefault('samples', [])
+        if not samples or now_ts - float(samples[-1].get('at') or 0) >= 0.75:
+            samples.append({'at': now_ts, 'progress': progress})
+            del samples[:-40]
+        player['progress'] = round(progress, 2)
+        player['currentWpm'] = round(current_wpm, 1)
+        player['currentAccuracy'] = round(current_accuracy, 1)
         if room['status'] == 'countdown':
             room['status'] = 'racing'
         expired = _finalize_live_room_if_expired(room)
         status_changed = room.get('status') != status_before
-        # Only write to DB when status transitions (countdown→racing, racing→completed)
-        # or when the room just expired. Progress-only ticks skip the write entirely.
-        if status_changed or expired:
+        should_persist = status_changed or expired or now_ts - float(evidence.get('lastPersistAt') or 0) >= 1
+        if should_persist:
+            evidence['lastPersistAt'] = now_ts
             with conn.cursor() as cur:
                 _save_live_room(cur, room)
             conn.commit()
@@ -5311,29 +5375,44 @@ def update_live_race_progress(room_id: str):
     finally:
         _return_connection(conn)
 
-
 @app.post('/api/live-races/<room_id>/submit')
 def submit_live_race(room_id: str):
     payload = request.get_json(silent=True) or {}
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            room = _get_live_room(cur, room_id)
+            room = _get_live_room(cur, room_id, for_update=True)
             if not room:
                 return jsonify({'message': 'Live race room not found.'}), 404
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
+
+        player_ids = {int(player.get('userId')) for player in room.get('players', []) if player.get('userId') is not None}
+        if int(user['id']) not in player_ids:
+            return jsonify({'message': 'You are not a participant in this race room.'}), 403
         try:
             wpm = float(payload.get('wpm') or 0)
             accuracy = float(payload.get('accuracy') or 0)
         except (TypeError, ValueError):
             return jsonify({'message': 'Invalid live race result.'}), 400
 
+        if not math.isfinite(wpm) or not math.isfinite(accuracy) or wpm < 0 or wpm > 300 or accuracy < 0 or accuracy > 100:
+            return jsonify({'message': 'WPM must be between 0 and 300 and accuracy between 0 and 100.'}), 400
+
+        player = next((item for item in room.get('players', []) if item.get('userId') == user['id']), None)
+        evidence = (player or {}).get('_antiCheat') or {}
+        max_progress = max(0.0, min(100.0, float(evidence.get('maxProgress') or 0)))
+        started_at = _parse_iso_datetime(room.get('startedAt'))
+        elapsed_seconds = max(1.0, datetime.utcnow().timestamp() - started_at.timestamp()) if started_at else 1.0
+        passage_length = max(1, len(str(room.get('text') or '')))
+        observed_chars = passage_length * (max_progress / 100.0)
+        evidence_wpm_cap = (observed_chars * 12 / elapsed_seconds) + 80 if observed_chars else 0
+        validated_wpm = min(wpm, evidence_wpm_cap)
         room.setdefault('results', {})[user['id']] = {
             'userId': user['id'],
             'username': user['username'],
-            'wpm': round(wpm, 1),
+            'wpm': round(validated_wpm, 1),
             'accuracy': round(accuracy, 1),
             'finishedAt': _now_iso(),
             'finishedAtTs': datetime.utcnow().timestamp(),
@@ -6826,6 +6905,9 @@ def submit_race():
     except (TypeError, ValueError):
         return jsonify({'message': 'Invalid race payload'}), 400
 
+    if not math.isfinite(wpm) or not math.isfinite(accuracy) or wpm < 0 or wpm > 300 or accuracy < 0 or accuracy > 100:
+        return jsonify({'message': 'WPM must be between 0 and 300 and accuracy between 0 and 100.'}), 400
+
     duration = payload.get('duration')
 
     conn = get_connection()
@@ -6834,7 +6916,13 @@ def submit_race():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
 
-        race_code = payload.get('id') or f'race_{int(datetime.utcnow().timestamp() * 1000)}'
+
+        race_code = str(payload.get('id') or f"solo_{user['id']}_{int(datetime.utcnow().timestamp() * 1000)}").strip()
+        with conn.cursor() as cur:
+            cur.execute('SELECT id FROM race_history WHERE race_code=%s AND user_id=%s LIMIT 1', (race_code, user['id']))
+            if cur.fetchone():
+                return jsonify({'message': 'This race result has already been submitted.'}), 409
+
         place = 1 if wpm >= float(user.get('wpm') or 0) else 2
         earnings = int(max(50, round(wpm * 3)))
         now_dt = datetime.utcnow()
@@ -6903,6 +6991,10 @@ def submit_race():
 def user_races(user_id: int):
     conn = get_connection()
     try:
+        auth_user = _get_user_from_header(conn)
+        if not auth_user or int(auth_user['id']) != user_id:
+            return jsonify({'message': 'Unauthorized'}), 401
+
         with conn.cursor() as cur:
             cur.execute(
                 '''
@@ -6937,19 +7029,25 @@ def user_races(user_id: int):
 @app.put('/api/users/<int:user_id>')
 def update_user(user_id: int):
     payload = request.get_json(silent=True) or {}
-    username = payload.get('username')
-    phone_number = payload.get('phoneNumber')
-
     conn = get_connection()
     try:
+        auth_user = _get_user_from_header(conn)
+        if not auth_user or int(auth_user['id']) != user_id:
+            return jsonify({'message': 'Unauthorized'}), 401
+
         with conn.cursor() as cur:
             cur.execute('SELECT * FROM users WHERE id=%s', (user_id,))
             user = cur.fetchone()
             if not user:
                 return jsonify({'message': 'User not found'}), 404
 
+            username = payload.get('username')
+            phone_number = payload.get('phoneNumber')
             if username is not None:
-                cur.execute('UPDATE users SET username=%s WHERE id=%s', (str(username).strip(), user_id))
+                normalized_username = str(username).strip()
+                if not normalized_username or len(normalized_username) > 50:
+                    return jsonify({'message': 'Username must be between 1 and 50 characters.'}), 400
+                cur.execute('UPDATE users SET username=%s WHERE id=%s', (normalized_username, user_id))
             if phone_number is not None:
                 cur.execute('UPDATE users SET phone_number=%s WHERE id=%s', (str(phone_number).strip(), user_id))
 
@@ -6959,6 +7057,7 @@ def update_user(user_id: int):
         return jsonify(_safe_user(updated))
     finally:
         _return_connection(conn)
+
 def _frontend_file_response(path: str = ''):
     if not BUILD_DIR.exists():
         return jsonify({'message': 'Frontend build not found on server. Upload the build/ directory.'}), 404

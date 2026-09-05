@@ -1,10 +1,8 @@
 // API utilities for TypeArena
-import { mockUsers, mockTournaments, mockLeaderboard, mockRaceResults } from './mockData';
 import { buildApiUrl } from './api';
 
 const ADMIN_TOKEN_KEY = 'typearena_admin_token';
-const DEFAULT_ADMIN_EMAIL = 'caleb@gmail.com';
-const DEFAULT_ADMIN_PASSWORD = 'Caleb123';
+let authGeneration = 0;
 
 // --- Core Core Utilities ---
 
@@ -69,10 +67,6 @@ export const buildHeaders = (extraHeaders = {}) => {
     ...extraHeaders,
   };
 
-  const user = getStoredUser();
-  if (user?.id) {
-    headers['X-User-Id'] = String(user.id);
-  }
 
   // Attach Bearer token so the backend can authenticate via either mechanism
   const token = localStorage.getItem('token');
@@ -163,6 +157,7 @@ export const getAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
 // --- User APIs ---
 
 export const fetchCurrentUser = async () => {
+  const requestGeneration = authGeneration;
   try {
     const stored = getStoredUser();
     if (!stored?.id) return null;
@@ -171,7 +166,7 @@ export const fetchCurrentUser = async () => {
       headers: buildHeaders(),
     });
     const user = await parseResponse(response);
-    // /api/user/me returns a fresh token on every call — persist it immediately
+    // Persist the fresh server token immediately.
     if (user?.token) {
       localStorage.setItem('token', user.token);
     }
@@ -179,11 +174,21 @@ export const fetchCurrentUser = async () => {
     return user;
   } catch (error) {
     console.error('Error fetching user:', error);
+    // Do not keep presenting an expired or rejected session as authenticated.
+    if (error?.status === 401 || error?.status === 403) {
+      if (requestGeneration !== authGeneration) return getStoredUser();
+      localStorage.removeItem('token');
+      localStorage.removeItem('typearena_user');
+      window.dispatchEvent(new Event('typearena-user-changed'));
+      return null;
+    }
+    // Preserve cached identity only when the server is temporarily unreachable.
     return getStoredUser();
   }
 };
 
 export const loginUser = async (email, password) => {
+  authGeneration += 1;
   try {
     const response = await apiFetch(buildApiUrl('/api/auth/login'), {
       method: 'POST',
@@ -203,6 +208,7 @@ export const loginUser = async (email, password) => {
 };
 
 export const signupUser = async (username, email, password, phoneNumber) => {
+  authGeneration += 1;
   try {
     const response = await apiFetch(buildApiUrl('/api/auth/signup'), {
       method: 'POST',
@@ -232,7 +238,7 @@ export const fetchTournaments = async () => {
     return normalizeTournamentList(data);
   } catch (error) {
     console.error('Error fetching tournaments:', error);
-    return normalizeTournamentList(mockTournaments.map((t) => ({ ...t })));
+    throw error;
   }
 };
 
@@ -263,7 +269,7 @@ export const fetchLeaderboard = async (limit = 100) => {
     return await parseResponse(response);
   } catch (error) {
     console.error('Error fetching leaderboard:', error);
-    return mockLeaderboard;
+    throw error;
   }
 };
 
@@ -297,7 +303,7 @@ export const fetchRaceHistory = async (userId) => {
     return await parseResponse(response);
   } catch (error) {
     console.error('Error fetching race history:', error);
-    return mockRaceResults;
+    throw error;
   }
 };
 
@@ -311,7 +317,7 @@ export const fetchUserStats = async (userId) => {
     return await parseResponse(response);
   } catch (error) {
     console.error('Error fetching user stats:', error);
-    return mockUsers.find((u) => u.id === userId) || mockUsers[0] || null;
+    throw error;
   }
 };
 
@@ -490,22 +496,6 @@ export const adminLogin = async (email, password) => {
     return data;
   } catch (error) {
     console.error('Admin login error:', error);
-    if (shouldUseLocalFallback(error)) {
-      const normalizedEmail = String(email || '').trim().toLowerCase();
-      const normalizedPassword = String(password || '').trim();
-      if (
-        normalizedEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() &&
-        normalizedPassword === DEFAULT_ADMIN_PASSWORD
-      ) {
-        const offlineToken = `offline_admin_${Date.now()}`;
-        localStorage.removeItem('token');
-        localStorage.removeItem('typearena_user');
-        localStorage.setItem(ADMIN_TOKEN_KEY, offlineToken);
-        window.dispatchEvent(new Event('typearena-user-changed'));
-        return { token: offlineToken, adminEmail: DEFAULT_ADMIN_EMAIL, mode: 'offline' };
-      }
-      throw new Error('Invalid admin credentials.');
-    }
     throw error;
   }
 };
@@ -845,8 +835,7 @@ const FALLBACK_PASSAGES = [
     antiCheatHint: 'Consistency is key.',
   },
 ];
-
-// Reduced from 8 s → 5 s so contentLoading clears faster on slow/cold backends.
+// Keep content loading bounded on slow backends.
 // Adjust here if your Render instance regularly needs more warm-up time.
 const CONTENT_LOAD_TIMEOUT_MS = 5000;
 
@@ -873,10 +862,10 @@ export const generateRaceContent = async (mode, language, options = {}) => {
     }
     return parsed;
   } catch (error) {
-    // Always clear the timeout — even if abort fired it may not have been cleared yet.
+    // Always clear the timeout, including after an abort.
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      console.warn(`generateRaceContent timed out after ${CONTENT_LOAD_TIMEOUT_MS} ms — using fallback passage.`);
+      console.warn(`generateRaceContent timed out after ${CONTENT_LOAD_TIMEOUT_MS} ms; using fallback passage.`);
     } else {
       console.error('Error generating race content:', error);
     }

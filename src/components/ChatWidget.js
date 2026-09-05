@@ -8,7 +8,7 @@ import { buildApiUrl } from '../utils/api';
 import { buildHeaders } from '../utils/typingApi';
 
 // Uses the shared buildHeaders/buildApiUrl so ChatWidget auth stays in sync
-// with the rest of the app (same token key, X-User-Id header, etc.)
+// with the rest of the app using the shared bearer token.
 function makeApiFetch(_userId) {
   return async function apiFetch(path, opts = {}) {
     const { body, method, ...rest } = opts;
@@ -51,13 +51,6 @@ function formatLastSeen(isoValue) {
 
 function buildWebSocketUrl(path) {
   const token = localStorage.getItem('token');
-  const storedUser = localStorage.getItem('typearena_user');
-  let userId = '';
-  try {
-    userId = storedUser ? String(JSON.parse(storedUser)?.id || '') : '';
-  } catch (_) {
-    userId = '';
-  }
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const httpUrl = buildApiUrl(normalizedPath);
@@ -69,9 +62,6 @@ function buildWebSocketUrl(path) {
   }
   const protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
   baseUrl.protocol = protocol;
-  if (userId) {
-    baseUrl.searchParams.set('userId', userId);
-  }
   if (token) {
     baseUrl.searchParams.set('token', token);
   }

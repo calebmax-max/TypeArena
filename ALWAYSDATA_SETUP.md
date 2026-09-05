@@ -52,8 +52,8 @@ Recommended for production frontend/backend on the same domain:
 
 Example admin credentials used by this project setup:
 
-- `TYPEARENA_ADMIN_EMAIL=caleb@gmail.com`
-- `TYPEARENA_ADMIN_PASSWORD=Caleb123`
+- `TYPEARENA_ADMIN_EMAIL=your-admin-email@example.com`
+- `TYPEARENA_ADMIN_PASSWORD=use-a-strong-secret`
 
 ## 4. Initialize or update the database schema
 

@@ -14,9 +14,9 @@ import {
 
 const LIVE_RACE_COUNTDOWN_FALLBACK = 10;
 const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
-const LIVE_ROOM_POLL_QUEUED_MS = 1000;
-const LIVE_ROOM_POLL_ACTIVE_MS = 2500;
-const LIVE_ROOM_POLL_RESULTS_MS = 1200;
+const LIVE_ROOM_POLL_QUEUED_MS = 500;
+const LIVE_ROOM_POLL_ACTIVE_MS = 4000;
+const LIVE_ROOM_POLL_RESULTS_MS = 2500;
 
 export function useLiveRaceSession({
   currentUser,
@@ -476,7 +476,7 @@ export function useLiveRaceSession({
       heartbeatTimerRef.current = window.setTimeout(() => {
         heartbeatTimerRef.current = null;
         flushLiveHeartbeat();
-      }, 180);
+      }, 1200);
     }
   }, [flushLiveHeartbeat]);
 
@@ -614,7 +614,7 @@ export function useLiveRaceSession({
           return;
         }
         syncRoomClock(room);
-        if (phase === 'queued' && (room.status === 'racing' || (room.status !== 'waiting' && countdownRemaining <= 0))) {
+        if (phase === 'queued' && room.status === 'racing') {
           setPhase('racing');
           window.setTimeout(() => inputRef.current?.focus(), 150);
         }
@@ -630,7 +630,9 @@ export function useLiveRaceSession({
         : LIVE_ROOM_POLL_ACTIVE_MS);
 
     return () => window.clearInterval(interval);
-  }, [countdownRemaining, finalizeRoomIfCompleted, inputRef, liveRoom?.id, liveRoom?.players, phase, setPhase, syncRoomClock]);
+  // Keep the polling interval stable; the latest room/player state is read through refs in callbacks.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalizeRoomIfCompleted, inputRef, liveRoom?.id, phase, setPhase, syncRoomClock]);
 
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown') {

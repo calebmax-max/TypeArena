@@ -1010,6 +1010,7 @@ export default function Play({ practicePage = false }){
   const [raceResult, setRaceResult] = useState(null);
   const [generatedContent, setGeneratedContent] = useState(null);
   const [replayFrames, setReplayFrames] = useState([]);
+  const replayFrameAtRef = useRef(0);
   const [currentUser, setCurrentUser] = useState(() => {
     const stored = getStoredUserSnapshot();
     return stored ?? undefined;
@@ -1124,6 +1125,7 @@ export default function Play({ practicePage = false }){
     phase,
     fetchLiveRaces,
     pollIntervalMs: LOBBY_FEED_POLL_INTERVAL_MS,
+    enabled: !practicePage && phase !== 'racing',
   });
 
   const {
@@ -1137,9 +1139,33 @@ export default function Play({ practicePage = false }){
   });
 
   useEffect(() => {
-    fetchCurrentUser().then(setCurrentUser).catch(() => {});
-  }, []);
+    let active = true;
+    const syncUser = () => {
+      if (active) setCurrentUser(getStoredUserSnapshot());
+    };
 
+    // Use the cached identity immediately so practice controls do not wait on
+    // a second network request or briefly redirect an already signed-in user.
+    syncUser();
+    fetchCurrentUser()
+      .then((user) => {
+        if (!active) return;
+        if (user) {
+          setCurrentUser(user);
+        } else if (!getStoredUserSnapshot()) {
+          setCurrentUser(null);
+        }
+      })
+      .catch(() => {});
+
+    window.addEventListener('typearena-user-changed', syncUser);
+    window.addEventListener('storage', syncUser);
+    return () => {
+      active = false;
+      window.removeEventListener('typearena-user-changed', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
+  }, []);
   // Start background music on first interaction — autoplay policy safe because
   // the AudioContext is created inside a user-gesture handler
   useEffect(() => {
@@ -1471,6 +1497,14 @@ export default function Play({ practicePage = false }){
     }
 // Fix #9: removed timeLeft, typingText, replayFrames from deps — read via refs above.
 }, [commentatorEnabled, currentUser?.name, currentUser?.username, customText, dailyChallenge, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, showDailyChallenge, submitFinalLiveResult, useCustomText]);
+  const handleFinishRace = useCallback(() => {
+    if (phase !== 'racing' || isSubmittingRef.current) {
+      return;
+    }
+    window.clearInterval(timerRef.current);
+    setRaceOver(true);
+    finishRace();
+  }, [finishRace, isSubmittingRef, phase]);
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
@@ -1500,11 +1534,12 @@ export default function Play({ practicePage = false }){
             language,
           },
         }).catch(() => {});
-        backToLobbyRef.current();
+        // Keep the player on the result flow so the shared winner can be shown.
+        showNotice('You were inactive, so your race was submitted as a forfeit.', 'warning');
       }
     }, 3000);
     return () => window.clearInterval(afkCheck);
-  }, [duration, language, liveRoom?.id, mode, phase, submitFinalLiveResult]);
+  }, [duration, language, liveRoom?.id, mode, phase, showNotice, submitFinalLiveResult]);
 
   // ── Feature #4: Daily challenge loader ────────────────────────────────────
   const loadDailyChallenge = useCallback(async () => {
@@ -1643,9 +1678,9 @@ export default function Play({ practicePage = false }){
       return;
     }
 
+    resetLiveSession();
     isLeavingRef.current = false;
     isSubmittingRef.current = false;
-    resetLiveSession();
     setTypingText('');
     setReplayFrames([]);
     setRaceResult(null);
@@ -1893,11 +1928,22 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     // who completed the passage early would sit idle until the clock ran out, and
     // their WPM was calculated against the full duration rather than their actual time.
     if (src && value.length === src.length && !isSubmittingRef.current && !raceOver) {
+      const finalFrame = { typedText: value, timestamp: new Date().toISOString() };
+      // State effects run after this event; update refs first so the final
+      // character and replay frame are included in the immediate submission.
+      typingTextRef.current = value;
+      replayFramesRef.current = [...replayFramesRef.current.slice(-299), finalFrame];
       setTypingText(value);
-      setReplayFrames((prev) => [
-        ...prev.slice(-299),
-        { typedText: value, timestamp: new Date().toISOString() },
-      ]);
+      replayFrameAtRef.current = Date.now();
+      setReplayFrames(replayFramesRef.current);
+      if (liveRoom?.id) {
+        const currentWpm = calculateWPM(value, Math.max(1, duration - timeLeftRef.current));
+        submitHeartbeat({
+          progress: 100,
+          currentWpm,
+          currentAccuracy: calculateAccuracy(src, value),
+        });
+      }
       window.clearInterval(timerRef.current);
       setRaceOver(true);
       finishRaceRef.current();
@@ -1964,10 +2010,15 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
     setTypingText(value);
     setFocusLost(false);
-    setReplayFrames((prev) => [
-      ...prev.slice(-299),
-      { typedText: value, timestamp: new Date().toISOString() },
-    ]);
+    // Keep replay useful without allocating a full text snapshot for every keypress.
+    const replayNow = Date.now();
+    if (replayNow - replayFrameAtRef.current >= 250) {
+      replayFrameAtRef.current = replayNow;
+      setReplayFrames((prev) => [
+        ...prev.slice(-299),
+        { typedText: value, timestamp: new Date().toISOString() },
+      ]);
+    }
     if (liveRoom?.id) {
       const sourceTextLength = Math.max(1, (liveRoom.text || '').length);
       const progress = Math.min(100, Math.round((value.length / sourceTextLength) * 100));
@@ -1998,6 +2049,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     || (useCustomText && customText ? customText : null)
     || generatedContent?.passage
     || 'Type fast, type clean, and own the round.';
+  // Covers controlled-input/IME updates that may bypass the direct onChange check.
+  useEffect(() => {
+    if (phase === 'racing' && !raceOver && sourceText && typingText.length >= sourceText.length) {
+      handleFinishRace();
+    }
+  }, [handleFinishRace, phase, raceOver, sourceText, typingText.length]);
   // ── NEW #E: ghost position — character the ghost has reached ────────────
   const sourceChars = useMemo(() => sourceText.split(''), [sourceText]);
   // Bug E fix: stored PB frames now use compact {len, timestamp} format.
@@ -2862,7 +2919,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <KeyboardDeck phase={phase} normalizeKeyboardKey={normalizeKeyboardKey} />
 
           <div className="results-actions">
-            <button className="btn btn-danger" onClick={finishRace}>
+            <button className="btn btn-danger" onClick={handleFinishRace} disabled={isSubmittingRef.current}>
               Finish Race
             </button>
           </div>
