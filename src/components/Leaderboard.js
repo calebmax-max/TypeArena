@@ -133,7 +133,7 @@ const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
         <span className="elo-display-badge">⭐ {player.seasonPoints ?? 0}</span>
       </span>
 
-      {/* Peak WPM */}
+      {/* Average WPM */}
       <span className="col-wpm">
         <span className="stat-badge wpm-badge">{Number(player.wpm ?? 0).toFixed(1)}</span>
       </span>
@@ -189,7 +189,7 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
           </div>
           <div className="modal-stat">
             <span className="modal-stat-value">{Number(player.wpm ?? 0).toFixed(1)}</span>
-            <span className="modal-stat-label">Peak WPM</span>
+            <span className="modal-stat-label">Average WPM</span>
           </div>
           <div className="modal-stat">
             <span className="modal-stat-value">{player.wins ?? 0}</span>
@@ -275,7 +275,7 @@ export default function Leaderboard({ currentUserUsername }) {
     if (!isSilent) setLoading(true);
     setError(false);
     try {
-      const data = await fetchLeaderboard(200);
+      const data = await fetchLeaderboard(100);
       if (Array.isArray(data)) {
         writeCache(data);           // PERF: persist for instant next-visit render
         setPlayers(data);

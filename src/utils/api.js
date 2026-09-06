@@ -47,7 +47,6 @@ export async function fetchLeaderboard(limit = 100) {
     return data; // Returns the parsed array of player rankings
   } catch (error) {
     console.error("API Error fetching competitive rankings:", error);
-    // Return an empty array fallback so the user interface doesn't crash on drops
-    return []; 
+    throw error;
   }
 }

@@ -12,6 +12,7 @@ import {
   adminLogout,
   fetchAdminAnalytics,
   fetchAdminContent,
+  fetchAdminLeaderboardSettings,
   fetchAdminMediaSettings,
   fetchAdminAiSettings,
   fetchAdminSiteMarquee,
@@ -22,6 +23,7 @@ import {
   verifyAdminSession,
   updateAdminAiSettings,
   updateAdminContent,
+  updateAdminLeaderboardSettings,
   updateAdminMediaSettings,
   updateAdminSiteMarquee,
   withdrawFromAdminWallet,
@@ -40,12 +42,14 @@ const normalizeAiSettings = (v) => ({
   model: String(v?.model || 'gpt-5.2'),
   hasApiKey: Boolean(v?.hasApiKey),
 });
+const DEFAULT_LEADERBOARD_TIERS = { bronze: 500, silver: 851, gold: 1500, diamond: 1760, grandmaster: 2001 };
 
 const NAV_ITEMS = [
   { id: 'overview',    label: 'Overview',     icon: '◈' },
   { id: 'wallet',      label: 'Wallet',        icon: '◎' },
   { id: 'tournaments', label: 'Tournaments',   icon: '⬡' },
   { id: 'players',     label: 'Top Players',   icon: '◉' },
+  { id: 'leaderboard', label: 'Leaderboard',   icon: '★' },
   { id: 'music',       label: 'Music',         icon: '♫' },
   { id: 'content',     label: 'Content',       icon: '⊞' },
   { id: 'ai',          label: 'AI Settings',   icon: '⬡' },
@@ -64,6 +68,7 @@ export default function AdminPanel() {
   const [adminContent, setAdminContent] = useState([]);
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
   const [commentatorEnabled, setCommentatorEnabled] = useState(true);
+  const [leaderboardTiers, setLeaderboardTiers] = useState(DEFAULT_LEADERBOARD_TIERS);
   const [commentatorConfig, setCommentatorConfig] = useState({ rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 });
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
@@ -87,8 +92,8 @@ export default function AdminPanel() {
   const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = React.useCallback(async () => {
-    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, mediaData] = await Promise.all([
-      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminMediaSettings(),
+    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, mediaData, leaderboardData] = await Promise.all([
+      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminMediaSettings(), fetchAdminLeaderboardSettings(),
     ]);
     setAnalytics(analyticsData);
     setTournaments(normalizeTournamentList(tournamentData));
@@ -98,6 +103,7 @@ export default function AdminPanel() {
     setAdminContent(Array.isArray(contentData) ? contentData : []);
     setCommentatorEnabled(mediaData?.commentatorEnabled !== false);
     if (mediaData?.commentatorConfig) setCommentatorConfig(mediaData.commentatorConfig);
+    if (leaderboardData?.tiers) setLeaderboardTiers({ ...DEFAULT_LEADERBOARD_TIERS, ...leaderboardData.tiers });
     if (Array.isArray(mediaData?.musicTracks) && mediaData.musicTracks.length) {
       arenaMusic.setTracks(mediaData.musicTracks);
     }
@@ -435,6 +441,21 @@ export default function AdminPanel() {
     const next = { ...commentatorConfig, [key]: Number(value) };
     setCommentatorConfig(next);
     void persistMediaSettings(musicState.tracks, commentatorEnabled, next);
+  };
+
+  const handleLeaderboardTierSave = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    const tiers = Object.fromEntries(Object.entries(leaderboardTiers).map(([key, value]) => [key, Number(value)]));
+    const ordered = ['bronze', 'silver', 'gold', 'diamond', 'grandmaster'];
+    if (ordered.some((key, index) => index > 0 && tiers[key] <= tiers[ordered[index - 1]])) {
+      showNotice('Each tier threshold must be higher than the previous tier.');
+      return;
+    }
+    try {
+      const result = await updateAdminLeaderboardSettings({ tiers });
+      setLeaderboardTiers(result.tiers || tiers);
+      showNotice(result.message || 'Leaderboard tiers updated.');
+    } catch (err) { showNotice(err.message || 'Could not update leaderboard tiers.'); }
   };
 
   const entryFee = Number(formData.entryFee || 0);
@@ -1631,6 +1652,36 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   )) : <div className="ap-empty">No admin passages yet. Add one above.</div>}
+                </div>
+              </>
+            )}
+
+            {activeSection === 'leaderboard' && (
+              <>
+                <div className="ap-section-header">
+                  <h1 className="ap-section-title">Leaderboard Tiers</h1>
+                  <p className="ap-section-sub">Adjust the minimum season points required for each tier.</p>
+                </div>
+                <div className="ap-card">
+                  <p className="ap-card-title">Season Point Thresholds</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', marginBottom: 14 }}>Scores below Bronze are still Bronze. Thresholds must increase from Bronze through Grandmaster.</p>
+                  <form onSubmit={handleLeaderboardTierSave}>
+                    <div className="ap-two-col">
+                      {[
+                        ['bronze', 'Bronze'],
+                        ['silver', 'Silver'],
+                        ['gold', 'Gold'],
+                        ['diamond', 'Diamond'],
+                        ['grandmaster', 'Grandmaster'],
+                      ].map(([key, label]) => (
+                        <div className="ap-field" key={key}>
+                          <label className="ap-label">{label} minimum points</label>
+                          <input className="ap-input" type="number" min="0" value={leaderboardTiers[key]} onChange={(e) => setLeaderboardTiers((current) => ({ ...current, [key]: e.target.value }))} />
+                        </div>
+                      ))}
+                    </div>
+                    <button className="ap-btn" type="submit">Save Leaderboard Tiers</button>
+                  </form>
                 </div>
               </>
             )}

@@ -6,6 +6,7 @@ import React, {
 } from 'react';
 import { buildApiUrl } from '../utils/api';
 import { buildHeaders } from '../utils/typingApi';
+import { io } from 'socket.io-client';
 
 // Uses the shared buildHeaders/buildApiUrl so ChatWidget auth stays in sync
 // with the rest of the app using the shared bearer token.
@@ -49,23 +50,15 @@ function formatLastSeen(isoValue) {
   return `Last seen ${new Date(timestamp).toLocaleDateString()}`;
 }
 
-function buildWebSocketUrl(path) {
-  const token = localStorage.getItem('token');
-
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  const httpUrl = buildApiUrl(normalizedPath);
+function buildSocketIoUrl() {
+  const httpUrl = buildApiUrl('/');
   const baseUrl = httpUrl.startsWith('http')
     ? new URL(httpUrl)
     : new URL(httpUrl, window.location.origin);
-  if (baseUrl.pathname.startsWith('/api/ws/')) {
-    baseUrl.pathname = baseUrl.pathname.replace('/api/ws/', '/ws/');
+  if (baseUrl.pathname === '/api' || baseUrl.pathname === '/api/') {
+    baseUrl.pathname = '/';
   }
-  const protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-  baseUrl.protocol = protocol;
-  if (token) {
-    baseUrl.searchParams.set('token', token);
-  }
-  return baseUrl.toString();
+  return baseUrl.toString().replace(/\/$/, '');
 }
 
 function upsertChatContact(players, nextContact) {
@@ -557,11 +550,11 @@ function ChatWidget({ currentUser }) {
 
   const sendSocketEvent = useCallback((payload) => {
     const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (!socket || !socket.connected) {
       return false;
     }
     try {
-      socket.send(JSON.stringify(payload));
+      socket.emit(payload.type, payload);
       return true;
     } catch (_) {
       return false;
@@ -573,12 +566,6 @@ function ChatWidget({ currentUser }) {
       window.clearInterval(socketHeartbeatRef.current);
       socketHeartbeatRef.current = null;
     }
-  }, []);
-
-  const scheduleSocketReconnect = useCallback((connect) => {
-    const delay = reconnectDelayRef.current;
-    reconnectDelayRef.current = Math.min(delay * 2, 30000);
-    return window.setTimeout(connect, delay);
   }, []);
 
   useEffect(() => {
@@ -594,60 +581,46 @@ function ChatWidget({ currentUser }) {
     }
 
     let active = true;
-    let reconnectTimer = null;
+    const token = localStorage.getItem('token');
+    const socket = io(buildSocketIoUrl(), {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 15000,
+    });
+    socketRef.current = socket;
 
-    const connect = () => {
-      const socket = new WebSocket(buildWebSocketUrl('/ws/chat'));
-      socketRef.current = socket;
+    socket.on('connect', () => {
+      if (!active) return;
+      reconnectDelayRef.current = 2000;
+      socketConnectedRef.current = true;
+      setSocketConnected(true);
+      setListError('');
+    });
 
-      socket.addEventListener('open', () => {
-        if (!active) return;
-        reconnectDelayRef.current = 2000;
-        socketConnectedRef.current = true;
-        setSocketConnected(true);
-        setListError('');
-        clearSocketHeartbeat();
-        socketHeartbeatRef.current = window.setInterval(() => {
-          const currentSocket = socketRef.current;
-          if (!currentSocket || currentSocket.readyState !== WebSocket.OPEN) {
-            return;
-          }
-          try {
-            currentSocket.send(JSON.stringify({ type: 'ping' }));
-          } catch (_) {
-            // If the heartbeat send fails, the close handler will reconnect.
-          }
-        }, 25000);
-      });
+    socket.onAny((eventName, payload) => {
+      if (!active) return;
+      const nextPayload = payload && typeof payload === 'object'
+        ? payload
+        : { type: eventName, value: payload };
+      socketEventQueueRef.current.push(nextPayload);
+      setSocketEvent((current) => current || nextPayload);
+    });
 
-      socket.addEventListener('message', (event) => {
-        if (!active) return;
-        try {
-          const payload = JSON.parse(event.data);
-          socketEventQueueRef.current.push(payload);
-          setSocketEvent((current) => current || payload);
-        } catch (_) {
-          setSocketEvent({ type: 'error', message: 'Invalid socket payload.' });
-        }
-      });
+    socket.on('connect_error', () => {
+      if (!active) return;
+      socketConnectedRef.current = false;
+      setSocketConnected(false);
+      setListError('Chat reconnecting…');
+    });
 
-      socket.addEventListener('close', () => {
-        if (!active) return;
-        socketConnectedRef.current = false;
-        setSocketConnected(false);
-        clearSocketHeartbeat();
-        reconnectTimer = scheduleSocketReconnect(connect);
-      });
-
-      socket.addEventListener('error', () => {
-        if (!active) return;
-        socketConnectedRef.current = false;
-        setSocketConnected(false);
-        clearSocketHeartbeat();
-      });
-    };
-
-    connect();
+    socket.on('disconnect', () => {
+      if (!active) return;
+      socketConnectedRef.current = false;
+      setSocketConnected(false);
+    });
 
     return () => {
       active = false;
@@ -655,15 +628,10 @@ function ChatWidget({ currentUser }) {
       setSocketConnected(false);
       clearSocketHeartbeat();
       reconnectDelayRef.current = 2000;
-      if (reconnectTimer) {
-        window.clearTimeout(reconnectTimer);
-      }
-      if (socketRef.current) {
-        socketRef.current.close();
-        socketRef.current = null;
-      }
+      socket.disconnect();
+      socketRef.current = null;
     };
-  }, [clearSocketHeartbeat, isLoggedIn, scheduleSocketReconnect, currentUser?.id]);
+  }, [clearSocketHeartbeat, isLoggedIn, currentUser?.id]);
 
   useEffect(() => {
     if (socketEvent) return;

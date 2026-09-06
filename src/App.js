@@ -15,7 +15,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
 import { fetchSiteMarquee } from './utils/typingApi';
 import { arenaMusic } from './utils/arenaMusic';
-import { preloadPlayContent, preloadRoute, warmNavigation } from './utils/navigationPrefetch';
+import { preloadPlayContent, preloadRoute } from './utils/navigationPrefetch';
 
 
 
@@ -219,23 +219,7 @@ function AppLayout() {
   }, []);
 
   useEffect(() => {
-    void preloadRoute('play');
-    void preloadRoute('leaderboard');
-  void preloadPlayContent();
-    import('./components/Leaderboard').then((module) => module.primeLeaderboardCache?.()).catch(() => {});
-
-    const warmup = () => warmNavigation();
-    const idleId = typeof window.requestIdleCallback === 'function'
-      ? window.requestIdleCallback(warmup, { timeout: 2500 })
-      : window.setTimeout(warmup, 1500);
-
-    return () => {
-      if (typeof window.cancelIdleCallback === 'function') {
-        window.cancelIdleCallback(idleId);
-      } else {
-        window.clearTimeout(idleId);
-      }
-    };
+    return undefined;
   }, []);
 
   const preloadPlayPage = () => {

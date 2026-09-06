@@ -646,6 +646,22 @@ export const updateAdminAiSettings = async (payload) => {
   return await parseResponse(response);
 };
 
+export const fetchAdminLeaderboardSettings = async () => {
+  const response = await apiFetch(buildApiUrl('/api/admin/leaderboard-settings'), {
+    headers: buildAdminHeaders(),
+  });
+  return await parseResponse(response);
+};
+
+export const updateAdminLeaderboardSettings = async (payload) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/leaderboard-settings'), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
 export const fetchSiteMarquee = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/site-marquee'), {

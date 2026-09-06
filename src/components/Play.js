@@ -8,7 +8,6 @@ import {
 } from '../utils/typingEngine';
 import {
   fetchCurrentUser,
-  generateRaceContent,
   fetchLiveRaceRoom,
   fetchLiveRaces,
   fetchMediaSettings,
@@ -21,6 +20,7 @@ import { useActiveKeyboard } from '../hooks/useActiveKeyboard';
 import { useLiveFeed } from '../hooks/useLiveFeed';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { useSpectateRoom } from '../hooks/useSpectateRoom';
+import { getRaceContent } from '../utils/navigationPrefetch';
 import '../styles/Play.css';
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
@@ -1312,7 +1312,7 @@ export default function Play({ practicePage = false }){
       setContentLoading(true);
       try {
         const excludeContentIds = getUsedContentIds(mode, language);
-        const content = await generateRaceContent(mode, language, { excludeContentIds });
+        const content = await getRaceContent(mode, language, { excludeContentIds });
         if (!cancelled) {
           setGeneratedContent(content);
           loadedForRef.current = key; // mark as loaded for this mode+language
@@ -1576,7 +1576,7 @@ export default function Play({ practicePage = false }){
     const cached = getDailyChallenge();
     if (cached) { setDailyChallenge(cached); setShowDailyChallenge(true); return; }
     try {
-      const content = await generateRaceContent('standard', language, {});
+      const content = await getRaceContent('standard', language, {});
       const entry = { passage: content.passage, id: content.id, language };
       saveDailyChallenge(entry);
       setDailyChallenge(entry);

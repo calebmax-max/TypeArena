@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import math
 from flask_sock import Sock
+from flask_socketio import SocketIO, emit, join_room
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -95,7 +96,7 @@ STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', '').strip()
 STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
-LEADERBOARD_CACHE_TTL_MS = 20_000
+LEADERBOARD_CACHE_TTL_MS = 60_000
 _leaderboard_cache: Dict[str, Any] = {
     'key': None,
     'expires_at': 0,
@@ -114,6 +115,7 @@ LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
 sock = Sock(app)
+socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='gevent')
 # 💡 FIX: Grant explicit permission to your React port (typically 3000)
 app.config['SOCK_ALLOWED_ORIGINS'] = ALLOWED_ORIGINS
 
@@ -1082,24 +1084,10 @@ def _season_name() -> str:
 
 def _tier_for_user(user: Dict[str, Any]) -> str:
     """
-    Tier is now season-points-based (with Grandmaster for rank 1-5).
-    Falls back to WPM-based tiers for users with no season activity.
-    The leaderboard passes rank explicitly; profile calls without rank
-    use season_points_stored for threshold matching only.
+    Tier is determined only by the current season point thresholds.
     """
     season_pts = _safe_int(user.get('season_points_stored') or user.get('seasonPoints') or 0)
-    rank = _safe_int(user.get('_season_rank') or 9999, default=9999)
-    if season_pts > 0:
-        return _tier_for_season_points(season_pts, rank)
-    # Fallback: WPM-based (users who haven't played this season yet)
-    wpm = _safe_float(user.get('wpm') or 0)
-    if wpm >= 120:
-        return 'Diamond'
-    if wpm >= 95:
-        return 'Gold'
-    if wpm >= 70:
-        return 'Silver'
-    return 'Bronze'
+    return _tier_for_season_points(season_pts)
 
 
 def _store_perks_from_owned_items(owned_items: list[str] | set[str] | tuple[str, ...]) -> Dict[str, Any]:
@@ -1575,22 +1563,19 @@ def _refresh_season_points_for_user(cur, user: dict) -> int:
     return pts
 
 
-def _tier_for_season_points(season_points: int, rank: int) -> str:
+def _tier_for_season_points(season_points: int, rank: int = 0) -> str:
     """
-    Determines tier from season points and rank.
-    Grandmaster: top 5 players with at least 500 season points.
-    Diamond:     >= 1200 pts
-    Gold:        >= 700 pts
-    Silver:      >= 350 pts
-    Bronze:      everyone else
+    Determines tier from adjustable season-point thresholds.
+    Scores below the configured Bronze threshold remain Bronze.
     """
-    if rank <= 5 and season_points >= 500:
+    thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
+    if season_points >= thresholds['grandmaster']:
         return 'Grandmaster'
-    if season_points >= 1200:
+    if season_points >= thresholds['diamond']:
         return 'Diamond'
-    if season_points >= 700:
+    if season_points >= thresholds['gold']:
         return 'Gold'
-    if season_points >= 350:
+    if season_points >= thresholds['silver']:
         return 'Silver'
     return 'Bronze'
 
@@ -1773,19 +1758,42 @@ def _normalize_site_marquee_items(items: Any) -> list[str]:
 def _load_site_settings() -> Dict[str, Any]:
     defaults = _default_site_marquee_settings()
     if not SITE_SETTINGS_FILE.exists():
-        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config()}
+        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config(), 'leaderboardTiers': _default_leaderboard_tiers()}
 
     try:
         raw = json.loads(SITE_SETTINGS_FILE.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
-        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config()}
+        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config(), 'leaderboardTiers': _default_leaderboard_tiers()}
 
     return {
         'items': _normalize_site_marquee_items(raw.get('siteMarqueeItems')),
         'musicTracks': _normalize_music_tracks(raw.get('musicTracks')),
         'commentatorEnabled': raw.get('commentatorEnabled') is not False,
         'commentatorConfig': _normalize_commentator_config(raw.get('commentatorConfig')),
+        'leaderboardTiers': _normalize_leaderboard_tiers(raw.get('leaderboardTiers')),
     }
+
+
+def _default_leaderboard_tiers() -> Dict[str, int]:
+    return {'bronze': 500, 'silver': 851, 'gold': 1500, 'diamond': 1760, 'grandmaster': 2001}
+
+
+def _normalize_leaderboard_tiers(tiers: Any) -> Dict[str, int]:
+    defaults = _default_leaderboard_tiers()
+    if not isinstance(tiers, dict):
+        return defaults
+    try:
+        values = {key: max(0, int(tiers.get(key, default))) for key, default in defaults.items()}
+    except (TypeError, ValueError):
+        return defaults
+    if not (
+        values['bronze'] < values['silver']
+        and values['silver'] < values['gold']
+        and values['gold'] < values['diamond']
+        and values['diamond'] < values['grandmaster']
+    ):
+        return defaults
+    return values
 
 
 def _default_commentator_config() -> Dict[str, float]:
@@ -1834,6 +1842,7 @@ def _save_site_marquee_settings(items: list[str]) -> Dict[str, Any]:
         'musicTracks': current.get('musicTracks', []),
         'commentatorEnabled': current.get('commentatorEnabled', True),
         'commentatorConfig': current.get('commentatorConfig', _default_commentator_config()),
+        'leaderboardTiers': current.get('leaderboardTiers', _default_leaderboard_tiers()),
     }
     SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
     return {'items': list(settings['siteMarqueeItems'])}
@@ -1846,6 +1855,7 @@ def _save_media_settings(tracks: Any, commentator_enabled: Any, commentator_conf
         'musicTracks': _normalize_music_tracks(tracks),
         'commentatorEnabled': commentator_enabled is not False,
         'commentatorConfig': _normalize_commentator_config(commentator_config),
+        'leaderboardTiers': current.get('leaderboardTiers', _default_leaderboard_tiers()),
     }
     SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
     return {
@@ -2545,6 +2555,7 @@ def _safe_user_with_owned_items(user: Dict[str, Any], owned_items: list[str] | s
         'wpm': _safe_float(user.get('wpm') or 0),
         'accuracy': _safe_float(user.get('accuracy') or 0),
         'totalRaces': total_races,
+        'gamesPlayed': total_races,
         'wins': wins,
         'balance': _safe_float(user.get('balance') or 0),
         'tier': _tier_for_user(user),
@@ -4299,6 +4310,11 @@ def media_settings():
     })
 
 
+@app.get('/api/leaderboard-settings')
+def leaderboard_settings():
+    return jsonify({'tiers': _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())})
+
+
 @app.get('/api/admin/site-marquee')
 def admin_site_marquee_settings():
     if not _is_admin_request():
@@ -4350,6 +4366,33 @@ def admin_update_media_settings():
         payload.get('commentatorConfig'),
     )
     return jsonify({'message': 'Media settings updated.', 'settings': settings})
+
+
+@app.get('/api/admin/leaderboard-settings')
+def admin_leaderboard_settings():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    return jsonify({'tiers': _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())})
+
+
+@app.put('/api/admin/leaderboard-settings')
+def admin_update_leaderboard_settings():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    payload = request.get_json(silent=True) or {}
+    tiers = _normalize_leaderboard_tiers(payload.get('tiers'))
+    if tiers == _default_leaderboard_tiers() and payload.get('tiers') != tiers:
+        return jsonify({'message': 'Tier thresholds must be increasing: Bronze, Silver, Gold, Diamond, Grandmaster.'}), 400
+    current = _load_site_settings()
+    settings = {
+        'siteMarqueeItems': current.get('items', DEFAULT_SITE_MARQUEE_ITEMS),
+        'musicTracks': current.get('musicTracks', []),
+        'commentatorEnabled': current.get('commentatorEnabled', True),
+        'commentatorConfig': current.get('commentatorConfig', _default_commentator_config()),
+        'leaderboardTiers': tiers,
+    }
+    SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    return jsonify({'message': 'Leaderboard tier thresholds updated.', 'tiers': tiers})
 
 
 @app.post('/api/auth/signup')
@@ -6682,6 +6725,8 @@ _chat_waiters: dict = {}          # reference-count for cleanup
 _chat_conds_lock = _threading.Lock()
 _chat_ws_clients: dict[int, set[Any]] = {}
 _chat_ws_lock = _threading.Lock()
+_chat_socket_users: dict[str, int] = {}
+_chat_socket_lock = _threading.Lock()
 _chat_event_worker_lock = _threading.Lock()
 _chat_event_worker_started = False
 _chat_event_last_seen_id = 0
@@ -6741,7 +6786,13 @@ def _send_ws_payload(ws, payload: Dict[str, Any]) -> bool:
         return False
 
 
+def _emit_socket_payload(user_id: int, event_type: str, payload: Dict[str, Any]) -> None:
+    socketio.emit(event_type, payload, to=f'user:{int(user_id)}')
+
+
 def _broadcast_ws_payload(user_id: int, payload: Dict[str, Any]) -> None:
+    event_type = str(payload.get('type') or 'message')
+    _emit_socket_payload(user_id, event_type, payload)
     with _chat_ws_lock:
         sockets = list(_chat_ws_clients.get(user_id, set()))
     stale: list[Any] = []
@@ -7096,6 +7147,161 @@ def chat_socket(ws):
             _send_ws_payload(ws, {'type': 'error', 'message': 'Unsupported WebSocket event.'})
     finally:
         _unregister_chat_socket(user_id, ws)
+
+
+def _socketio_chat_user() -> Optional[Dict[str, Any]]:
+    with _chat_socket_lock:
+        user_id = _chat_socket_users.get(str(request.sid))
+    if not user_id:
+        return None
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            return _load_user_by_id(cur, user_id)
+    finally:
+        _return_connection(conn)
+
+
+@socketio.on('connect')
+def socketio_chat_connect(auth=None):
+    auth = auth if isinstance(auth, dict) else {}
+    token = str(auth.get('token') or request.args.get('token') or '').strip()
+    if not token:
+        return False
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            user = _load_user_by_token(cur, token)
+    finally:
+        _return_connection(conn)
+    if not user:
+        return False
+    user_id = int(user['id'])
+    with _chat_socket_lock:
+        _chat_socket_users[str(request.sid)] = user_id
+    join_room(f'user:{user_id}')
+    emit('connected', {'type': 'connected', 'userId': user_id})
+    return True
+
+
+@socketio.on('disconnect')
+def socketio_chat_disconnect():
+    with _chat_socket_lock:
+        _chat_socket_users.pop(str(request.sid), None)
+
+
+@socketio.on('ping')
+def socketio_chat_ping():
+    emit('pong', {'type': 'pong', 'ts': _now_iso()})
+
+
+@socketio.on('sync_state')
+def socketio_chat_sync_state():
+    user = _socketio_chat_user()
+    if not user:
+        return
+    conn = get_connection()
+    try:
+        contacts, unread = _fetch_chat_state(conn, int(user['id']))
+    finally:
+        _return_connection(conn)
+    emit('chat_state', {
+        'type': 'chat_state',
+        'contacts': contacts,
+        'unread': unread,
+        'userId': int(user['id']),
+        'ts': _now_iso(),
+    })
+
+
+@socketio.on('load_thread')
+def socketio_chat_load_thread(payload=None):
+    user = _socketio_chat_user()
+    payload = payload if isinstance(payload, dict) else {}
+    if not user:
+        return
+    try:
+        partner_id = int(payload.get('partnerId'))
+    except (TypeError, ValueError):
+        emit('error', {'type': 'error', 'message': 'Valid partnerId is required.'})
+        return
+    conn = get_connection()
+    try:
+        messages = _fetch_thread_messages(conn, int(user['id']), partner_id, limit=200, mark_read=True)
+    finally:
+        _return_connection(conn)
+    _broadcast_ws_payload(partner_id, {
+        'type': 'chat_read',
+        'partnerId': int(user['id']),
+        'readerId': int(user['id']),
+        'ts': _now_iso(),
+    })
+    _publish_chat_read_event(partner_id, int(user['id']), int(user['id']))
+    emit('chat_thread', {
+        'type': 'chat_thread',
+        'partnerId': partner_id,
+        'messages': messages,
+        'ts': _now_iso(),
+    })
+
+
+@socketio.on('mark_read')
+def socketio_chat_mark_read(payload=None):
+    user = _socketio_chat_user()
+    payload = payload if isinstance(payload, dict) else {}
+    if not user:
+        return
+    try:
+        partner_id = int(payload.get('partnerId'))
+    except (TypeError, ValueError):
+        emit('error', {'type': 'error', 'message': 'Valid partnerId is required.'})
+        return
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _mark_thread_read(cur, partner_id, int(user['id']))
+        conn.commit()
+    finally:
+        _return_connection(conn)
+    _broadcast_ws_payload(partner_id, {
+        'type': 'chat_read',
+        'partnerId': int(user['id']),
+        'readerId': int(user['id']),
+        'ts': _now_iso(),
+    })
+    _publish_chat_read_event(partner_id, int(user['id']), int(user['id']))
+
+
+@socketio.on('message')
+def socketio_chat_message(payload=None):
+    user = _socketio_chat_user()
+    payload = payload if isinstance(payload, dict) else {}
+    if not user:
+        return
+    try:
+        recipient_id = int(payload.get('recipientId'))
+    except (TypeError, ValueError):
+        emit('error', {'type': 'error', 'message': 'Valid recipientId is required.'})
+        return
+    conn = get_connection()
+    try:
+        try:
+            message, recipient = _create_chat_message(
+                conn,
+                user,
+                recipient_id,
+                str(payload.get('body') or ''),
+                client_msg_id=str(payload.get('clientMsgId') or '').strip() or None,
+            )
+        except (ValueError, LookupError) as exc:
+            emit('error', {'type': 'error', 'message': str(exc)})
+            return
+    finally:
+        _return_connection(conn)
+    _notify_user(recipient_id)
+    _notify_user(int(user['id']))
+    _push_chat_message_to_clients(message, user, recipient)
+    _publish_chat_message_event(message, user, recipient)
 
 
 @app.post('/api/chat/messages')

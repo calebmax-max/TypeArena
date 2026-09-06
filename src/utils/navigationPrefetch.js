@@ -10,6 +10,7 @@ const routeLoaders = {
 };
 
 const preloadedRoutes = new Set();
+const contentPromises = new Map();
 let warmupStarted = false;
 
 export const preloadRoute = (routeName) => {
@@ -24,9 +25,25 @@ export const preloadRoute = (routeName) => {
   });
 };
 
-export const preloadPlayContent = async () => {
+export const getRaceContent = async (mode = 'standard', language = 'english', options = {}) => {
   const { generateRaceContent } = await import('./typingApi');
-  return generateRaceContent('standard', 'english').catch(() => null);
+  const excludeContentIds = Array.isArray(options.excludeContentIds)
+    ? [...options.excludeContentIds].map(String).sort()
+    : [];
+  const key = `${mode}__${language}__${excludeContentIds.join(',')}`;
+  if (!contentPromises.has(key)) {
+    const request = generateRaceContent(mode, language, { excludeContentIds })
+      .catch(() => {
+        contentPromises.delete(key);
+        return null;
+      });
+    contentPromises.set(key, request);
+  }
+  return contentPromises.get(key);
+};
+
+export const preloadPlayContent = async (mode = 'standard', language = 'english') => {
+  return getRaceContent(mode, language);
 };
 
 export const warmNavigation = () => {
