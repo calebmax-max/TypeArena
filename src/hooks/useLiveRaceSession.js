@@ -66,6 +66,10 @@ export function useLiveRaceSession({
   const queuedAtRef = useRef(null);
   const liveRoomRef = useRef(null);
   const serverClockOffsetRef = useRef(0);
+  // Tracks which room.serverNow value the offset was last derived from, so we
+  // only recompute the offset when a genuinely fresh server timestamp arrives
+  // (see syncRoomClock below).
+  const lastSyncedServerNowRef = useRef(null);
 
   const clearTransientLiveState = useCallback(() => {
     setTypingText('');
@@ -190,8 +194,23 @@ export function useLiveRaceSession({
     }
 
     const countdownSeconds = Number(room.countdown || LIVE_RACE_COUNTDOWN_FALLBACK);
-    const serverNowMs = Date.parse(room.serverNow || '');
-    serverClockOffsetRef.current = Number.isFinite(serverNowMs) ? serverNowMs - Date.now() : 0;
+
+    // Bug fix: this used to recompute serverClockOffsetRef from room.serverNow
+    // on EVERY call, including the local 250ms interpolation ticks that pass in
+    // the same already-seen room object (no new network data). Since room.serverNow
+    // is frozen at fetch time but Date.now() keeps moving, that made the offset
+    // drift further off with each tick and only snap back correct on the next poll —
+    // a sawtooth that differs per-client, so the two players' countdowns visibly
+    // disagreed. Now we only re-derive the offset when a genuinely new serverNow
+    // shows up (i.e. this room object came from a fresh server response).
+    if (room.serverNow && room.serverNow !== lastSyncedServerNowRef.current) {
+      const serverNowMs = Date.parse(room.serverNow);
+      if (Number.isFinite(serverNowMs)) {
+        serverClockOffsetRef.current = serverNowMs - Date.now();
+        lastSyncedServerNowRef.current = room.serverNow;
+      }
+    }
+
     const startedAtMs = new Date(room.startedAt).getTime();
     if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) {
       setCountdownRemaining(countdownSeconds);
