@@ -30,6 +30,7 @@ export function useLiveRaceSession({
   setDuration,
   friendBattle,
   setFriendBattle,
+  tournamentId,
   wpmFilter,
   generatedContentPassage,
   redirectToProfile,
@@ -314,6 +315,7 @@ export function useLiveRaceSession({
         duration,
         winnerPrize: Math.round((duration / 60) * 150),
         excludeContentIds: getUsedContentIds(mode, language),
+        tournamentId: tournamentId || undefined,
         wpmMin: wpmFilter.min > 0 ? wpmFilter.min : undefined,
         wpmMax: wpmFilter.max < 300 ? wpmFilter.max : undefined,
       });
@@ -345,6 +347,7 @@ export function useLiveRaceSession({
     refreshFeed,
     showNotice,
     startQueuedRoom,
+    tournamentId,
     wpmFilter.max,
     wpmFilter.min,
   ]);

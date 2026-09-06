@@ -44,6 +44,16 @@ const normalizeAiSettings = (v) => ({
 });
 const DEFAULT_LEADERBOARD_TIERS = { bronze: 500, silver: 851, gold: 1500, diamond: 1760, grandmaster: 2001 };
 
+const formatCommentatorPhrases = (phrases = []) => (Array.isArray(phrases) ? phrases : [])
+  .map((line) => (Array.isArray(line) ? line.join(' | ') : String(line || '').trim()))
+  .filter(Boolean)
+  .join('\n');
+
+const parseCommentatorPhrases = (text = '') => String(text || '')
+  .split(/\r?\n/)
+  .map((line) => line.split('|').map((part) => part.trim()).filter(Boolean))
+  .filter((line) => line.length > 0);
+
 const NAV_ITEMS = [
   { id: 'overview',    label: 'Overview',     icon: '◈' },
   { id: 'wallet',      label: 'Wallet',        icon: '◎' },
@@ -70,6 +80,7 @@ export default function AdminPanel() {
   const [commentatorEnabled, setCommentatorEnabled] = useState(true);
   const [leaderboardTiers, setLeaderboardTiers] = useState(DEFAULT_LEADERBOARD_TIERS);
   const [commentatorConfig, setCommentatorConfig] = useState({ rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 });
+  const [commentatorPhrasesText, setCommentatorPhrasesText] = useState({ raceStart: '', finish: '' });
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
@@ -103,6 +114,12 @@ export default function AdminPanel() {
     setAdminContent(Array.isArray(contentData) ? contentData : []);
     setCommentatorEnabled(mediaData?.commentatorEnabled !== false);
     if (mediaData?.commentatorConfig) setCommentatorConfig(mediaData.commentatorConfig);
+    if (mediaData?.commentatorPhrases) {
+      setCommentatorPhrasesText({
+        raceStart: formatCommentatorPhrases(mediaData.commentatorPhrases.raceStart || []),
+        finish: formatCommentatorPhrases(mediaData.commentatorPhrases.finish || []),
+      });
+    }
     if (leaderboardData?.tiers) setLeaderboardTiers({ ...DEFAULT_LEADERBOARD_TIERS, ...leaderboardData.tiers });
     if (Array.isArray(mediaData?.musicTracks) && mediaData.musicTracks.length) {
       arenaMusic.setTracks(mediaData.musicTracks);
@@ -388,10 +405,24 @@ export default function AdminPanel() {
     setNewTrack(p => ({ ...p, url: '' }));
   };
 
-  const persistMediaSettings = async (tracks, nextCommentatorEnabled = commentatorEnabled, nextCommentatorConfig = commentatorConfig) => {
+  const persistMediaSettings = async (tracks, nextCommentatorEnabled = commentatorEnabled, nextCommentatorConfig = commentatorConfig, nextCommentatorPhrases = commentatorPhrasesText) => {
     try {
-      const result = await updateAdminMediaSettings({ musicTracks: tracks, commentatorEnabled: nextCommentatorEnabled, commentatorConfig: nextCommentatorConfig });
+      const result = await updateAdminMediaSettings({
+        musicTracks: tracks,
+        commentatorEnabled: nextCommentatorEnabled,
+        commentatorConfig: nextCommentatorConfig,
+        commentatorPhrases: {
+          raceStart: parseCommentatorPhrases(nextCommentatorPhrases.raceStart),
+          finish: parseCommentatorPhrases(nextCommentatorPhrases.finish),
+        },
+      });
       if (Array.isArray(result?.settings?.musicTracks)) arenaMusic.setTracks(result.settings.musicTracks);
+      if (result?.settings?.commentatorPhrases) {
+        setCommentatorPhrasesText({
+          raceStart: formatCommentatorPhrases(result.settings.commentatorPhrases.raceStart || []),
+          finish: formatCommentatorPhrases(result.settings.commentatorPhrases.finish || []),
+        });
+      }
       showNotice(result.message || 'Media settings updated.');
     } catch (err) { showNotice(err.message || 'Could not update media settings.'); }
   };
@@ -434,13 +465,26 @@ export default function AdminPanel() {
   const handleCommentatorToggle = () => {
     const next = !commentatorEnabled;
     setCommentatorEnabled(next);
-    void persistMediaSettings(musicState.tracks, next, commentatorConfig);
+    void persistMediaSettings(musicState.tracks, next, commentatorConfig, commentatorPhrasesText);
   };
 
   const handleCommentatorConfigChange = (key, value) => {
     const next = { ...commentatorConfig, [key]: Number(value) };
     setCommentatorConfig(next);
-    void persistMediaSettings(musicState.tracks, commentatorEnabled, next);
+    void persistMediaSettings(musicState.tracks, commentatorEnabled, next, commentatorPhrasesText);
+  };
+
+  const handleCommentatorPhrasesChange = (key, value) => {
+    setCommentatorPhrasesText((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleCommentatorPhrasesSave = async () => {
+    try {
+      await persistMediaSettings(musicState.tracks, commentatorEnabled, commentatorConfig, commentatorPhrasesText);
+      showNotice('Commentary phrases updated.');
+    } catch (err) {
+      showNotice(err.message || 'Could not update commentary phrases.');
+    }
   };
 
   const handleLeaderboardTierSave = async (e) => {
@@ -1503,6 +1547,19 @@ export default function AdminPanel() {
                       <label className="ap-label">Cooldown: {commentatorConfig.cooldown}ms</label>
                       <input type="range" min="0" max="15000" step="250" value={commentatorConfig.cooldown} onChange={(e) => handleCommentatorConfigChange('cooldown', e.target.value)} />
                     </div>
+                  </div>
+                  <div className="ap-two-col" style={{ marginTop: 18 }}>
+                    <div className="ap-field">
+                      <label className="ap-label">Race Start Phrases</label>
+                      <textarea className="ap-textarea" rows={6} value={commentatorPhrasesText.raceStart} onChange={(e) => handleCommentatorPhrasesChange('raceStart', e.target.value)} placeholder="One take per line, sentences separated by |" />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Finish Phrases</label>
+                      <textarea className="ap-textarea" rows={6} value={commentatorPhrasesText.finish} onChange={(e) => handleCommentatorPhrasesChange('finish', e.target.value)} placeholder="One take per line, sentences separated by |" />
+                    </div>
+                  </div>
+                  <div className="ap-btn-row" style={{ marginTop: 12 }}>
+                    <button className="ap-btn" onClick={handleCommentatorPhrasesSave}>Save Commentary Phrases</button>
                   </div>
                 </div>
 

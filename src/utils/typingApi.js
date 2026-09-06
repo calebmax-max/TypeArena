@@ -690,6 +690,7 @@ export const fetchMediaSettings = async () => {
       musicTracks: [],
       commentatorEnabled: true,
       commentatorConfig: { rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 },
+      commentatorPhrases: {},
     };
   }
 };
@@ -733,6 +734,7 @@ export const fetchAdminMediaSettings = async () => {
       musicTracks: [],
       commentatorEnabled: true,
       commentatorConfig: { rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 },
+      commentatorPhrases: {},
     };
   }
 };

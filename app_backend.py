@@ -96,7 +96,8 @@ STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', '').strip()
 STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
-LEADERBOARD_CACHE_TTL_MS = 60_000
+LEADERBOARD_CACHE_TTL_MS = 15_000
+SITE_SETTINGS_STORAGE_KEY = 'site_settings'
 _leaderboard_cache: Dict[str, Any] = {
     'key': None,
     'expires_at': 0,
@@ -116,7 +117,7 @@ LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
 sock = Sock(app)
 socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='gevent')
-# 💡 FIX: Grant explicit permission to your React port (typically 3000)
+# ðŸ’¡ FIX: Grant explicit permission to your React port (typically 3000)
 app.config['SOCK_ALLOWED_ORIGINS'] = ALLOWED_ORIGINS
 
 
@@ -1138,7 +1139,8 @@ def _competitive_season_points(
 
 
 def _season_points_for_user(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> int:
-    return _competitive_season_points(user, owned_items=owned_items)
+    tournament_entries = _safe_int(user.get('tournament_entries') or user.get('tournamentEntries') or 0)
+    return _competitive_season_points(user, tournament_entries=tournament_entries, owned_items=owned_items)
 
 
 def _referral_code_for_user(user: Dict[str, Any]) -> str:
@@ -1390,7 +1392,7 @@ def _ensure_user_equipped_columns(cur) -> None:
         cur.execute("ALTER TABLE users ADD COLUMN equipped_cursor VARCHAR(80) NULL AFTER equipped_frame")
 
 
-# ── Season reset helpers ──────────────────────────────────────────────────────
+# â”€â”€ Season reset helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _ensure_season_tables(cur) -> None:
     """Create season_snapshots table and add season tracking columns to users."""
@@ -1448,7 +1450,7 @@ def _ensure_season_reset(conn) -> None:
     Called on leaderboard load and profile load.
     If the calendar month has rolled over since the last recorded season on any
     user, snapshot the final standings and zero out all season counters.
-    This is idempotent — safe to call on every request.
+    This is idempotent â€” safe to call on every request.
     """
     current_season = _get_current_season_name()
     with conn.cursor() as cur:
@@ -1470,7 +1472,7 @@ def _ensure_season_reset(conn) -> None:
         if not needs_reset:
             return
 
-        # ── Snapshot the ending season before reset ────────────────────────
+        # â”€â”€ Snapshot the ending season before reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         cur.execute(
             """
             SELECT id, username, season_name, season_points_stored, season_races, season_wins, season_earnings
@@ -1507,7 +1509,7 @@ def _ensure_season_reset(conn) -> None:
                 ),
             )
 
-        # ── Reset all users to the new season ─────────────────────────────
+        # â”€â”€ Reset all users to the new season â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         cur.execute(
             """
             UPDATE users
@@ -1542,16 +1544,32 @@ def _increment_season_stats(cur, *, user_id: int, wpm: float, accuracy: float, e
         _refresh_season_points_for_user(cur, refreshed_user)
 
 
+def _clear_leaderboard_cache() -> None:
+    with _leaderboard_cache_lock:
+        _leaderboard_cache.update({'key': None, 'expires_at': 0, 'payload': None})
+
+
 def _refresh_season_points_for_user(cur, user: dict) -> int:
     """
     Recompute and persist season_points_stored for a single user based on
     their current-season counters, then return the new value.
     """
     owned = _owned_store_items_for_user(cur.connection if hasattr(cur, 'connection') else None, int(user.get('id') or 0))
+    tournament_entries = _safe_int(user.get('tournament_entries') or user.get('tournamentEntries') or 0)
+    if hasattr(cur, 'connection') and cur.connection is not None:
+        try:
+            cur.execute(
+                'SELECT COUNT(*) AS total FROM tournament_joins WHERE user_id = %s AND paid_amount > 0',
+                (int(user.get('id') or 0),),
+            )
+            row = cur.fetchone() or {}
+            tournament_entries = int(row.get('total') or tournament_entries)
+        except Exception:
+            pass
     pts = _competitive_season_points(
         user,
         live_races=int(user.get('season_races') or 0),
-        tournament_entries=0,
+        tournament_entries=tournament_entries,
         tournament_payouts=float(user.get('season_earnings') or 0),
         live_earnings=0.0,
         owned_items=owned,
@@ -1560,6 +1578,7 @@ def _refresh_season_points_for_user(cur, user: dict) -> int:
         "UPDATE users SET season_points_stored = %s WHERE id = %s",
         (pts, int(user.get('id') or 0)),
     )
+    _clear_leaderboard_cache()
     return pts
 
 
@@ -1755,25 +1774,6 @@ def _normalize_site_marquee_items(items: Any) -> list[str]:
     return normalized_items or list(DEFAULT_SITE_MARQUEE_ITEMS)
 
 
-def _load_site_settings() -> Dict[str, Any]:
-    defaults = _default_site_marquee_settings()
-    if not SITE_SETTINGS_FILE.exists():
-        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config(), 'leaderboardTiers': _default_leaderboard_tiers()}
-
-    try:
-        raw = json.loads(SITE_SETTINGS_FILE.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config(), 'leaderboardTiers': _default_leaderboard_tiers()}
-
-    return {
-        'items': _normalize_site_marquee_items(raw.get('siteMarqueeItems')),
-        'musicTracks': _normalize_music_tracks(raw.get('musicTracks')),
-        'commentatorEnabled': raw.get('commentatorEnabled') is not False,
-        'commentatorConfig': _normalize_commentator_config(raw.get('commentatorConfig')),
-        'leaderboardTiers': _normalize_leaderboard_tiers(raw.get('leaderboardTiers')),
-    }
-
-
 def _default_leaderboard_tiers() -> Dict[str, int]:
     return {'bronze': 500, 'silver': 851, 'gold': 1500, 'diamond': 1760, 'grandmaster': 2001}
 
@@ -1835,34 +1835,190 @@ def _normalize_music_tracks(tracks: Any) -> list[Dict[str, str]]:
     return normalized
 
 
+def _default_commentator_phrases() -> Dict[str, list[list[str]]]:
+    return {
+        'raceStart': [
+            ["And they're OFF!", 'Fingers to the keys!', 'Every millisecond counts!'],
+            ['GO GO GO!', 'The race has BEGUN!', 'No room for error now!'],
+            ['The clock starts NOW!', 'Push hard from the first keystroke!', 'The crowd is watching!'],
+            ['AWAY they go!', 'Blazing speed right from the start!', 'This is what we came for!'],
+        ],
+        'finish': [
+            ['What a finish!', 'That was a furious run!', 'The crowd is on its feet!'],
+            ['Done and dusted!', 'A brilliant closing burst!', 'That was championship pace!'],
+            ['Finish line crossed!', 'Precision all the way through!', 'That is how you close strong!'],
+            ['Race complete!', 'A huge final push!', 'What a performance!'],
+        ],
+    }
+
+
+def _normalize_commentator_phrases(phrases: Any) -> Dict[str, list[list[str]]]:
+    defaults = _default_commentator_phrases()
+    if not isinstance(phrases, dict):
+        return defaults
+
+    normalized: Dict[str, list[list[str]]] = {}
+    for key, fallback in defaults.items():
+        raw_lines = phrases.get(key)
+        if not isinstance(raw_lines, list):
+            normalized[key] = fallback
+            continue
+
+        normalized_lines: list[list[str]] = []
+        for line in raw_lines:
+            if isinstance(line, list):
+                parts = [str(part or '').strip() for part in line]
+            else:
+                parts = [part.strip() for part in str(line or '').split('|')]
+            phrases_line = [part for part in parts if part]
+            if phrases_line:
+                normalized_lines.append(phrases_line[:4])
+
+        normalized[key] = normalized_lines or fallback
+
+    return normalized
+
+
+def _site_settings_defaults() -> Dict[str, Any]:
+    return {
+        'items': list(DEFAULT_SITE_MARQUEE_ITEMS),
+        'musicTracks': [],
+        'commentatorEnabled': True,
+        'commentatorConfig': _default_commentator_config(),
+        'leaderboardTiers': _default_leaderboard_tiers(),
+        'commentatorPhrases': _default_commentator_phrases(),
+    }
+
+
+def _normalize_site_settings(raw: Any) -> Dict[str, Any]:
+    defaults = _site_settings_defaults()
+    if not isinstance(raw, dict):
+        return defaults
+
+    items = raw.get('items')
+    if items is None:
+        items = raw.get('siteMarqueeItems')
+
+    return {
+        'items': _normalize_site_marquee_items(items),
+        'musicTracks': _normalize_music_tracks(raw.get('musicTracks')),
+        'commentatorEnabled': raw.get('commentatorEnabled') is not False,
+        'commentatorConfig': _normalize_commentator_config(raw.get('commentatorConfig')),
+        'leaderboardTiers': _normalize_leaderboard_tiers(raw.get('leaderboardTiers')),
+        'commentatorPhrases': _normalize_commentator_phrases(raw.get('commentatorPhrases')),
+    }
+
+
+def _ensure_site_settings_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS site_settings (
+            setting_key VARCHAR(80) PRIMARY KEY,
+            setting_value LONGTEXT NOT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+
+
+def _persist_site_settings(settings: Dict[str, Any], *, persist_file: bool = True) -> None:
+    normalized = _normalize_site_settings(settings)
+    payload = json.dumps(normalized, indent=2)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_site_settings_table(cur)
+            cur.execute(
+                """
+                INSERT INTO site_settings (setting_key, setting_value)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE
+                    setting_value = VALUES(setting_value),
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (SITE_SETTINGS_STORAGE_KEY, payload),
+            )
+        conn.commit()
+    finally:
+        _return_connection(conn)
+
+    if persist_file:
+        try:
+            SITE_SETTINGS_FILE.write_text(payload, encoding='utf-8')
+        except OSError:
+            pass
+
+
+def _load_site_settings() -> Dict[str, Any]:
+    defaults = _site_settings_defaults()
+    conn = None
+    try:
+        conn = get_connection()
+        with conn.cursor() as cur:
+            _ensure_site_settings_table(cur)
+            cur.execute(
+                'SELECT setting_value FROM site_settings WHERE setting_key = %s LIMIT 1',
+                (SITE_SETTINGS_STORAGE_KEY,),
+            )
+            row = cur.fetchone() or {}
+        raw_value = row.get('setting_value')
+        if raw_value:
+            try:
+                return _normalize_site_settings(json.loads(raw_value))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
+    except Exception:
+        conn = None
+    finally:
+        if conn is not None:
+            _return_connection(conn)
+
+    if SITE_SETTINGS_FILE.exists():
+        try:
+            raw = json.loads(SITE_SETTINGS_FILE.read_text(encoding='utf-8'))
+            settings = _normalize_site_settings(raw)
+            try:
+                _persist_site_settings(settings, persist_file=True)
+            except Exception:
+                pass
+            return settings
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    return defaults
+
+
 def _save_site_marquee_settings(items: list[str]) -> Dict[str, Any]:
     current = _load_site_settings()
-    settings = {
-        'siteMarqueeItems': _normalize_site_marquee_items(items),
-        'musicTracks': current.get('musicTracks', []),
-        'commentatorEnabled': current.get('commentatorEnabled', True),
-        'commentatorConfig': current.get('commentatorConfig', _default_commentator_config()),
-        'leaderboardTiers': current.get('leaderboardTiers', _default_leaderboard_tiers()),
-    }
-    SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
-    return {'items': list(settings['siteMarqueeItems'])}
+    settings = {**current, 'items': _normalize_site_marquee_items(items)}
+    _persist_site_settings(settings)
+    return {'items': list(settings['items'])}
 
 
-def _save_media_settings(tracks: Any, commentator_enabled: Any, commentator_config: Any = None) -> Dict[str, Any]:
+def _save_media_settings(tracks: Any, commentator_enabled: Any, commentator_config: Any = None, commentator_phrases: Any = None) -> Dict[str, Any]:
     current = _load_site_settings()
     settings = {
-        'siteMarqueeItems': current.get('items', DEFAULT_SITE_MARQUEE_ITEMS),
+        **current,
         'musicTracks': _normalize_music_tracks(tracks),
         'commentatorEnabled': commentator_enabled is not False,
         'commentatorConfig': _normalize_commentator_config(commentator_config),
-        'leaderboardTiers': current.get('leaderboardTiers', _default_leaderboard_tiers()),
+        'commentatorPhrases': _normalize_commentator_phrases(commentator_phrases or current.get('commentatorPhrases')),
     }
-    SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    _persist_site_settings(settings)
     return {
         'musicTracks': settings['musicTracks'],
         'commentatorEnabled': settings['commentatorEnabled'],
         'commentatorConfig': settings['commentatorConfig'],
+        'commentatorPhrases': settings['commentatorPhrases'],
     }
+
+
+def _save_leaderboard_settings(tiers: Any) -> Dict[str, int]:
+    current = _load_site_settings()
+    settings = {**current, 'leaderboardTiers': _normalize_leaderboard_tiers(tiers)}
+    _persist_site_settings(settings)
+    _clear_leaderboard_cache()
+    return settings['leaderboardTiers']
 
 
 def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
@@ -1874,7 +2030,7 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     normalized_mode = str(mode or 'business').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
 
-    # Use /chat/completions — the standard OpenAI endpoint.
+    # Use /chat/completions â€” the standard OpenAI endpoint.
     # The previous /responses endpoint does not exist and caused every AI call
     # to silently time out after 20 s before falling back to local passages.
     response = _http_json(
@@ -1889,7 +2045,7 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
                     'role': 'system',
                     'content': (
                         'You create fresh anti-cheat typing passages for competitive live races. '
-                        'Always respond with valid JSON only — no markdown, no extra text. '
+                        'Always respond with valid JSON only â€” no markdown, no extra text. '
                         'JSON must have exactly these keys: title, passage, antiCheatHint.'
                     ),
                 },
@@ -2963,7 +3119,7 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
     winner_user_id = room.get('winnerUserId')
     winner_prize = float(room.get('winnerPrize') or 0)
 
-    # Use the caller's connection if provided — avoids an extra TCP round-trip
+    # Use the caller's connection if provided â€” avoids an extra TCP round-trip
     _owns_conn = conn is None
     if _owns_conn:
         conn = get_connection()
@@ -3013,7 +3169,7 @@ def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
         _persist_completed_live_race(room, conn=conn)
         return
 
-    # Use the caller's connection if provided — avoids an extra TCP round-trip
+    # Use the caller's connection if provided â€” avoids an extra TCP round-trip
     _owns_conn = conn is None
     if _owns_conn:
         conn = get_connection()
@@ -3079,7 +3235,7 @@ def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
             'finishedAtTs': datetime.utcnow().timestamp(),
         }
 
-    # Setup standard metric winner references (Metrics only—No money involved)
+    # Setup standard metric winner references (Metrics onlyâ€”No money involved)
     try:
         player_ids = [p['userId'] for p in room.get('players', [])]
         def result_sort_key(p_id: int):
@@ -4307,6 +4463,7 @@ def media_settings():
         'musicTracks': settings.get('musicTracks', []),
         'commentatorEnabled': settings.get('commentatorEnabled', True),
         'commentatorConfig': settings.get('commentatorConfig', _default_commentator_config()),
+        'commentatorPhrases': settings.get('commentatorPhrases', _default_commentator_phrases()),
     })
 
 
@@ -4349,6 +4506,7 @@ def admin_media_settings():
         'musicTracks': settings.get('musicTracks', []),
         'commentatorEnabled': settings.get('commentatorEnabled', True),
         'commentatorConfig': settings.get('commentatorConfig', _default_commentator_config()),
+        'commentatorPhrases': settings.get('commentatorPhrases', _default_commentator_phrases()),
     })
 
 
@@ -4364,6 +4522,7 @@ def admin_update_media_settings():
         tracks,
         payload.get('commentatorEnabled', True),
         payload.get('commentatorConfig'),
+        payload.get('commentatorPhrases'),
     )
     return jsonify({'message': 'Media settings updated.', 'settings': settings})
 
@@ -4383,15 +4542,7 @@ def admin_update_leaderboard_settings():
     tiers = _normalize_leaderboard_tiers(payload.get('tiers'))
     if tiers == _default_leaderboard_tiers() and payload.get('tiers') != tiers:
         return jsonify({'message': 'Tier thresholds must be increasing: Bronze, Silver, Gold, Diamond, Grandmaster.'}), 400
-    current = _load_site_settings()
-    settings = {
-        'siteMarqueeItems': current.get('items', DEFAULT_SITE_MARQUEE_ITEMS),
-        'musicTracks': current.get('musicTracks', []),
-        'commentatorEnabled': current.get('commentatorEnabled', True),
-        'commentatorConfig': current.get('commentatorConfig', _default_commentator_config()),
-        'leaderboardTiers': tiers,
-    }
-    SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    _save_leaderboard_settings(tiers)
     return jsonify({'message': 'Leaderboard tier thresholds updated.', 'tiers': tiers})
 
 
@@ -5266,7 +5417,7 @@ def payout_prize_to_winner():
             if not math.isfinite(amount_value) or amount_value <= 0:
                 return jsonify({'message': 'Amount must be greater than zero.'}), 400
 
-            # ── Double-payout guard ──────────────────────────────────────────
+            # â”€â”€ Double-payout guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if tournament_id is not None:
                 cur.execute(
                     '''
@@ -5297,7 +5448,7 @@ def payout_prize_to_winner():
             )
             cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, user_id_int))
 
-            # ── Write prize_paid so the winners list shows the correct amount ──
+            # â”€â”€ Write prize_paid so the winners list shows the correct amount â”€â”€
             if tournament:
                 _ensure_tournament_prize_paid_column(cur)
                 cur.execute(
@@ -5538,7 +5689,7 @@ def queue_live_race():
                     )
 
             if not is_private:
-                # Filter in SQL — avoids deserializing up to 100 rooms in Python
+                # Filter in SQL â€” avoids deserializing up to 100 rooms in Python
                 cur.execute(
                     '''
                     SELECT * FROM live_race_rooms
@@ -6178,6 +6329,10 @@ def join_tournament(tournament_id: int):
                 'UPDATE tournament_joins SET paid_amount=%s WHERE tournament_id=%s AND paid_amount=0',
                 (entry_fee, tournament_id),
             )
+            for joined_user_id in joined_user_ids:
+                refreshed_joined_user = joined_users.get(joined_user_id)
+                if refreshed_joined_user:
+                    _refresh_season_points_for_user(cur, refreshed_joined_user)
             cur.execute(
                 'UPDATE tournaments SET participants=%s, status=%s, start_time=%s WHERE id=%s',
                 (match_size, 'upcoming', datetime.utcnow() + timedelta(seconds=TOURNAMENT_START_DELAY_SECONDS), tournament_id),
@@ -6339,7 +6494,7 @@ def leaderboard():
 
 
 
-# ── Chat & Presence ──────────────────────────────────────────────────────────
+# â”€â”€ Chat & Presence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _ensure_chat_tables(cur) -> None:
     cur.execute(
@@ -6710,7 +6865,7 @@ def chat_get_messages(other_user_id: int):
         _return_connection(conn)
 
 
-# ── Long-poll infrastructure (must be defined BEFORE chat_send_message) ──────
+# â”€â”€ Long-poll infrastructure (must be defined BEFORE chat_send_message) â”€â”€â”€â”€â”€â”€
 import threading as _threading
 
 # Maps user_id -> Condition.
@@ -7416,12 +7571,12 @@ def chat_long_poll(other_user_id: int):
         finally:
             c.close()
 
-    # Check immediately — return right away if there's already something new
+    # Check immediately â€” return right away if there's already something new
     msgs = fetch_new()
     if msgs:
         return jsonify(msgs)
 
-    # Nothing yet — park on a Condition so we never miss a notification.
+    # Nothing yet â€” park on a Condition so we never miss a notification.
     # Snapshot the version BEFORE waiting; if _notify_user fires between
     # fetch_new() above and cond.wait() below the version will have
     # advanced and we skip the wait entirely.
@@ -7686,3 +7841,5 @@ def _bootstrap_db() -> None:
 if __name__ == '__main__':
     _bootstrap_db()
     app.run(host=APP_HOST, port=APP_PORT, debug=False)
+
+

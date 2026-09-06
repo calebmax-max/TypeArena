@@ -946,11 +946,13 @@ export default function Play({ practicePage = false }){
     password: '',
     customInviteCode: '',
   });
+  const [tournamentId, setTournamentId] = useState('');
   // ── new feature state ──────────────────────────────────────────────────────
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('typearena_sound') !== 'false');
   // Keep the module-level flag in sync so playSound always knows the current setting
   useEffect(() => { setSoundEnabledGlobal(soundEnabled); }, [soundEnabled]);
   const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
+  const [commentatorPhrases, setCommentatorPhrases] = useState({});
   const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem('typearena_music') !== 'false');
 
   useEffect(() => {
@@ -958,6 +960,9 @@ export default function Play({ practicePage = false }){
     fetchMediaSettings().then((settings) => {
       if (settings?.commentatorConfig) {
         setCommentatorConfig(settings.commentatorConfig);
+      }
+      if (settings?.commentatorPhrases) {
+        setCommentatorPhrases(settings.commentatorPhrases);
       }
       if (active && settings?.commentatorEnabled === false) {
         setCommentatorEnabled(false);
@@ -987,6 +992,7 @@ export default function Play({ practicePage = false }){
   }, [musicEnabled]);
 
   // Cancel speech and hard-disable when commentator is toggled off
+  const commentatorScriptRef = useRef(SCRIPT);
   useEffect(() => {
     if (!commentatorEnabled) {
       _commentatorDisabled = true;
@@ -998,6 +1004,12 @@ export default function Play({ practicePage = false }){
       _commentatorCancelFlag = false;
     }
   }, [commentatorEnabled]);
+  useEffect(() => {
+    commentatorScriptRef.current = {
+      ...SCRIPT,
+      ...(commentatorPhrases || {}),
+    };
+  }, [commentatorPhrases]);
   const commentatorMilestonesRef = useRef({ m25: false, m50: false, m75: false });
   const [focusLost, setFocusLost] = useState(false);
   const [streak, setStreak] = useState(0);
@@ -1140,11 +1152,11 @@ export default function Play({ practicePage = false }){
     const displayName = name || 'Champion';
     const timer = window.setTimeout(() => {
       // Part 1 — personalised welcome (force so it cuts through anything)
-      speakSequence(SCRIPT.welcome(displayName), { force: true, rate: 1.05, pitch: 0.88, gap: 180 });
+      speakSequence(commentatorScriptRef.current.welcome(displayName), { force: true, rate: 1.05, pitch: 0.88, gap: 180 });
       // Part 2 — feature tour starts after the welcome finishes (~4 s)
       window.setTimeout(() => {
         if (!_commentatorCancelFlag) {
-          speakSequence(SCRIPT.featureTour(), { force: true, rate: 1.0, pitch: 0.9, gap: 260 });
+          speakSequence(commentatorScriptRef.current.featureTour(), { force: true, rate: 1.0, pitch: 0.9, gap: 260 });
         }
       }, 4200);
     }, 900);
@@ -1183,6 +1195,9 @@ export default function Play({ practicePage = false }){
     const params = new URLSearchParams(location.search);
     const inviteCode = (params.get('invite') || '').trim().toUpperCase();
     const password = params.get('password') || '';
+    const nextTournamentId = (params.get('tournamentId') || '').trim();
+
+    setTournamentId(nextTournamentId);
 
     if (!inviteCode) {
       return;
@@ -1304,6 +1319,7 @@ export default function Play({ practicePage = false }){
     setDuration,
     friendBattle,
     setFriendBattle,
+    tournamentId,
     wpmFilter,
     generatedContentPassage: generatedContent?.passage,
     redirectToProfile,
@@ -1406,8 +1422,8 @@ export default function Play({ practicePage = false }){
           setTimeout(() => {
           const _finishName = currentUser?.username || currentUser?.name || null;
           const _finishScript = _finishName
-            ? [_finishName + '!', ..._pick(SCRIPT.finish)]
-            : _pick(SCRIPT.finish);
+            ? [_finishName + '!', ..._pick(commentatorScriptRef.current.finish)]
+            : _pick(commentatorScriptRef.current.finish);
           speakSequence(_finishScript, { force: true, rate: 1.12, pitch: 0.88, gap: 200 });
         }, 600);
         }
@@ -1654,8 +1670,8 @@ export default function Play({ practicePage = false }){
     if (commentatorEnabled) {
       const _racerName = currentUser?.username || currentUser?.name || null;
       const _raceScript = _racerName
-        ? [_racerName + '!', ..._pick(SCRIPT.raceStart)]
-        : _pick(SCRIPT.raceStart);
+        ? [_racerName + '!', ..._pick(commentatorScriptRef.current.raceStart)]
+        : _pick(commentatorScriptRef.current.raceStart);
       speakSequence(_raceScript, { force: true, rate: 1.15, pitch: 0.90, gap: 160 });
     }
     setPhase('racing');
@@ -1902,8 +1918,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           const newStreak = s + 1;
           // Commentator: streak milestones
           if (commentatorEnabled) {
-            if (newStreak === 10) speakSequence(_pick(SCRIPT.streak10), { rate: 1.18, pitch: 0.88, gap: 140 });
-            else if (newStreak === 25) speakSequence(_pick(SCRIPT.streak25), { force: true, rate: 1.2, pitch: 0.86, gap: 130 });
+            if (newStreak === 10) speakSequence(_pick(commentatorScriptRef.current.streak10), { rate: 1.18, pitch: 0.88, gap: 140 });
+            else if (newStreak === 25) speakSequence(_pick(commentatorScriptRef.current.streak25), { force: true, rate: 1.2, pitch: 0.86, gap: 130 });
           }
           return newStreak;
         });
@@ -1914,7 +1930,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
         }
         // Commentator: occasional error reaction (not every error — 1-in-6 chance)
         if (commentatorEnabled && Math.random() < 0.17) {
-          speakSequence(_pick(SCRIPT.error), { rate: 1.1, pitch: 0.91, gap: 150 });
+          speakSequence(_pick(commentatorScriptRef.current.error), { rate: 1.1, pitch: 0.91, gap: 150 });
         }
       }
 
@@ -1924,13 +1940,13 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
         const ms = commentatorMilestonesRef.current;
         if (!ms.m25 && pct >= 0.25) {
           ms.m25 = true;
-          speakSequence(_pick(SCRIPT.milestone25), { rate: 1.1, pitch: 0.90, gap: 170 });
+          speakSequence(_pick(commentatorScriptRef.current.milestone25), { rate: 1.1, pitch: 0.90, gap: 170 });
         } else if (!ms.m50 && pct >= 0.50) {
           ms.m50 = true;
-          speakSequence(_pick(SCRIPT.milestone50), { force: true, rate: 1.13, pitch: 0.88, gap: 160 });
+          speakSequence(_pick(commentatorScriptRef.current.milestone50), { force: true, rate: 1.13, pitch: 0.88, gap: 160 });
         } else if (!ms.m75 && pct >= 0.75) {
           ms.m75 = true;
-          speakSequence(_pick(SCRIPT.milestone75), { force: true, rate: 1.15, pitch: 0.87, gap: 155 });
+          speakSequence(_pick(commentatorScriptRef.current.milestone75), { force: true, rate: 1.15, pitch: 0.87, gap: 155 });
         }
       }
     }
