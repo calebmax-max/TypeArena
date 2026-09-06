@@ -11,6 +11,7 @@ import {
   generateRaceContent,
   fetchLiveRaceRoom,
   fetchLiveRaces,
+  fetchMediaSettings,
   getStoredUserSnapshot,
   submitRaceResult,
 } from '../utils/typingApi';
@@ -569,7 +570,7 @@ const _pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 let _commentatorBusy = false;
 let _commentatorCancelFlag = false;
 let _commentatorLastSpokenAt = 0;
-const _COMMENTATOR_COOLDOWN_MS = 3500;
+let _commentatorConfig = { rate: 1.08, pitch: 0.92, gap: 220, volume: 1.0, cooldown: 3500 };
 // Hard-disable flag — set when the user turns off the commentator.
 // Unlike _commentatorCancelFlag (which is reset by each new speakSequence call),
 // this one is only ever changed by the enable/disable toggle.
@@ -601,14 +602,28 @@ const _getCommentatorVoice = () => {
   );
 };
 
+export const setCommentatorConfig = (config = {}) => {
+  _commentatorConfig = {
+    rate: Number.isFinite(Number(config.rate)) ? Number(config.rate) : _commentatorConfig.rate,
+    pitch: Number.isFinite(Number(config.pitch)) ? Number(config.pitch) : _commentatorConfig.pitch,
+    gap: Number.isFinite(Number(config.gap)) ? Number(config.gap) : _commentatorConfig.gap,
+    volume: Number.isFinite(Number(config.volume)) ? Number(config.volume) : _commentatorConfig.volume,
+    cooldown: Number.isFinite(Number(config.cooldown)) ? Number(config.cooldown) : _commentatorConfig.cooldown,
+  };
+};
+
 const speakSequence = (sentences, opts = {}) => {
   if (!window.speechSynthesis) return;
   if (_commentatorDisabled) return;  // hard-disabled by user setting — bail immediately
-  const { force = false, rate = 1.08, pitch = 0.92, gap = 220, volume = 1.0 } = opts;
+  const { force = false } = opts;
+  const rate = _commentatorConfig.rate;
+  const pitch = _commentatorConfig.pitch;
+  const gap = _commentatorConfig.gap;
+  const volume = _commentatorConfig.volume;
 
   const now = Date.now();
   if (!force && _commentatorBusy) return;
-  if (!force && now - _commentatorLastSpokenAt < _COMMENTATOR_COOLDOWN_MS) return;
+  if (!force && now - _commentatorLastSpokenAt < _commentatorConfig.cooldown) return;
 
   _commentatorCancelFlag = true; // signal any running chain to stop
   window.speechSynthesis.cancel();
@@ -1028,6 +1043,19 @@ export default function Play({ practicePage = false }){
   useEffect(() => { setSoundEnabledGlobal(soundEnabled); }, [soundEnabled]);
   const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
   const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem('typearena_music') !== 'false');
+
+  useEffect(() => {
+    let active = true;
+    fetchMediaSettings().then((settings) => {
+      if (settings?.commentatorConfig) {
+        setCommentatorConfig(settings.commentatorConfig);
+      }
+      if (active && settings?.commentatorEnabled === false) {
+        setCommentatorEnabled(false);
+      }
+    });
+    return () => { active = false; };
+  }, []);
 
   // React to settings changed in TypeProfile (same tab or another tab)
   useEffect(() => {

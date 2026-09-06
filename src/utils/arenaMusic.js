@@ -13,6 +13,7 @@
 //   arenaMusic.next();
 // =============================================================================
 import { useState, useEffect } from 'react';
+import { buildApiUrl } from './api';
 
 const STORAGE_KEY = 'typearena_music_settings';
 
@@ -237,6 +238,24 @@ const createMusicEngine = () => {
     notify();
   };
 
+  const loadRemoteSettings = async () => {
+    try {
+      const response = await fetch(buildApiUrl('/api/media-settings'));
+      if (!response.ok) return null;
+      const settings = await response.json();
+      if (Array.isArray(settings.musicTracks) && settings.musicTracks.length > 0) {
+        tracks = settings.musicTracks.filter((track) => track?.url?.trim());
+        currentIndex = Math.min(currentIndex, tracks.length - 1);
+        if (audio && playing) loadTrack(currentIndex);
+        saveSettings();
+        notify();
+      }
+      return settings;
+    } catch {
+      return null;
+    }
+  };
+
   // ── React hook helper ─────────────────────────────────────────────────────
   const subscribe = (fn) => {
     listeners.add(fn);
@@ -260,6 +279,7 @@ const createMusicEngine = () => {
     addTrack,
     removeTrack,
     resetToDefaults,
+    loadRemoteSettings,
     getState,
     subscribe,
     DEFAULT_TRACKS,

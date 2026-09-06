@@ -14,6 +14,7 @@ import './css/Loader.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
 import { fetchSiteMarquee } from './utils/typingApi';
+import { arenaMusic } from './utils/arenaMusic';
 import { preloadPlayContent, preloadRoute, warmNavigation } from './utils/navigationPrefetch';
 
 
@@ -135,6 +136,10 @@ function AppLayout() {
   const [currentUser, setCurrentUser] = useState(null);
   const [siteMarqueeItems, setSiteMarqueeItems] = useState(DEFAULT_SITE_MARQUEE_ITEMS);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    void arenaMusic.loadRemoteSettings();
+  }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });

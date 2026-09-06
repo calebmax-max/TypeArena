@@ -664,6 +664,20 @@ export const fetchSiteMarquee = async () => {
   }
 };
 
+export const fetchMediaSettings = async () => {
+  try {
+    const response = await apiFetch(buildApiUrl('/api/media-settings'));
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Media settings fetch error:', error);
+    return {
+      musicTracks: [],
+      commentatorEnabled: true,
+      commentatorConfig: { rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 },
+    };
+  }
+};
+
 export const fetchAdminSiteMarquee = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/site-marquee'), {
@@ -687,6 +701,69 @@ export const updateAdminSiteMarquee = async (payload) => {
     method: 'PUT',
     headers: buildAdminHeaders(),
     body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
+export const fetchAdminMediaSettings = async () => {
+  try {
+    const response = await apiFetch(buildApiUrl('/api/admin/media-settings'), {
+      headers: buildAdminHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Admin media settings fetch error:', error);
+    return {
+      musicTracks: [],
+      commentatorEnabled: true,
+      commentatorConfig: { rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 },
+    };
+  }
+};
+
+export const updateAdminMediaSettings = async (payload) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/media-settings'), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
+export const fetchAdminContent = async () => {
+  try {
+    const response = await apiFetch(buildApiUrl('/api/admin/content'), {
+      headers: buildAdminHeaders(),
+    });
+    return await parseResponse(response);
+  } catch (error) {
+    console.error('Admin content fetch error:', error);
+    return [];
+  }
+};
+
+export const createAdminContent = async (payload) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/content'), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
+export const updateAdminContent = async (contentId, payload) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/content/${contentId}`), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
+export const deleteAdminContent = async (contentId) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/content/${contentId}`), {
+    method: 'DELETE',
+    headers: buildAdminHeaders(),
   });
   return await parseResponse(response);
 };

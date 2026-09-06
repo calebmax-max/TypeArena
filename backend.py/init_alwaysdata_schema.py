@@ -43,6 +43,20 @@ SCHEMA_SQL = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """,
     """
+    CREATE TABLE IF NOT EXISTS typing_content (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        content_id VARCHAR(80) NOT NULL UNIQUE,
+        content_type VARCHAR(20) NOT NULL DEFAULT 'practice',
+        mode VARCHAR(40) NOT NULL DEFAULT 'standard',
+        language VARCHAR(40) NOT NULL DEFAULT 'english',
+        passage TEXT NOT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_typing_content_lookup (content_type, mode, language, is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
     CREATE TABLE IF NOT EXISTS tournament_joins (
         id INT AUTO_INCREMENT PRIMARY KEY,
         tournament_id INT NOT NULL,

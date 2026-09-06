@@ -45,6 +45,22 @@ DB_USER = os.getenv('ALWAYSDATA_DB_USER', '').strip()
 DB_PASSWORD = os.getenv('ALWAYSDATA_DB_PASSWORD', '')
 DB_NAME = os.getenv('ALWAYSDATA_DB_NAME', '').strip()
 
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+try:
+    DB_PORT = max(1, _env_int('ALWAYSDATA_DB_PORT', 3306))
+except (TypeError, ValueError):
+    DB_PORT = 3306
+DB_CONNECT_TIMEOUT = max(3, _env_int('ALWAYSDATA_DB_CONNECT_TIMEOUT', 8))
+DB_READ_TIMEOUT = max(3, _env_int('ALWAYSDATA_DB_READ_TIMEOUT', 30))
+DB_WRITE_TIMEOUT = max(3, _env_int('ALWAYSDATA_DB_WRITE_TIMEOUT', 30))
+
 MPESA_SIMULATE = os.getenv('MPESA_SIMULATE', 'false').lower() == 'true'
 MPESA_CONSUMER_KEY = os.getenv('MPESA_CONSUMER_KEY', '')
 MPESA_CONSUMER_SECRET = os.getenv('MPESA_CONSUMER_SECRET', '')
@@ -1222,6 +1238,25 @@ def _ensure_store_purchase_table(cur) -> None:
     )
 
 
+def _ensure_typing_content_table(cur) -> None:
+    cur.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS typing_content (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            content_id VARCHAR(80) NOT NULL UNIQUE,
+            content_type VARCHAR(20) NOT NULL DEFAULT 'practice',
+            mode VARCHAR(40) NOT NULL DEFAULT 'standard',
+            language VARCHAR(40) NOT NULL DEFAULT 'english',
+            passage TEXT NOT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_typing_content_lookup (content_type, mode, language, is_active)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        '''
+    )
+
+
 def _ensure_marketplace_revenue_table(cur) -> None:
     cur.execute(
         """
@@ -1572,6 +1607,40 @@ def _equip_field_for_category(category: str) -> str | None:
     return mapping.get(str(category or '').strip())
 
 
+def _fetch_admin_content(mode: str, language: str, content_type: str, exclude_content_ids: Any = None) -> Dict[str, Any] | None:
+    excluded = _normalize_exclude_content_ids(exclude_content_ids)
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''
+                    SELECT content_id, passage
+                    FROM typing_content
+                    WHERE content_type=%s AND mode=%s AND language=%s AND is_active=1
+                    ORDER BY id ASC
+                    ''',
+                    (content_type, mode, language),
+                )
+                rows = cur.fetchall()
+        finally:
+            _return_connection(conn)
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning('Admin content lookup failed: %s', exc)
+        return None
+
+    if not rows:
+        return None
+    available = [row for row in rows if str(row.get('content_id') or '') not in excluded] or rows
+    selected = available[secrets.randbelow(len(available))]
+    return {
+        'contentId': str(selected['content_id']),
+        'id': str(selected['content_id']),
+        'passage': str(selected['passage']),
+        'totalContentCount': len(rows),
+    }
+
+
 def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None) -> Dict[str, Any]:
     normalized_mode = str(mode or 'standard').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
@@ -1589,6 +1658,18 @@ def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None)
         pool_key = 'memory'
     else:
         pool_key = normalized_mode if normalized_mode in AI_PASSAGE_BANK else 'standard'
+
+    curated = _fetch_admin_content(normalized_mode, normalized_language, 'practice', exclude_content_ids)
+    if curated:
+        return {
+            'mode': normalized_mode,
+            'language': normalized_language,
+            **curated,
+            'title': f'{pool_key.title()} Admin Passage',
+            'antiCheatHint': 'Admin-curated content is selected from the published content library.',
+            'provider': 'admin-library',
+            'model': 'database',
+        }
 
     passages = AI_PASSAGE_BANK.get(pool_key) or AI_PASSAGE_BANK['standard']
     selected = _select_competitive_passage(
@@ -1625,6 +1706,14 @@ def _generate_live_battle_passage(mode: str, language: str, is_private: bool = F
         passages = LIVE_BATTLE_PASSAGE_BANK.get('code') or []
     else:
         passages = LIVE_BATTLE_PASSAGE_BANK.get(normalized_mode) or LIVE_BATTLE_PASSAGE_BANK.get('standard') or []
+
+    curated = _fetch_admin_content(normalized_mode, normalized_language, 'live', exclude_content_ids)
+    if curated:
+        passage = curated['passage']
+        if is_private:
+            room_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+            passage = f'{passage} Private room note: keep code {room_code} and every symbol exactly as shown.'
+        return {**curated, 'passage': passage}
 
     if not passages:
         fallback = _generate_passage(mode, language, exclude_content_ids=exclude_content_ids)
@@ -1684,22 +1773,86 @@ def _normalize_site_marquee_items(items: Any) -> list[str]:
 def _load_site_settings() -> Dict[str, Any]:
     defaults = _default_site_marquee_settings()
     if not SITE_SETTINGS_FILE.exists():
-        return defaults
+        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config()}
 
     try:
         raw = json.loads(SITE_SETTINGS_FILE.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
-        return defaults
+        return {**defaults, 'musicTracks': [], 'commentatorEnabled': True, 'commentatorConfig': _default_commentator_config()}
 
     return {
         'items': _normalize_site_marquee_items(raw.get('siteMarqueeItems')),
+        'musicTracks': _normalize_music_tracks(raw.get('musicTracks')),
+        'commentatorEnabled': raw.get('commentatorEnabled') is not False,
+        'commentatorConfig': _normalize_commentator_config(raw.get('commentatorConfig')),
     }
 
 
+def _default_commentator_config() -> Dict[str, float]:
+    return {'rate': 1.08, 'pitch': 0.92, 'gap': 220, 'volume': 1.0, 'cooldown': 3500}
+
+
+def _normalize_commentator_config(config: Any) -> Dict[str, float]:
+    defaults = _default_commentator_config()
+    if not isinstance(config, dict):
+        return defaults
+    try:
+        return {
+            'rate': min(2.0, max(0.5, float(config.get('rate', defaults['rate'])))),
+            'pitch': min(2.0, max(0.0, float(config.get('pitch', defaults['pitch'])))),
+            'gap': min(2000, max(0, int(config.get('gap', defaults['gap'])))),
+            'volume': min(1.0, max(0.0, float(config.get('volume', defaults['volume'])))),
+            'cooldown': min(15000, max(0, int(config.get('cooldown', defaults['cooldown'])))),
+        }
+    except (TypeError, ValueError):
+        return defaults
+
+
+def _normalize_music_tracks(tracks: Any) -> list[Dict[str, str]]:
+    if not isinstance(tracks, list):
+        return []
+    normalized = []
+    for index, track in enumerate(tracks):
+        if not isinstance(track, dict):
+            continue
+        url = str(track.get('url') or '').strip()
+        if not url:
+            continue
+        normalized.append({
+            'id': str(track.get('id') or f'track_{index + 1}').strip()[:80],
+            'title': str(track.get('title') or 'Untitled Track').strip()[:150],
+            'artist': str(track.get('artist') or 'TypeArena').strip()[:150],
+            'url': url[:1000],
+        })
+    return normalized
+
+
 def _save_site_marquee_settings(items: list[str]) -> Dict[str, Any]:
-    settings = {'siteMarqueeItems': _normalize_site_marquee_items(items)}
+    current = _load_site_settings()
+    settings = {
+        'siteMarqueeItems': _normalize_site_marquee_items(items),
+        'musicTracks': current.get('musicTracks', []),
+        'commentatorEnabled': current.get('commentatorEnabled', True),
+        'commentatorConfig': current.get('commentatorConfig', _default_commentator_config()),
+    }
     SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
     return {'items': list(settings['siteMarqueeItems'])}
+
+
+def _save_media_settings(tracks: Any, commentator_enabled: Any, commentator_config: Any = None) -> Dict[str, Any]:
+    current = _load_site_settings()
+    settings = {
+        'siteMarqueeItems': current.get('items', DEFAULT_SITE_MARQUEE_ITEMS),
+        'musicTracks': _normalize_music_tracks(tracks),
+        'commentatorEnabled': commentator_enabled is not False,
+        'commentatorConfig': _normalize_commentator_config(commentator_config),
+    }
+    SITE_SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    return {
+        'musicTracks': settings['musicTracks'],
+        'commentatorEnabled': settings['commentatorEnabled'],
+        'commentatorConfig': settings['commentatorConfig'],
+    }
 
 
 def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
@@ -1859,12 +2012,16 @@ class _ConnectionPool:
             )
         return pymysql.connect(
             host=DB_HOST,
+            port=DB_PORT,
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME,
             charset='utf8mb4',
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=False,
+            connect_timeout=DB_CONNECT_TIMEOUT,
+            read_timeout=DB_READ_TIMEOUT,
+            write_timeout=DB_WRITE_TIMEOUT,
         )
 
     def get(self):
@@ -3063,6 +3220,18 @@ def _load_live_room_from_row(row: Optional[Dict[str, Any]]) -> Optional[Dict[str
     return _hydrate_live_room(room)
 
 
+def _content_in_active_room(content_id: str, cur) -> bool:
+    cur.execute("SELECT room_data FROM live_race_rooms WHERE status <> 'completed'")
+    for row in cur.fetchall():
+        try:
+            room = json.loads(str(row.get('room_data') or '{}'))
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if str(room.get('contentId') or '') == content_id:
+            return True
+    return False
+
+
 def _save_live_room(cur, room: Dict[str, Any]) -> Dict[str, Any]:
     room_id = str(room.get('id') or '').strip()
     if not room_id:
@@ -3936,6 +4105,124 @@ def admin_ai_settings():
     return jsonify(settings)
 
 
+@app.get('/api/admin/content')
+def admin_content_list():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_typing_content_table(cur)
+            cur.execute(
+                '''
+                SELECT id, content_id, content_type, mode, language, passage, is_active, created_at, updated_at
+                FROM typing_content
+                ORDER BY updated_at DESC, id DESC
+                '''
+            )
+            rows = cur.fetchall()
+        return jsonify(rows)
+    finally:
+        _return_connection(conn)
+
+
+def _validate_admin_content_payload(payload: Dict[str, Any]) -> tuple[str, str, str, str, bool] | tuple[None, None, None, None, None]:
+    content_type = str(payload.get('contentType') or 'practice').strip().lower()
+    mode = str(payload.get('mode') or 'standard').strip().lower()
+    language = str(payload.get('language') or 'english').strip().lower()
+    passage = str(payload.get('passage') or '').strip()
+    if content_type not in {'practice', 'live'}:
+        return None, None, None, None, None
+    if not mode or not language or not passage or len(passage) > 10000:
+        return None, None, None, None, None
+    active = payload.get('isActive', True) is not False
+    return content_type, mode, language, passage, active
+
+
+@app.post('/api/admin/content')
+def admin_content_create():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    content_type, mode, language, passage, active = _validate_admin_content_payload(request.get_json(silent=True) or {})
+    if content_type is None:
+        return jsonify({'message': 'Provide a valid content type, mode, language, and passage.'}), 400
+    content_id = f'admin_{secrets.token_urlsafe(12)}'
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_typing_content_table(cur)
+            cur.execute(
+                '''
+                INSERT INTO typing_content (content_id, content_type, mode, language, passage, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ''',
+                (content_id, content_type, mode, language, passage, 1 if active else 0),
+            )
+            cur.execute('SELECT * FROM typing_content WHERE id=%s', (cur.lastrowid,))
+            row = cur.fetchone()
+        conn.commit()
+        return jsonify({'message': 'Typing content added.', 'content': row}), 201
+    finally:
+        _return_connection(conn)
+
+
+@app.put('/api/admin/content/<int:content_id>')
+def admin_content_update(content_id: int):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    content_type, mode, language, passage, active = _validate_admin_content_payload(request.get_json(silent=True) or {})
+    if content_type is None:
+        return jsonify({'message': 'Provide a valid content type, mode, language, and passage.'}), 400
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_typing_content_table(cur)
+            cur.execute('SELECT * FROM typing_content WHERE id=%s FOR UPDATE', (content_id,))
+            existing = cur.fetchone()
+            if not existing:
+                return jsonify({'message': 'Content not found.'}), 404
+            if str(existing.get('content_id')) and _content_in_active_room(str(existing['content_id']), cur):
+                return jsonify({'message': 'This passage is assigned to an active room and cannot be edited yet.'}), 409
+            cur.execute(
+                '''
+                UPDATE typing_content
+                SET content_type=%s, mode=%s, language=%s, passage=%s, is_active=%s
+                WHERE id=%s
+                ''',
+                (content_type, mode, language, passage, 1 if active else 0, content_id),
+            )
+            cur.execute('SELECT * FROM typing_content WHERE id=%s', (content_id,))
+            row = cur.fetchone()
+        conn.commit()
+        return jsonify({'message': 'Typing content updated.', 'content': row})
+    finally:
+        _return_connection(conn)
+
+
+@app.delete('/api/admin/content/<int:content_id>')
+def admin_content_delete(content_id: int):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_typing_content_table(cur)
+            cur.execute('SELECT content_id FROM typing_content WHERE id=%s FOR UPDATE', (content_id,))
+            existing = cur.fetchone()
+            if not existing:
+                return jsonify({'message': 'Content not found.'}), 404
+            if _content_in_active_room(str(existing['content_id']), cur):
+                cur.execute('UPDATE typing_content SET is_active=0 WHERE id=%s', (content_id,))
+                message = 'Passage is in an active room, so it was deactivated instead of deleted.'
+            else:
+                cur.execute('DELETE FROM typing_content WHERE id=%s', (content_id,))
+                message = 'Typing content deleted.'
+        conn.commit()
+        return jsonify({'message': message})
+    finally:
+        _return_connection(conn)
+
+
 @app.put('/api/admin/ai-settings')
 def admin_update_ai_settings():
     if not _is_admin_request():
@@ -4002,6 +4289,16 @@ def site_marquee_settings():
     return jsonify(_load_site_settings())
 
 
+@app.get('/api/media-settings')
+def media_settings():
+    settings = _load_site_settings()
+    return jsonify({
+        'musicTracks': settings.get('musicTracks', []),
+        'commentatorEnabled': settings.get('commentatorEnabled', True),
+        'commentatorConfig': settings.get('commentatorConfig', _default_commentator_config()),
+    })
+
+
 @app.get('/api/admin/site-marquee')
 def admin_site_marquee_settings():
     if not _is_admin_request():
@@ -4025,6 +4322,34 @@ def admin_update_site_marquee_settings():
         return jsonify({'message': 'Could not save marquee settings on the server.'}), 500
 
     return jsonify({'message': 'Marquee content updated.', 'settings': settings})
+
+
+@app.get('/api/admin/media-settings')
+def admin_media_settings():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    settings = _load_site_settings()
+    return jsonify({
+        'musicTracks': settings.get('musicTracks', []),
+        'commentatorEnabled': settings.get('commentatorEnabled', True),
+        'commentatorConfig': settings.get('commentatorConfig', _default_commentator_config()),
+    })
+
+
+@app.put('/api/admin/media-settings')
+def admin_update_media_settings():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    payload = request.get_json(silent=True) or {}
+    tracks = payload.get('musicTracks', [])
+    if not isinstance(tracks, list) or len(tracks) > 100:
+        return jsonify({'message': 'Music playlist must contain at most 100 tracks.'}), 400
+    settings = _save_media_settings(
+        tracks,
+        payload.get('commentatorEnabled', True),
+        payload.get('commentatorConfig'),
+    )
+    return jsonify({'message': 'Media settings updated.', 'settings': settings})
 
 
 @app.post('/api/auth/signup')
@@ -5346,6 +5671,8 @@ def update_live_race_progress(room_id: str):
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         payload = request.get_json(silent=True) or {}
+        if room.get('status') == 'completed':
+            return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
         status_before = room.get('status')
         player = next((item for item in room.get('players', []) if item.get('userId') == user['id']), None)
         if not player:
@@ -5398,6 +5725,9 @@ def submit_live_race(room_id: str):
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
+
+        if room.get('status') == 'completed':
+            return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
 
         player_ids = {int(player.get('userId')) for player in room.get('players', []) if player.get('userId') is not None}
         if int(user['id']) not in player_ids:
@@ -6615,7 +6945,16 @@ def _publish_chat_read_event(target_user_id: int, partner_id: int, reader_id: in
 
 @sock.route('/ws/chat')
 def chat_socket(ws):
-    user = _get_user_from_socket()
+    try:
+        user = _get_user_from_socket()
+    except Exception as exc:  # noqa: BLE001
+        app.logger.exception('Chat WebSocket authentication failed')
+        _send_ws_payload(ws, {'type': 'error', 'message': 'Chat service temporarily unavailable.'})
+        try:
+            ws.close()
+        except Exception:
+            pass
+        return
     if not user:
         _send_ws_payload(ws, {'type': 'error', 'message': 'Unauthorized'})
         try:
@@ -7123,6 +7462,7 @@ def _bootstrap_db() -> None:
                 _ensure_chat_tables(cur)
                 _ensure_chat_event_queue_table(cur)
                 _ensure_live_race_rooms_table(cur)
+                _ensure_typing_content_table(cur)
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_admin_wallet_transactions_table(cur)

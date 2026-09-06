@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   addFundsToAdminWallet,
+  createAdminContent,
+  deleteAdminContent,
   adminCreateTournament,
   adminImpersonateUser,
   adminUpdateTournament,
@@ -9,6 +11,8 @@ import {
   adminDeleteTournament,
   adminLogout,
   fetchAdminAnalytics,
+  fetchAdminContent,
+  fetchAdminMediaSettings,
   fetchAdminAiSettings,
   fetchAdminSiteMarquee,
   fetchAdminWallet,
@@ -17,6 +21,8 @@ import {
   getAdminToken,
   verifyAdminSession,
   updateAdminAiSettings,
+  updateAdminContent,
+  updateAdminMediaSettings,
   updateAdminSiteMarquee,
   withdrawFromAdminWallet,
 } from '../utils/typingApi';
@@ -55,6 +61,10 @@ export default function AdminPanel() {
   const [analytics, setAnalytics] = useState(null);
   const [tournaments, setTournaments] = useState([]);
   const [aiSettings, setAiSettings] = useState(normalizeAiSettings());
+  const [adminContent, setAdminContent] = useState([]);
+  const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
+  const [commentatorEnabled, setCommentatorEnabled] = useState(true);
+  const [commentatorConfig, setCommentatorConfig] = useState({ rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 });
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
@@ -77,14 +87,20 @@ export default function AdminPanel() {
   const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = React.useCallback(async () => {
-    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData] = await Promise.all([
-      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(),
+    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, mediaData] = await Promise.all([
+      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminMediaSettings(),
     ]);
     setAnalytics(analyticsData);
     setTournaments(normalizeTournamentList(tournamentData));
     setAiSettings(normalizeAiSettings(aiSettingsData));
     setSiteMarqueeText((siteMarqueeData?.items || DEFAULT_SITE_MARQUEE_ITEMS).join('\n'));
     setAdminWallet(walletData);
+    setAdminContent(Array.isArray(contentData) ? contentData : []);
+    setCommentatorEnabled(mediaData?.commentatorEnabled !== false);
+    if (mediaData?.commentatorConfig) setCommentatorConfig(mediaData.commentatorConfig);
+    if (Array.isArray(mediaData?.musicTracks) && mediaData.musicTracks.length) {
+      arenaMusic.setTracks(mediaData.musicTracks);
+    }
   }, []);
 
   useEffect(() => {
@@ -101,9 +117,6 @@ export default function AdminPanel() {
       setAuthChecked(false);
       try {
         await verifyAdminSession();
-        if (!active) return;
-        await loadAdminData();
-        if (active) setAuthChecked(true);
       } catch (error) {
         if (!active) return;
         adminLogout();
@@ -114,6 +127,18 @@ export default function AdminPanel() {
         setAdminWallet({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
         setNotice('Admin session expired. Please sign in again.');
         setAuthChecked(true);
+        return;
+      }
+
+      if (!active) return;
+      try {
+        await loadAdminData();
+      } catch (error) {
+        if (active) {
+          setNotice(error.message || 'Admin session is valid, but some admin data could not be loaded.');
+        }
+      } finally {
+        if (active) setAuthChecked(true);
       }
     };
 
@@ -205,6 +230,36 @@ export default function AdminPanel() {
       window.dispatchEvent(new Event(SITE_MARQUEE_CHANGE_EVENT));
       showNotice(result.message || 'Marquee updated.');
     } catch (err) { showNotice(err.message || 'Could not update marquee.'); }
+  };
+
+  const resetContentForm = () => setContentForm({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
+
+  const handleContentSave = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (!contentForm.passage.trim()) {
+      showNotice('Add passage text before saving.');
+      return;
+    }
+    try {
+      const payload = { ...contentForm, passage: contentForm.passage.trim() };
+      const result = contentForm.id
+        ? await updateAdminContent(contentForm.id, payload)
+        : await createAdminContent(payload);
+      setAdminContent((items) => contentForm.id
+        ? items.map((item) => item.id === contentForm.id ? result.content : item)
+        : [result.content, ...items]);
+      resetContentForm();
+      showNotice(result.message || 'Typing content saved.');
+    } catch (err) { showNotice(err.message || 'Could not save typing content.'); }
+  };
+
+  const handleContentDelete = async (item) => {
+    if (!window.confirm('Delete this passage? Active-room passages will be deactivated instead.')) return;
+    try {
+      const result = await deleteAdminContent(item.id);
+      setAdminContent((items) => items.filter((entry) => entry.id !== item.id));
+      showNotice(result.message || 'Typing content deleted.');
+    } catch (err) { showNotice(err.message || 'Could not delete typing content.'); }
   };
 
   const handleAdminWalletTopUp = async (e) => {
@@ -327,12 +382,26 @@ export default function AdminPanel() {
     setNewTrack(p => ({ ...p, url: '' }));
   };
 
+  const persistMediaSettings = async (tracks, nextCommentatorEnabled = commentatorEnabled, nextCommentatorConfig = commentatorConfig) => {
+    try {
+      const result = await updateAdminMediaSettings({ musicTracks: tracks, commentatorEnabled: nextCommentatorEnabled, commentatorConfig: nextCommentatorConfig });
+      if (Array.isArray(result?.settings?.musicTracks)) arenaMusic.setTracks(result.settings.musicTracks);
+      showNotice(result.message || 'Media settings updated.');
+    } catch (err) { showNotice(err.message || 'Could not update media settings.'); }
+  };
+
   const handleAddTrack = () => {
+    if (trackAddMode === 'file') {
+      setMusicNotice('Use a hosted audio URL for a shared playlist. Device files only work in this browser.');
+      return;
+    }
     const url = trackAddMode === 'file' ? (localFileObjectUrl || '') : newTrack.url.trim();
     const title = newTrack.title.trim() || 'Untitled Track';
     const artist = newTrack.artist.trim() || 'Unknown Artist';
     if (!url) { setMusicNotice(trackAddMode === 'file' ? 'Select an audio file.' : 'Enter a URL.'); return; }
-    arenaMusic.addTrack({ id: 'track_' + Date.now(), title, artist, url });
+    const track = { id: 'track_' + Date.now(), title, artist, url };
+    arenaMusic.addTrack(track);
+    void persistMediaSettings([...musicState.tracks, track]);
     setNewTrack({ title: '', artist: '', url: '' });
     setLocalFileObjectUrl(null);
     setMusicNotice(`"${title}" added.`);
@@ -343,6 +412,7 @@ export default function AdminPanel() {
   const handleRemoveTrack = (id, title) => {
     if (!window.confirm(`Remove "${title}"?`)) return;
     arenaMusic.removeTrack(id);
+    void persistMediaSettings(musicState.tracks.filter((track) => track.id !== id));
     setMusicNotice(`"${title}" removed.`);
     setTimeout(() => setMusicNotice(''), 3000);
   };
@@ -350,8 +420,21 @@ export default function AdminPanel() {
   const handleResetPlaylist = () => {
     if (!window.confirm('Reset to default playlist?')) return;
     arenaMusic.resetToDefaults();
+    void persistMediaSettings(arenaMusic.DEFAULT_TRACKS);
     setMusicNotice('Playlist reset.');
     setTimeout(() => setMusicNotice(''), 3000);
+  };
+
+  const handleCommentatorToggle = () => {
+    const next = !commentatorEnabled;
+    setCommentatorEnabled(next);
+    void persistMediaSettings(musicState.tracks, next, commentatorConfig);
+  };
+
+  const handleCommentatorConfigChange = (key, value) => {
+    const next = { ...commentatorConfig, [key]: Number(value) };
+    setCommentatorConfig(next);
+    void persistMediaSettings(musicState.tracks, commentatorEnabled, next);
   };
 
   const entryFee = Number(formData.entryFee || 0);
@@ -1337,7 +1420,7 @@ export default function AdminPanel() {
               <>
                 <div className="ap-section-header">
                   <h1 className="ap-section-title">Background Music</h1>
-                  <p className="ap-section-sub">Global playlist — plays across all pages for every visitor.</p>
+                  <p className="ap-section-sub">Shared playlist for every visitor. Volume and mute remain personal.</p>
                 </div>
 
                 {musicNotice && <div className="ap-toast">{musicNotice}</div>}
@@ -1370,6 +1453,36 @@ export default function AdminPanel() {
                   <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.toggleMute}>
                     {musicState.muted ? '🔇 Muted' : '🔊 Live'}
                   </button>
+                </div>
+
+                <div className="ap-card">
+                  <p className="ap-card-title">Live Commentator</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', marginBottom: 14 }}>Controls whether the browser voice commentator is available for players. Each player can still turn it off in Profile.</p>
+                  <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={handleCommentatorToggle}>
+                    {commentatorEnabled ? 'Commentator enabled' : 'Commentator disabled'}
+                  </button>
+                  <div className="ap-two-col" style={{ marginTop: 16 }}>
+                    <div className="ap-field">
+                      <label className="ap-label">Speaking Speed: {Number(commentatorConfig.rate).toFixed(2)}</label>
+                      <input type="range" min="0.5" max="2" step="0.05" value={commentatorConfig.rate} onChange={(e) => handleCommentatorConfigChange('rate', e.target.value)} />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Voice Pitch: {Number(commentatorConfig.pitch).toFixed(2)}</label>
+                      <input type="range" min="0" max="2" step="0.05" value={commentatorConfig.pitch} onChange={(e) => handleCommentatorConfigChange('pitch', e.target.value)} />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Pause Between Lines: {commentatorConfig.gap}ms</label>
+                      <input type="range" min="0" max="2000" step="50" value={commentatorConfig.gap} onChange={(e) => handleCommentatorConfigChange('gap', e.target.value)} />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Speech Volume: {Math.round(Number(commentatorConfig.volume) * 100)}%</label>
+                      <input type="range" min="0" max="1" step="0.05" value={commentatorConfig.volume} onChange={(e) => handleCommentatorConfigChange('volume', e.target.value)} />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Cooldown: {commentatorConfig.cooldown}ms</label>
+                      <input type="range" min="0" max="15000" step="250" value={commentatorConfig.cooldown} onChange={(e) => handleCommentatorConfigChange('cooldown', e.target.value)} />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Add Track */}
@@ -1447,7 +1560,7 @@ export default function AdminPanel() {
               <>
                 <div className="ap-section-header">
                   <h1 className="ap-section-title">Content</h1>
-                  <p className="ap-section-sub">Manage site-wide announcement marquee.</p>
+                  <p className="ap-section-sub">Manage announcements and player typing passages.</p>
                 </div>
                 <div className="ap-card">
                   <p className="ap-card-title">Site Marquee</p>
@@ -1457,6 +1570,67 @@ export default function AdminPanel() {
                     <textarea className="ap-textarea" rows={6} placeholder="One line per announcement…" value={siteMarqueeText} onChange={e => setSiteMarqueeText(e.target.value)} />
                   </div>
                   <button className="ap-btn" onClick={handleSiteMarqueeSave}>Save Marquee</button>
+                </div>
+                <div className="ap-card">
+                  <p className="ap-card-title">Typing Passage Library</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', marginBottom: 14 }}>Published passages are selected for practice or live rooms. A passage in an active room cannot be edited or permanently deleted.</p>
+                  <form onSubmit={handleContentSave}>
+                    <div className="ap-two-col">
+                      <div className="ap-field">
+                        <label className="ap-label">Content Type</label>
+                        <select className="ap-select" value={contentForm.contentType} onChange={e => setContentForm(p => ({ ...p, contentType: e.target.value }))}>
+                          <option value="practice">Practice</option>
+                          <option value="live">1v1 / Live</option>
+                        </select>
+                      </div>
+                      <div className="ap-field">
+                        <label className="ap-label">Language</label>
+                        <input className="ap-input" value={contentForm.language} onChange={e => setContentForm(p => ({ ...p, language: e.target.value.toLowerCase() }))} placeholder="english" />
+                      </div>
+                      <div className="ap-field">
+                        <label className="ap-label">Mode</label>
+                        <select className="ap-select" value={contentForm.mode} onChange={e => setContentForm(p => ({ ...p, mode: e.target.value }))}>
+                          <option value="standard">Standard</option>
+                          <option value="survival">Survival</option>
+                          <option value="speed_burst">Speed Burst</option>
+                          <option value="code">Code</option>
+                          <option value="memory">Memory</option>
+                          <option value="quote">Quote</option>
+                          <option value="marathon">Marathon</option>
+                        </select>
+                      </div>
+                      <div className="ap-field" style={{ justifyContent: 'end' }}>
+                        <label className="ap-label">Status</label>
+                        <label style={{ color: 'var(--ap-muted)', fontSize: '0.78rem' }}><input type="checkbox" checked={contentForm.isActive} onChange={e => setContentForm(p => ({ ...p, isActive: e.target.checked }))} /> Published</label>
+                      </div>
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Passage Text</label>
+                      <textarea className="ap-textarea" rows={5} value={contentForm.passage} onChange={e => setContentForm(p => ({ ...p, passage: e.target.value }))} placeholder="Enter the exact text players will type..." />
+                    </div>
+                    <div className="ap-btn-row">
+                      <button className="ap-btn" type="submit">{contentForm.id ? 'Update Passage' : 'Add Passage'}</button>
+                      {contentForm.id && <button className="ap-btn ap-btn-danger ap-btn-sm" type="button" onClick={resetContentForm}>Cancel Edit</button>}
+                    </div>
+                  </form>
+                </div>
+                <div className="ap-card">
+                  <p className="ap-card-title">Managed Passages ({adminContent.length})</p>
+                  {adminContent.length ? adminContent.map((item) => (
+                    <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+                        <div>
+                          <strong>{item.mode} / {item.language} / {item.content_type}</strong>
+                          <div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.passage}</div>
+                        </div>
+                        <span style={{ color: item.is_active ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.is_active ? 'Published' : 'Inactive'}</span>
+                      </div>
+                      <div className="ap-btn-row" style={{ marginTop: 8 }}>
+                        <button className="ap-btn ap-btn-sm" onClick={() => setContentForm({ id: item.id, contentType: item.content_type, mode: item.mode, language: item.language, passage: item.passage, isActive: Boolean(item.is_active) })}>Edit</button>
+                        <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleContentDelete(item)}>Delete</button>
+                      </div>
+                    </div>
+                  )) : <div className="ap-empty">No admin passages yet. Add one above.</div>}
                 </div>
               </>
             )}
