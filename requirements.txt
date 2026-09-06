@@ -1,4 +1,4 @@
-Flask>=3.0,<4.0
+﻿Flask>=3.0,<4.0
 Flask-Cors>=5.0,<6.0
 PyMySQL>=1.1,<2.0
 Werkzeug>=3.0,<4.0
@@ -7,3 +7,4 @@ python-dotenv
 flask-sock
 flask-socketio>=5.3,<6.0
 gevent
+gevent-websocket>=0.10.1,<0.11

@@ -1,4 +1,4 @@
-# TypeArena
+﻿# TypeArena
 
 TypeArena is a React frontend plus a Flask backend. The recommended free deployment is:
 
@@ -42,7 +42,7 @@ Use the included [render.yaml](/c:/Users/USER/Desktop/type/render.yaml).
 Backend settings:
 
 - `build command`: `pip install -r requirements.txt`
-- `start command`: `gunicorn --worker-class gthread --threads 4 --timeout 120 --graceful-timeout 30 --keep-alive 5 wsgi:application`
+- `start command`: `gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --workers 1 --timeout 120 --graceful-timeout 30 --keep-alive 5 wsgi:application`
 - `health check path`: `/api/health`
 
 Add the required backend environment variables in Render:

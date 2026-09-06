@@ -218,10 +218,6 @@ function AppLayout() {
     };
   }, []);
 
-  useEffect(() => {
-    return undefined;
-  }, []);
-
   const preloadPlayPage = () => {
     void preloadRoute('play');
     void preloadPlayContent();

@@ -16,12 +16,15 @@ import {
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
 import PrivateRoomPanel from './PrivateRoomPanel';
-import { useActiveKeyboard } from '../hooks/useActiveKeyboard';
 import { useLiveFeed } from '../hooks/useLiveFeed';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { useSpectateRoom } from '../hooks/useSpectateRoom';
 import { getRaceContent } from '../utils/navigationPrefetch';
+import { KEYBOARD_LAYOUT } from '../utils/keyboardLayout';
 import '../styles/Play.css';
+
+const LazyKeyboardDeck = React.lazy(() => import('./PlayKeyboardDeck'));
+const LazyPlayReplay = React.lazy(() => import('./PlayReplay'));
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const USED_CONTENT_IDS_KEY = 'typearena_used_content_ids';
@@ -738,14 +741,6 @@ if (typeof window !== 'undefined' && window.speechSynthesis) {
 }
 
 const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
-const KEYBOARD_LAYOUT = [
-  ['`', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 'Backspace'],
-  ['Tab', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']', '\\'],
-  ['CapsLock', 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'", 'Enter'],
-  ['Shift', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/', 'Shift'],
-  ['Space'],
-];
-
 const THEME_PRESETS = {
   default: {
     label: 'Arena Default',
@@ -923,92 +918,6 @@ const TypingCharacter = React.memo(function TypingCharacter({
     </span>
   );
 });
-
-const KeyboardDeck = React.memo(function KeyboardDeck({
-  phase,
-  normalizeKeyboardKey: normalizeKeyboardKeyProp,
-}) {
-  const activeKeys = useActiveKeyboard({
-    phase,
-    normalizeKeyboardKey: normalizeKeyboardKeyProp,
-  });
-
-  const activeKeySet = useMemo(() => new Set(activeKeys), [activeKeys]);
-
-  return (
-    <div className="keyboard-preview">
-      <div className="keyboard-preview__header">
-        <h3>Live Keyboard Deck</h3>
-        <p>Your equipped keyboard skin is rendered here while you type.</p>
-      </div>
-      <div className="keyboard-board" aria-label="On-screen keyboard">
-        {KEYBOARD_LAYOUT.map((row, rowIndex) => (
-          <div key={`row-${rowIndex}`} className="keyboard-row">
-            {row.map((keyLabel, keyIndex) => {
-              const normalizedKey = normalizeKeyboardKeyProp(keyLabel);
-              const isActive = activeKeySet.has(normalizedKey);
-              const keyClass = [
-                'keyboard-key',
-                keyLabel === 'Backspace' || keyLabel === 'Tab' || keyLabel === 'CapsLock' || keyLabel === 'Enter' || keyLabel === 'Shift'
-                  ? 'keyboard-key--wide'
-                  : '',
-                keyLabel === 'Space' ? 'keyboard-key--space' : '',
-                isActive ? 'is-active' : '',
-              ].filter(Boolean).join(' ');
-              return (
-                <div key={`${keyLabel}-${keyIndex}`} className={keyClass}>
-                  <span>{keyLabel === 'Space' ? 'Space Bar' : keyLabel}</span>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// ReplayPlayer — scrubable replay of all collected frames
-// ---------------------------------------------------------------------------
-function ReplayPlayer({ frames }) {
-  const [index, setIndex] = useState(0);
-  const frame = frames[index] || frames[0];
-  const totalFrames = frames.length;
-
-  return (
-    <div className="replay-player">
-      <div className="replay-player__header">
-        <span className="replay-player__title">Replay</span>
-        <span className="replay-player__counter">Frame {index + 1} / {totalFrames}</span>
-      </div>
-      <div className="replay-player__text" aria-live="polite">
-        {frame?.typedText?.slice(-120) || 'Race start'}
-      </div>
-      <input
-        type="range"
-        className="replay-player__scrubber"
-        min={0}
-        max={totalFrames - 1}
-        value={index}
-        onChange={(e) => setIndex(Number(e.target.value))}
-        aria-label="Scrub through replay frames"
-      />
-      <div className="replay-player__controls">
-        <button
-          className="btn btn-sm btn-outline-light"
-          onClick={() => setIndex((i) => Math.max(0, i - 1))}
-          disabled={index === 0}
-        >‹ Prev</button>
-        <button
-          className="btn btn-sm btn-outline-light"
-          onClick={() => setIndex((i) => Math.min(totalFrames - 1, i + 1))}
-          disabled={index === totalFrames - 1}
-        >Next ›</button>
-      </div>
-    </div>
-  );
-}
 
 export default function Play({ practicePage = false }){
   const location = useLocation();
@@ -2947,7 +2856,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             )}
           </div>
 
-          <KeyboardDeck phase={phase} normalizeKeyboardKey={normalizeKeyboardKey} />
+          <React.Suspense fallback={null}>
+            <LazyKeyboardDeck phase={phase} normalizeKeyboardKey={normalizeKeyboardKey} />
+          </React.Suspense>
 
           <div className="results-actions">
             <button className="btn btn-danger" onClick={handleFinishRace} disabled={isSubmittingRef.current}>
@@ -3132,7 +3043,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           </div>
 
           {(raceResult.replayFrames || []).length > 0 && (
-            <ReplayPlayer key={raceResult.replayFrames.length} frames={raceResult.replayFrames} />
+            <React.Suspense fallback={null}>
+              <LazyPlayReplay key={raceResult.replayFrames.length} frames={raceResult.replayFrames} />
+            </React.Suspense>
           )}
 
           <div className="results-actions">
