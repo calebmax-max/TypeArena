@@ -1302,6 +1302,7 @@ export default function Play({ practicePage = false }){
     createFriendBattle,
     joinFriendBattle,
     cancelPrivateRoom,
+    leaveLiveRoom,
     submitHeartbeat,
     submitFinalLiveResult,
     resetLiveSession,
@@ -2608,8 +2609,17 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 {loadingLive ? 'Canceling Room…' : 'Cancel Room'}
               </button>
             ) : (
-              <button className="btn btn-outline-danger" onClick={backToLobby} disabled={loadingLive}>
-                Leave Queue
+              // Bug fix: this used to call backToLobby directly, which only reset
+              // local UI state and never told the server we left. That left an
+              // orphaned "waiting" room in the DB that a later player could match
+              // into and end up racing a ghost. Now this calls the backend leave
+              // endpoint first (falls back to a local reset either way).
+              <button
+                className="btn btn-outline-danger"
+                onClick={liveRoom?.id ? leaveLiveRoom : backToLobby}
+                disabled={loadingLive}
+              >
+                {loadingLive ? 'Leaving Queue…' : 'Leave Queue'}
               </button>
             )}
             <button className="btn btn-secondary" onClick={backToLobby}>
@@ -3108,4 +3118,3 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     </div>
   );
 }
-

@@ -577,18 +577,27 @@ export function useLiveRaceSession({
     return true;
   }, [buildRoomResultPayload, persistLatestRaceResult, replayFramesRef, setPhase, setRaceResult]);
 
-  const cancelPrivateRoomAndReset = useCallback(async () => {
+  const leaveLiveRoomAndReset = useCallback(async () => {
     if (!liveRoomRef.current?.id) {
       return;
     }
 
+    // Bug fix: this used to be private-room-only. The public "Leave Queue" flow
+    // previously called nothing on the server at all, so a room a player queued
+    // into stayed 'waiting' in the DB forever - a later player could match into
+    // it and end up racing a "ghost" opponent who had already left. The backend
+    // now accepts cancel requests for public waiting rooms too (as long as no
+    // opponent has joined yet), so route both flows through the same call.
     isLeavingRef.current = true;
     setLoadingLive(true);
     try {
       const result = await cancelLiveRaceRoom(liveRoomRef.current.id);
-      showNotice(result.message || 'Private room canceled.', 'info');
+      showNotice(result.message || 'Left the room.', 'info');
     } catch (error) {
-      showNotice(error.message || 'Could not cancel private room.', 'error');
+      // If someone already joined between the click and this request landing,
+      // the backend rejects the cancel - that's fine, we still leave locally
+      // and let the room continue without us rather than surfacing a dead end.
+      showNotice(error.message || 'Could not leave the room.', 'error');
     } finally {
       clearLiveTimers();
       setLiveRoom(null);
@@ -752,7 +761,8 @@ export function useLiveRaceSession({
     createFriendBattle,
     joinFriendBattle,
     requestRematch,
-    cancelPrivateRoom: cancelPrivateRoomAndReset,
+    cancelPrivateRoom: leaveLiveRoomAndReset,
+    leaveLiveRoom: leaveLiveRoomAndReset,
     submitHeartbeat,
     submitFinalLiveResult,
     resetLiveSession,

@@ -1,0 +1,108 @@
+diff --git a/app_backend.py b/app_backend.py
+index f9129e2..06ccf12 100644
+--- a/app_backend.py
++++ b/app_backend.py
+@@ -5642,6 +5642,21 @@ def queue_live_race():
+             stake_amount = 0.0
+             winner_takes_all = False
+ 
++            # WPM skill-matching range the requester is willing to accept in an opponent.
++            # Unset/blank means "no preference" on that bound.
++            def _parse_wpm_bound(raw_value):
++                if raw_value in (None, ''):
++                    return None
++                try:
++                    parsed = float(raw_value)
++                except (TypeError, ValueError):
++                    return None
++                return parsed if math.isfinite(parsed) and parsed >= 0 else None
++
++            wpm_min = _parse_wpm_bound(payload.get('wpmMin'))
++            wpm_max = _parse_wpm_bound(payload.get('wpmMax'))
++            requester_wpm = float(user.get('wpm') or 0)
++
+             # Only query store items when actually needed (custom invite code check)
+             if is_private and invite_code:
+                 user_owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0)))
+@@ -5664,6 +5679,23 @@ def queue_live_race():
+                 'currentAccuracy': 100,
+             }
+ 
++            def _wpm_compatible(candidate_room: Dict[str, Any]) -> bool:
++                """Mutual WPM-range check: the candidate's creator must be an
++                acceptable opponent for us, and we must be an acceptable
++                opponent for them. Missing/unset bounds mean "no preference"."""
++                creator_wpm = float(candidate_room.get('creatorWpm') or 0)
++                room_wpm_min = candidate_room.get('wpmMin')
++                room_wpm_max = candidate_room.get('wpmMax')
++                if room_wpm_min is not None and requester_wpm < room_wpm_min:
++                    return False
++                if room_wpm_max is not None and requester_wpm > room_wpm_max:
++                    return False
++                if wpm_min is not None and creator_wpm < wpm_min:
++                    return False
++                if wpm_max is not None and creator_wpm > wpm_max:
++                    return False
++                return True
++
+             if invite_code:
+                 room = _get_live_room_by_invite(cur, invite_code, for_update=True)
+                 if not room and not is_private:
+@@ -5689,26 +5721,42 @@ def queue_live_race():
+                     )
+ 
+             if not is_private:
+-                # Filter in SQL â€” avoids deserializing up to 100 rooms in Python
++                # Filter mode/language/duration in SQL so we don't waste time
++                # deserializing candidate rooms that could never match anyway.
+                 cur.execute(
+                     '''
+                     SELECT * FROM live_race_rooms
+                     WHERE status = 'waiting' AND is_private = 0
++                      AND mode = %s AND language = %s AND duration = %s
+                     ORDER BY created_at ASC
+                     LIMIT 20
+                     ''',
++                    (mode, language, duration),
+                 )
+                 for row in cur.fetchall():
+                     room = _load_live_room_from_row(row)
+                     if not room:
+                         continue
+                     if (
+-                        room['mode'] == mode
+-                        and room['language'] == language
+-                        and room['duration'] == duration
+-                        and room.get('tournamentId') == tournament_id
++                        room.get('tournamentId') == tournament_id
+                         and all(existing['userId'] != user['id'] for existing in room['players'])
++                        and _wpm_compatible(room)
+                     ):
++                        # Candidate looks good, but another concurrent request may
++                        # match into it between our scan and our write. Re-fetch
++                        # and lock this specific room row to claim it atomically;
++                        # if it's no longer 'waiting', someone beat us to it and
++                        # we fall through to the next candidate (or create a room).
++                        cur.execute(
++                            "SELECT * FROM live_race_rooms WHERE room_id = %s AND status = 'waiting' FOR UPDATE",
++                            (room['id'],),
++                        )
++                        locked_row = cur.fetchone()
++                        if not locked_row:
++                            continue
++                        room = _load_live_room_from_row(locked_row)
++                        if not room or any(existing['userId'] == user['id'] for existing in room['players']):
++                            continue
+                         room['players'].append(player_snapshot)
+                         room['status'] = 'countdown'
+                         room['startedAt'] = _now_iso()
+@@ -5746,6 +5794,9 @@ def queue_live_race():
+                 'results': {},
+                 'winnerPrize': winner_prize,
+                 'winnerUserId': None,
++                'wpmMin': wpm_min,
++                'wpmMax': wpm_max,
++                'creatorWpm': requester_wpm,
+                 'contentId': content.get('contentId'),
+                 'totalContentCount': int(content.get('totalContentCount') or 0),
+                 'tournamentId': tournament_id,

@@ -5689,32 +5689,52 @@ def queue_live_race():
                     )
 
             if not is_private:
-                # Filter in SQL â€” avoids deserializing up to 100 rooms in Python
+                # Filter in SQL â€” avoids deserializing up to 100 rooms in Python.
+                # This first pass is a plain (non-locking) read used only to shortlist
+                # candidate room ids.
                 cur.execute(
                     '''
-                    SELECT * FROM live_race_rooms
+                    SELECT room_id FROM live_race_rooms
                     WHERE status = 'waiting' AND is_private = 0
                     ORDER BY created_at ASC
                     LIMIT 20
                     ''',
                 )
-                for row in cur.fetchall():
-                    room = _load_live_room_from_row(row)
-                    if not room:
+                candidate_ids = [row['room_id'] for row in cur.fetchall()]
+
+                # Bug fix: previously the room found in the unlocked scan above was
+                # joined and saved directly. Under concurrent queue requests, two
+                # players could both read the same 1-player "waiting" room before
+                # either committed, both append themselves, and both save - since
+                # _save_live_room is an INSERT...ON DUPLICATE KEY UPDATE, the second
+                # commit silently overwrote the first, so one of the two players
+                # ended up "matched" on their own client against a room that no
+                # longer contained them (a lost/ghost match). Re-fetch each
+                # candidate individually WITH a row lock and re-validate it's still
+                # actually open right before committing to it, so only one request
+                # can ever win a given room.
+                for candidate_id in candidate_ids:
+                    room = _get_live_room(cur, candidate_id, for_update=True)
+                    if not room or room.get('status') != 'waiting':
                         continue
                     if (
-                        room['mode'] == mode
-                        and room['language'] == language
-                        and room['duration'] == duration
-                        and room.get('tournamentId') == tournament_id
-                        and all(existing['userId'] != user['id'] for existing in room['players'])
+                        room.get('mode') != mode
+                        or room.get('language') != language
+                        or room.get('duration') != duration
+                        or room.get('tournamentId') != tournament_id
                     ):
-                        room['players'].append(player_snapshot)
-                        room['status'] = 'countdown'
-                        room['startedAt'] = _now_iso()
-                        _save_live_room(cur, room)
-                        conn.commit()
-                        return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True})
+                        continue
+                    if any(existing['userId'] == user['id'] for existing in room.get('players', [])):
+                        continue
+                    if len(room.get('players', [])) >= TOURNAMENT_MATCH_SIZE:
+                        continue
+
+                    room['players'].append(player_snapshot)
+                    room['status'] = 'countdown'
+                    room['startedAt'] = _now_iso()
+                    _save_live_room(cur, room)
+                    conn.commit()
+                    return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True})
 
             if is_private and stake_amount > 0:
                 try:
@@ -5821,12 +5841,31 @@ def cancel_live_race(room_id: str):
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
 
-        if not room.get('isPrivate'):
-            return jsonify({'message': 'Only private rooms can be canceled manually.'}), 400
         if room.get('status') != 'waiting':
-            return jsonify({'message': 'Only waiting private rooms can be canceled.'}), 400
+            return jsonify({'message': 'Only rooms still waiting for an opponent can be canceled.'}), 400
         if not any(player['userId'] == user['id'] for player in room.get('players', [])):
-            return jsonify({'message': 'You are not part of this private room.'}), 403
+            return jsonify({'message': 'You are not part of this room.'}), 403
+
+        if not room.get('isPrivate'):
+            # Bug fix: public matchmaking rooms previously had no server-side leave
+            # path at all - the "Leave Queue" button only cleared local UI state,
+            # so a room the player queued into stayed 'waiting' in the DB forever.
+            # A later player could then match into it and race a "ghost" opponent
+            # who had already left. Let the sole occupant vacate it. If a second
+            # player has already joined by the time this request lands, refuse
+            # instead of yanking an active match out from under someone else.
+            if len(room.get('players', [])) > 1:
+                return jsonify({'message': 'An opponent already joined - this room can no longer be left.'}), 400
+            with conn.cursor() as cur:
+                _delete_live_room(cur, room_id)
+            conn.commit()
+            return jsonify(
+                {
+                    'message': 'Left the matchmaking queue.',
+                    'refundedUsers': [],
+                    'user': _safe_user(user, conn),
+                }
+            )
 
         refunded_users = []
         with conn.cursor() as cur:
@@ -7841,5 +7880,3 @@ def _bootstrap_db() -> None:
 if __name__ == '__main__':
     _bootstrap_db()
     app.run(host=APP_HOST, port=APP_PORT, debug=False)
-
-
