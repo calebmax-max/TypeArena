@@ -1,7 +1,7 @@
+
 from __future__ import annotations
 import os
 import math
-from flask_sock import Sock
 from flask_socketio import SocketIO, emit, join_room
 from dotenv import load_dotenv
 load_dotenv()
@@ -115,10 +115,7 @@ WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
-sock = Sock(app)
 socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='gevent')
-# ðŸ’¡ FIX: Grant explicit permission to your React port (typically 3000)
-app.config['SOCK_ALLOWED_ORIGINS'] = ALLOWED_ORIGINS
 
 
 def _is_admin_email(email: str) -> bool:
@@ -6795,27 +6792,6 @@ def _load_user_by_token(cur, token: str) -> Optional[Dict[str, Any]]:
     return cur.fetchone()
 
 
-def _get_user_from_socket() -> Optional[Dict[str, Any]]:
-    token = str(request.args.get('token') or '').strip()
-    raw_user_id = str(request.args.get('userId') or '').strip()
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            if token:
-                user = _load_user_by_token(cur, token)
-                if user:
-                    return user
-            if raw_user_id:
-                try:
-                    user_id = int(raw_user_id)
-                except ValueError:
-                    return None
-                return _load_user_by_id(cur, user_id)
-        return None
-    finally:
-        _return_connection(conn)
-
-
 def _mark_thread_read(cur, other_user_id: int, me: int) -> None:
     cur.execute(
         '''
@@ -6904,221 +6880,25 @@ def chat_get_messages(other_user_id: int):
         _return_connection(conn)
 
 
-# â”€â”€ Long-poll infrastructure (must be defined BEFORE chat_send_message) â”€â”€â”€â”€â”€â”€
+# â”€â”€ Socket.IO chat state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Socket.IO is the single real-time transport for chat. The old raw
+# /ws/chat WebSocket route, the long-poll (Condition-variable) fallback,
+# and the DB-table event relay used for cross-process fan-out have all
+# been removed: they were unused by the frontend and, with the app
+# running as a single gunicorn worker, the relay was a no-op anyway.
+#
+# If this ever needs to run across multiple workers/instances, use
+# flask-socketio's built-in Redis message queue instead of reinventing
+# one: SocketIO(app, message_queue='redis://...'). That gives you
+# cross-process pub/sub for free with no extra polling loop or table.
 import threading as _threading
 
-# Maps user_id -> Condition.
-# Using a Condition instead of an Event eliminates the set/clear race:
-# the sender bumps a version counter under the lock and notifies;
-# the waiter checks the counter under the same lock so it can never
-# miss a notification that arrived between wait() returning and the
-# next iteration starting.
-_chat_conds: dict = {}
-_chat_versions: dict = {}
-_chat_waiters: dict = {}          # reference-count for cleanup
-_chat_conds_lock = _threading.Lock()
-_chat_ws_clients: dict[int, set[Any]] = {}
-_chat_ws_lock = _threading.Lock()
 _chat_socket_users: dict[str, int] = {}
 _chat_socket_lock = _threading.Lock()
-_chat_event_worker_lock = _threading.Lock()
-_chat_event_worker_started = False
-_chat_event_last_seen_id = 0
-
-
-def _get_or_create_cond(user_id: int) -> _threading.Condition:
-    with _chat_conds_lock:
-        if user_id not in _chat_conds:
-            _chat_conds[user_id] = _threading.Condition(_threading.Lock())
-            _chat_versions[user_id] = 0
-            _chat_waiters[user_id] = 0
-        _chat_waiters[user_id] += 1
-        return _chat_conds[user_id]
-
-
-def _release_cond(user_id: int) -> None:
-    """Decrement waiter count and clean up if nobody is listening."""
-    with _chat_conds_lock:
-        _chat_waiters[user_id] = max(0, _chat_waiters.get(user_id, 1) - 1)
-        if _chat_waiters[user_id] == 0:
-            _chat_conds.pop(user_id, None)
-            _chat_versions.pop(user_id, None)
-            _chat_waiters.pop(user_id, None)
-
-
-def _notify_user(user_id: int) -> None:
-    """Wake up any long-poll request waiting for user_id."""
-    with _chat_conds_lock:
-        cond = _chat_conds.get(user_id)
-        if cond is None:
-            return
-        _chat_versions[user_id] = _chat_versions.get(user_id, 0) + 1
-    with cond:
-        cond.notify_all()
-
-
-def _register_chat_socket(user_id: int, ws) -> None:
-    with _chat_ws_lock:
-        _chat_ws_clients.setdefault(user_id, set()).add(ws)
-
-
-def _unregister_chat_socket(user_id: int, ws) -> None:
-    with _chat_ws_lock:
-        sockets = _chat_ws_clients.get(user_id)
-        if not sockets:
-            return
-        sockets.discard(ws)
-        if not sockets:
-            _chat_ws_clients.pop(user_id, None)
-
-
-def _send_ws_payload(ws, payload: Dict[str, Any]) -> bool:
-    try:
-        ws.send(json.dumps(payload))
-        return True
-    except Exception:
-        return False
 
 
 def _emit_socket_payload(user_id: int, event_type: str, payload: Dict[str, Any]) -> None:
     socketio.emit(event_type, payload, to=f'user:{int(user_id)}')
-
-
-def _broadcast_ws_payload(user_id: int, payload: Dict[str, Any]) -> None:
-    event_type = str(payload.get('type') or 'message')
-    _emit_socket_payload(user_id, event_type, payload)
-    with _chat_ws_lock:
-        sockets = list(_chat_ws_clients.get(user_id, set()))
-    stale: list[Any] = []
-    for ws in sockets:
-        if not _send_ws_payload(ws, payload):
-            stale.append(ws)
-    if stale:
-        with _chat_ws_lock:
-            active = _chat_ws_clients.get(user_id, set())
-            for ws in stale:
-                active.discard(ws)
-            if not active:
-                _chat_ws_clients.pop(user_id, None)
-
-
-def _ensure_chat_event_queue_table(cur) -> None:
-    cur.execute(
-        '''
-        CREATE TABLE IF NOT EXISTS chat_ws_events (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
-            event_type VARCHAR(40) NOT NULL,
-            payload LONGTEXT NOT NULL,
-            origin_pid INT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            KEY idx_chat_ws_events_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        '''
-    )
-
-
-def _publish_chat_event(event_type: str, payload: Dict[str, Any]) -> None:
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                '''
-                INSERT INTO chat_ws_events (event_type, payload, origin_pid)
-                VALUES (%s, %s, %s)
-                ''',
-                (str(event_type), json.dumps(payload, separators=(',', ':')), os.getpid()),
-            )
-        conn.commit()
-    finally:
-        _return_connection(conn)
-
-
-def _dispatch_chat_ws_event(event_type: str, payload: Dict[str, Any]) -> None:
-    event_type = str(event_type or '').strip().lower()
-    if event_type == 'chat_message':
-        message = payload.get('message')
-        sender = payload.get('sender')
-        recipient = payload.get('recipient')
-        if message and sender and recipient:
-            _push_chat_message_to_clients(message, sender, recipient)
-        return
-
-    if event_type == 'chat_read':
-        target_user_id = payload.get('targetUserId')
-        try:
-            target_user_id_int = int(target_user_id)
-        except (TypeError, ValueError):
-            return
-        _broadcast_ws_payload(
-            target_user_id_int,
-            {
-                'type': 'chat_read',
-                'partnerId': payload.get('partnerId'),
-                'readerId': payload.get('readerId'),
-                'ts': payload.get('ts') or _now_iso(),
-            },
-        )
-
-
-def _chat_event_relay_loop() -> None:
-    global _chat_event_last_seen_id
-    try:
-        conn = get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute('SELECT COALESCE(MAX(id), 0) AS max_id FROM chat_ws_events')
-                row = cur.fetchone() or {}
-                _chat_event_last_seen_id = int(row.get('max_id') or 0)
-        finally:
-            _return_connection(conn)
-    except Exception as exc:  # noqa: BLE001
-        app.logger.warning('Chat event relay warm-up failed: %s', exc)
-
-    while True:
-        try:
-            conn = get_connection()
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        '''
-                        SELECT id, event_type, payload, origin_pid
-                        FROM chat_ws_events
-                        WHERE id > %s
-                        ORDER BY id ASC
-                        LIMIT 200
-                        ''',
-                        (_chat_event_last_seen_id,),
-                    )
-                    rows = cur.fetchall()
-            finally:
-                _return_connection(conn)
-
-            if rows:
-                for row in rows:
-                    event_id = int(row['id'])
-                    _chat_event_last_seen_id = max(_chat_event_last_seen_id, event_id)
-                    if int(row.get('origin_pid') or 0) == os.getpid():
-                        continue
-                    try:
-                        payload = json.loads(row.get('payload') or '{}')
-                    except Exception:
-                        payload = {}
-                    _dispatch_chat_ws_event(row.get('event_type') or '', payload if isinstance(payload, dict) else {})
-
-            time.sleep(0.25)
-        except Exception as exc:  # noqa: BLE001
-            app.logger.warning('Chat event relay error: %s', exc)
-            time.sleep(1.0)
-
-
-def _start_chat_event_worker() -> None:
-    global _chat_event_worker_started
-    with _chat_event_worker_lock:
-        if _chat_event_worker_started:
-            return
-        worker = _threading.Thread(target=_chat_event_relay_loop, daemon=True)
-        worker.start()
-        _chat_event_worker_started = True
 
 
 def _push_chat_message_to_clients(message: Dict[str, Any], sender: Dict[str, Any], recipient: Dict[str, Any]) -> None:
@@ -7137,210 +6917,24 @@ def _push_chat_message_to_clients(message: Dict[str, Any], sender: Dict[str, Any
         unread_count=0,
         last_message_at=sent_at,
     )
-    _broadcast_ws_payload(
+    _emit_socket_payload(
         recipient_id,
+        'chat_message',
         {
             'type': 'chat_message',
             'message': {**message, 'mine': False},
             'contact': sender_contact,
         },
     )
-    _broadcast_ws_payload(
+    _emit_socket_payload(
         sender_id,
+        'chat_message',
         {
             'type': 'chat_message',
             'message': {**message, 'mine': True},
             'contact': recipient_contact,
         },
     )
-
-
-def _publish_chat_message_event(message: Dict[str, Any], sender: Dict[str, Any], recipient: Dict[str, Any]) -> None:
-    _publish_chat_event(
-        'chat_message',
-        {
-            'message': message,
-            'sender': _serialize_chat_contact_row(
-                sender,
-                is_online=True,
-                unread_count=1,
-                last_message_at=message.get('sentAt'),
-            ),
-            'recipient': _serialize_chat_contact_row(
-                recipient,
-                is_online=True,
-                unread_count=0,
-                last_message_at=message.get('sentAt'),
-            ),
-        },
-    )
-
-
-def _publish_chat_read_event(target_user_id: int, partner_id: int, reader_id: int) -> None:
-    _publish_chat_event(
-        'chat_read',
-        {
-            'targetUserId': int(target_user_id),
-            'partnerId': int(partner_id),
-            'readerId': int(reader_id),
-            'ts': _now_iso(),
-        },
-    )
-
-
-@sock.route('/ws/chat')
-def chat_socket(ws):
-    try:
-        user = _get_user_from_socket()
-    except Exception as exc:  # noqa: BLE001
-        app.logger.exception('Chat WebSocket authentication failed')
-        _send_ws_payload(ws, {'type': 'error', 'message': 'Chat service temporarily unavailable.'})
-        try:
-            ws.close()
-        except Exception:
-            pass
-        return
-    if not user:
-        _send_ws_payload(ws, {'type': 'error', 'message': 'Unauthorized'})
-        try:
-            ws.close()
-        except Exception:
-            pass
-        return
-
-    user_id = int(user['id'])
-    _register_chat_socket(user_id, ws)
-    _send_ws_payload(ws, {'type': 'connected', 'userId': user_id})
-
-    try:
-        while True:
-            raw_message = ws.receive()
-            if raw_message is None:
-                break
-            try:
-                payload = json.loads(raw_message)
-            except json.JSONDecodeError:
-                _send_ws_payload(ws, {'type': 'error', 'message': 'Invalid WebSocket payload.'})
-                continue
-
-            event_type = str(payload.get('type') or '').strip().lower()
-            if event_type == 'ping':
-                _send_ws_payload(ws, {'type': 'pong', 'ts': _now_iso()})
-                continue
-
-            if event_type == 'sync_state':
-                conn = get_connection()
-                try:
-                    contacts, unread = _fetch_chat_state(conn, user_id)
-                finally:
-                    _return_connection(conn)
-                _send_ws_payload(
-                    ws,
-                    {
-                        'type': 'chat_state',
-                        'contacts': contacts,
-                        'unread': unread,
-                        'userId': user_id,
-                        'ts': _now_iso(),
-                    },
-                )
-                continue
-
-            if event_type == 'load_thread':
-                partner_id = payload.get('partnerId')
-                try:
-                    partner_id_int = int(partner_id)
-                except (TypeError, ValueError):
-                    _send_ws_payload(ws, {'type': 'error', 'message': 'Valid partnerId is required.'})
-                    continue
-                conn = get_connection()
-                try:
-                    messages = _fetch_thread_messages(conn, user_id, partner_id_int, limit=200, mark_read=True)
-                finally:
-                    _return_connection(conn)
-                _broadcast_ws_payload(
-                    partner_id_int,
-                    {
-                        'type': 'chat_read',
-                        'partnerId': user_id,
-                        'readerId': user_id,
-                        'ts': _now_iso(),
-                    },
-                )
-                _publish_chat_read_event(partner_id_int, user_id, user_id)
-                _send_ws_payload(
-                    ws,
-                    {
-                        'type': 'chat_thread',
-                        'partnerId': partner_id_int,
-                        'messages': messages,
-                        'ts': _now_iso(),
-                    },
-                )
-                continue
-
-            if event_type == 'mark_read':
-                partner_id = payload.get('partnerId')
-                try:
-                    partner_id_int = int(partner_id)
-                except (TypeError, ValueError):
-                    _send_ws_payload(ws, {'type': 'error', 'message': 'Valid partnerId is required.'})
-                    continue
-                conn = get_connection()
-                try:
-                    with conn.cursor() as cur:
-                        _mark_thread_read(cur, partner_id_int, user_id)
-                    conn.commit()
-                finally:
-                    _return_connection(conn)
-                _broadcast_ws_payload(
-                    partner_id_int,
-                    {
-                        'type': 'chat_read',
-                        'partnerId': user_id,
-                        'readerId': user_id,
-                        'ts': _now_iso(),
-                    },
-                )
-                _publish_chat_read_event(partner_id_int, user_id, user_id)
-                continue
-
-            if event_type == 'message':
-                recipient_id = payload.get('recipientId')
-                body = payload.get('body')
-                client_msg_id = str(payload.get('clientMsgId') or '').strip()
-                try:
-                    recipient_id_int = int(recipient_id)
-                except (TypeError, ValueError):
-                    _send_ws_payload(ws, {'type': 'error', 'message': 'Valid recipientId is required.'})
-                    continue
-                conn = get_connection()
-                try:
-                    try:
-                        message, recipient = _create_chat_message(
-                            conn,
-                            user,
-                            recipient_id_int,
-                            str(body or ''),
-                            client_msg_id=client_msg_id or None,
-                        )
-                    except ValueError as exc:
-                        _send_ws_payload(ws, {'type': 'error', 'message': str(exc)})
-                        continue
-                    except LookupError as exc:
-                        _send_ws_payload(ws, {'type': 'error', 'message': str(exc)})
-                        continue
-                finally:
-                    _return_connection(conn)
-                _notify_user(recipient_id_int)
-                _notify_user(user_id)
-                _push_chat_message_to_clients(message, user, recipient)
-                _publish_chat_message_event(message, user, recipient)
-                continue
-
-            _send_ws_payload(ws, {'type': 'error', 'message': 'Unsupported WebSocket event.'})
-    finally:
-        _unregister_chat_socket(user_id, ws)
 
 
 def _socketio_chat_user() -> Optional[Dict[str, Any]]:
@@ -7424,13 +7018,12 @@ def socketio_chat_load_thread(payload=None):
         messages = _fetch_thread_messages(conn, int(user['id']), partner_id, limit=200, mark_read=True)
     finally:
         _return_connection(conn)
-    _broadcast_ws_payload(partner_id, {
+    _emit_socket_payload(partner_id, 'chat_read', {
         'type': 'chat_read',
         'partnerId': int(user['id']),
         'readerId': int(user['id']),
         'ts': _now_iso(),
     })
-    _publish_chat_read_event(partner_id, int(user['id']), int(user['id']))
     emit('chat_thread', {
         'type': 'chat_thread',
         'partnerId': partner_id,
@@ -7457,13 +7050,12 @@ def socketio_chat_mark_read(payload=None):
         conn.commit()
     finally:
         _return_connection(conn)
-    _broadcast_ws_payload(partner_id, {
+    _emit_socket_payload(partner_id, 'chat_read', {
         'type': 'chat_read',
         'partnerId': int(user['id']),
         'readerId': int(user['id']),
         'ts': _now_iso(),
     })
-    _publish_chat_read_event(partner_id, int(user['id']), int(user['id']))
 
 
 @socketio.on('message')
@@ -7492,10 +7084,7 @@ def socketio_chat_message(payload=None):
             return
     finally:
         _return_connection(conn)
-    _notify_user(recipient_id)
-    _notify_user(int(user['id']))
     _push_chat_message_to_clients(message, user, recipient)
-    _publish_chat_message_event(message, user, recipient)
 
 
 @app.post('/api/chat/messages')
@@ -7527,109 +7116,10 @@ def chat_send_message():
             return jsonify({'message': str(exc)}), 400
         except LookupError as exc:
             return jsonify({'message': str(exc)}), 404
-        # Wake up long-poll requests for both users instantly
-        _notify_user(recipient_id_int)
-        _notify_user(int(user['id']))
         _push_chat_message_to_clients(msg_payload, user, recipient)
-        _publish_chat_message_event(msg_payload, user, recipient)
         return jsonify(msg_payload), 201
     finally:
         _return_connection(conn)
-
-
-@app.get('/api/chat/poll/<int:other_user_id>')
-def chat_long_poll(other_user_id: int):
-    """
-    Long-poll endpoint. The client sends ?since=<last_msg_id>.
-    Returns immediately if new messages exist, otherwise holds the
-    connection open for up to 25 s waiting for _notify_user() to fire.
-
-    Uses a Condition + version counter instead of Event so that a
-    notification arriving between the DB fetch and the wait() call is
-    never lost (the version will have advanced and we skip waiting).
-    """
-    conn = get_connection()
-    try:
-        user = _get_user_from_header(conn)
-        if not user:
-            return jsonify({'message': 'Unauthorized'}), 401
-        me = int(user['id'])
-    finally:
-        _return_connection(conn)
-
-    try:
-        since_id = int(request.args.get('since', 0))
-    except (TypeError, ValueError):
-        since_id = 0
-
-    try:
-        wait_timeout = float(request.args.get('timeout', 25))
-    except (TypeError, ValueError):
-        wait_timeout = 25
-    wait_timeout = max(0, min(wait_timeout, 25))
-
-    def fetch_new():
-        c = get_connection()
-        try:
-            with c.cursor() as cur:
-                cur.execute(
-                    '''
-                    SELECT id, sender_id, recipient_id, body, sent_at, read_at
-                    FROM chat_messages
-                    WHERE id > %s
-                      AND ((sender_id = %s AND recipient_id = %s)
-                        OR (sender_id = %s AND recipient_id = %s))
-                    ORDER BY sent_at ASC
-                    LIMIT 50
-                    ''',
-                    (since_id, me, other_user_id, other_user_id, me),
-                )
-                rows = cur.fetchall()
-                if rows:
-                    cur.execute(
-                        '''
-                        UPDATE chat_messages SET read_at = %s
-                        WHERE sender_id = %s AND recipient_id = %s
-                          AND read_at IS NULL AND id > %s
-                        ''',
-                        (_now_db(), other_user_id, me, since_id),
-                    )
-                    c.commit()
-            return [
-                {
-                    'id': r['id'],
-                    'senderId': r['sender_id'],
-                    'recipientId': r['recipient_id'],
-                    'body': r['body'],
-                    'sentAt': r['sent_at'].isoformat() + 'Z' if r.get('sent_at') else None,
-                    'read': r['read_at'] is not None,
-                    'mine': int(r['sender_id']) == me,
-                }
-                for r in rows
-            ]
-        finally:
-            c.close()
-
-    # Check immediately â€” return right away if there's already something new
-    msgs = fetch_new()
-    if msgs:
-        return jsonify(msgs)
-
-    # Nothing yet â€” park on a Condition so we never miss a notification.
-    # Snapshot the version BEFORE waiting; if _notify_user fires between
-    # fetch_new() above and cond.wait() below the version will have
-    # advanced and we skip the wait entirely.
-    cond = _get_or_create_cond(me)
-    try:
-        with _chat_conds_lock:
-            version_before = _chat_versions.get(me, 0)
-        with cond:
-            if _chat_versions.get(me, 0) == version_before:
-                cond.wait(timeout=wait_timeout)
-    finally:
-        _release_cond(me)
-
-    return jsonify(fetch_new())
 
 
 @app.get('/api/chat/unread')
@@ -7860,7 +7350,6 @@ def _bootstrap_db() -> None:
         try:
             with conn.cursor() as cur:
                 _ensure_chat_tables(cur)
-                _ensure_chat_event_queue_table(cur)
                 _ensure_live_race_rooms_table(cur)
                 _ensure_typing_content_table(cur)
                 _ensure_store_purchase_table(cur)
@@ -7872,7 +7361,6 @@ def _bootstrap_db() -> None:
             conn.commit()
         finally:
             _return_connection(conn)
-        _start_chat_event_worker()
     except Exception as exc:  # noqa: BLE001
         app.logger.warning('Bootstrap DB warning (non-fatal): %s', exc)
 
