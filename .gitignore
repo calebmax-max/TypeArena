@@ -24,3 +24,9 @@ __pycache__/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# stray dev artifacts
+*.err.txt
+*.out.txt
+*.db
+faithmutheu1_db

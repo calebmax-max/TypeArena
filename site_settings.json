@@ -1,7 +1,82 @@
 {
-  "siteMarqueeItems": [
+  "items": [
     "Product Update",
     "Private friend battles are live now.",
     "Wallet top-up and tournaments coming soon."
-  ]
+  ],
+  "musicTracks": [
+    {
+      "id": "track_1779498371161",
+      "title": "Broken Vessels (Amazing Grace)   Hillsong Worship(MP3 128K)",
+      "artist": "Unknown Artist",
+      "url": "blob:http://localhost:3000/e924b910-9c73-42b3-af9f-311ba11ef022"
+    },
+    {
+      "id": "track_1788888938444",
+      "title": "Averly Morillo   MESIAS Lyrics Video   Ven Ven Ven Ven Ven Mesias Ven   Lyrics in english (39kbpsk) 1764475519481",
+      "artist": "Unknown Artist",
+      "url": "https://www.youtube.com/watch?v=e9glPMbC6Rc&list=RDe9glPMbC6Rc&start_radio=1"
+    }
+  ],
+  "commentatorEnabled": true,
+  "commentatorConfig": {
+    "rate": 1.08,
+    "pitch": 0.92,
+    "gap": 220,
+    "volume": 1.0,
+    "cooldown": 3500
+  },
+  "leaderboardTiers": {
+    "bronze": 500,
+    "silver": 851,
+    "gold": 1500,
+    "diamond": 1760,
+    "grandmaster": 2001
+  },
+  "commentatorPhrases": {
+    "raceStart": [
+      [
+        "And they're OFF!",
+        "Fingers to the keys!",
+        "Every millisecond counts!"
+      ],
+      [
+        "GO GO GO!",
+        "The race has BEGUN!",
+        "No room for error now!"
+      ],
+      [
+        "The clock starts NOW!",
+        "Push hard from the first keystroke!",
+        "The crowd is watching!"
+      ],
+      [
+        "AWAY they go!",
+        "Blazing speed right from the start!",
+        "This is what we came for!"
+      ]
+    ],
+    "finish": [
+      [
+        "What a finish!",
+        "That was a furious run!",
+        "The crowd is on its feet!"
+      ],
+      [
+        "Done and dusted!",
+        "A brilliant closing burst!",
+        "That was championship pace!"
+      ],
+      [
+        "Finish line crossed!",
+        "Precision all the way through!",
+        "That is how you close strong!"
+      ],
+      [
+        "Race complete!",
+        "A huge final push!",
+        "What a performance!"
+      ]
+    ]
+  }
 }
