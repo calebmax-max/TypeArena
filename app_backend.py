@@ -115,6 +115,7 @@ LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
 socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='gevent')
+app.extensions['socketio'] = socketio
 
 
 def _is_admin_email(email: str) -> bool:
@@ -6843,7 +6844,8 @@ def chat_contacts():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
-        contacts = _fetch_chat_contacts(conn, me)
+        search = str(request.args.get('search') or '').strip()
+        contacts = _fetch_chat_contacts(conn, me, search=search)
         return jsonify(contacts)
     finally:
         _return_connection(conn)
@@ -6894,6 +6896,7 @@ def _fetch_chat_contacts(
     me: int,
     *,
     unread_by_sender: Optional[Dict[int, int]] = None,
+    search: str = '',
 ) -> list[Dict[str, Any]]:
     cutoff_dt = datetime.utcnow() - timedelta(seconds=45)
     cutoff = cutoff_dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -6945,6 +6948,37 @@ def _fetch_chat_contacts(
             'unreadCount': unread_by_sender.get(user_id, 0),
             'isMe': False,
         }
+
+    normalized_search = str(search or '').strip()
+    if normalized_search:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT u.id, u.username, u.wpm, p.last_seen
+                FROM users u
+                LEFT JOIN user_presence p ON p.user_id = u.id
+                WHERE u.id <> %s AND u.username LIKE %s
+                ORDER BY u.username ASC
+                LIMIT 50
+                ''',
+                (me, f'%{normalized_search}%'),
+            )
+            search_rows = cur.fetchall()
+        for row in search_rows:
+            user_id = int(row['id'])
+            if user_id in contacts_by_id:
+                continue
+            last_seen = row.get('last_seen')
+            contacts_by_id[user_id] = {
+                'id': user_id,
+                'username': row['username'],
+                'wpm': float(row['wpm'] or 0),
+                'lastSeen': last_seen.isoformat() + 'Z' if last_seen else None,
+                'lastMessageAt': None,
+                'isOnline': bool(last_seen and last_seen >= cutoff_dt),
+                'unreadCount': unread_by_sender.get(user_id, 0),
+                'isMe': False,
+            }
 
     if recent_rows:
         partner_ids = [int(row['partner_id']) for row in recent_rows if row.get('partner_id')]
@@ -7589,4 +7623,4 @@ def _bootstrap_db() -> None:
 
 if __name__ == '__main__':
     _bootstrap_db()
-    app.run(host=APP_HOST, port=APP_PORT, debug=False)
+    socketio.run(app, host=APP_HOST, port=APP_PORT, debug=False)

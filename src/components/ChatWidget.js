@@ -530,6 +530,7 @@ function ChatWidget({ currentUser }) {
   const [unread, setUnread] = useState({});
   const [totalUnread, setTotalUnread] = useState(0);
   const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
   const [listError, setListError] = useState('');
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketEvent, setSocketEvent] = useState(null);
@@ -538,6 +539,7 @@ function ChatWidget({ currentUser }) {
   const socketRef = useRef(null);
   const socketConnectedRef = useRef(false);
   const socketEventQueueRef = useRef([]);
+  const socketEventRef = useRef(null);
   const socketHeartbeatRef = useRef(null);
   const reconnectDelayRef = useRef(2000);
 
@@ -605,8 +607,12 @@ function ChatWidget({ currentUser }) {
       const nextPayload = payload && typeof payload === 'object'
         ? payload
         : { type: eventName, value: payload };
-      socketEventQueueRef.current.push(nextPayload);
-      setSocketEvent((current) => current || nextPayload);
+      if (socketEventRef.current) {
+        socketEventQueueRef.current.push(nextPayload);
+      } else {
+        socketEventRef.current = nextPayload;
+        setSocketEvent(nextPayload);
+      }
     });
 
     socket.on('connect_error', () => {
@@ -637,6 +643,7 @@ function ChatWidget({ currentUser }) {
     if (socketEvent) return;
     const nextEvent = socketEventQueueRef.current.shift();
     if (nextEvent) {
+      socketEventRef.current = nextEvent;
       setSocketEvent(nextEvent);
     }
   }, [socketEvent]);
@@ -656,6 +663,28 @@ function ChatWidget({ currentUser }) {
       events.forEach((e) => window.removeEventListener(e, onActivity));
     };
   }, [isLoggedIn, apiFetch]);
+
+  useEffect(() => {
+    const query = search.trim();
+    if (!isLoggedIn || !query) {
+      setSearchResults([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      apiFetch(/api/chat/contacts?search=)
+        .then((contacts) => {
+          if (!cancelled) setSearchResults(Array.isArray(contacts) ? contacts : []);
+        })
+        .catch(() => {
+          if (!cancelled) setSearchResults([]);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [apiFetch, isLoggedIn, search]);
 
   // Refresh chat state from the socket whenever it reconnects
   useEffect(() => {
@@ -766,6 +795,7 @@ function ChatWidget({ currentUser }) {
       consumed = true;
     }
     if (consumed) {
+      socketEventRef.current = null;
       setSocketEvent(null);
     }
   }, [socketEvent, currentUser?.id, open, partner, unread]);
@@ -773,7 +803,7 @@ function ChatWidget({ currentUser }) {
   if (!isLoggedIn) return null;
 
   const onlineCount = players.filter((p) => !p.isMe && p.isOnline).length;
-  const filteredPlayers = players.filter((p) =>
+  const filteredPlayers = (search.trim() ? searchResults : players).filter((p) =>
     !p.isMe && p.username.toLowerCase().includes(search.toLowerCase())
   );
 
