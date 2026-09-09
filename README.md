@@ -54,7 +54,10 @@ Add the required backend environment variables in Render:
 - `TYPEARENA_ADMIN_EMAIL`
 - `TYPEARENA_ADMIN_PASSWORD`
 - `TYPEARENA_ADMIN_TOKEN_SECRET`
-- `TYPEARENA_ALLOWED_ORIGINS`
+- `TYPEARENA_ALLOWED_ORIGINS` — comma-separated frontend origins, for example
+  `https://your-site.netlify.app,https://www.yourdomain.com`. Set it in the
+  **Render service's Environment**; a local `.env` is not deployed to Render.
+  If omitted, the backend allows public origins so Socket.IO remains available.
 
 Keep any payment or AI variables you need there too, including public HTTPS callback and Stripe redirect URLs.
 
@@ -91,6 +94,9 @@ That means the frontend can stay on one origin while forwarding API requests to 
 - `TYPEARENA_ADMIN_EMAIL`
 - `TYPEARENA_ADMIN_PASSWORD`
 - `TYPEARENA_ADMIN_TOKEN_SECRET`
-- `TYPEARENA_ALLOWED_ORIGINS`
+- `TYPEARENA_ALLOWED_ORIGINS` — comma-separated frontend origins, for example
+  `https://your-site.netlify.app,https://www.yourdomain.com`. Set it in the
+  **Render service's Environment**; a local `.env` is not deployed to Render.
+  If omitted, the backend allows public origins so Socket.IO remains available.
 
 Use [.env.example](/c:/Users/USER/Desktop/type/.env.example) as the template for the rest of the optional settings.

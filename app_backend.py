@@ -28,11 +28,16 @@ from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__, static_folder=None)
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv('TYPEARENA_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
-    if origin.strip()
-]
+# A browser Socket.IO handshake includes the frontend's Origin. Render does
+# not load this repository's .env file, so a localhost-only default causes
+# every production WebSocket upgrade to fail with HTTP 400 when its env var is
+# missing. Explicitly configured deployments stay origin-restricted.
+_allowed_origins_env = os.getenv('TYPEARENA_ALLOWED_ORIGINS', '').strip()
+ALLOWED_ORIGINS = (
+    [origin.strip() for origin in _allowed_origins_env.split(',') if origin.strip()]
+    if _allowed_origins_env
+    else '*'
+)
 CORS(app, origins=ALLOWED_ORIGINS)
 
 BASE_DIR = Path(__file__).resolve().parent
