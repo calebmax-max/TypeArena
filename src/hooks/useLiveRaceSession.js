@@ -425,7 +425,7 @@ export function useLiveRaceSession({
     setLoadingLive(true);
     setLiveAction('starting');
     try {
-      const response = await startLiveRaceRoom(liveRoom.id);
+      const response = await startLiveRaceRoom(liveRoom.id, { duration });
       startQueuedRoom(response.room, { message: response.message || 'Race countdown started.', type: 'success' });
       refreshFeed();
     } catch (error) {
@@ -434,7 +434,7 @@ export function useLiveRaceSession({
       setLoadingLive(false);
       setLiveAction(null);
     }
-  }, [liveRoom?.id, refreshFeed, showNotice, startQueuedRoom]);
+  }, [duration, liveRoom?.id, refreshFeed, showNotice, startQueuedRoom]);
 
   const joinFriendBattle = useCallback(async () => {
     if (currentUser === undefined) return;
@@ -651,13 +651,6 @@ export function useLiveRaceSession({
     }
 
     const roomId = liveRoom.id;
-    if (phase === 'results') {
-      const allDone = liveRoom?.players?.every((player) => Boolean(player?.result));
-      if (allDone) {
-        return undefined;
-      }
-    }
-
     const interval = window.setInterval(async () => {
       if (document.visibilityState !== 'visible' || roomPollInFlightRef.current) {
         return;

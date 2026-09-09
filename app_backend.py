@@ -117,6 +117,8 @@ TOURNAMENT_START_DELAY_SECONDS = 30
 WINNER_PRIZE_SHARE = 0.60
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 10
+LIVE_RACE_MIN_DURATION_SECONDS = 15
+LIVE_RACE_MAX_DURATION_SECONDS = 300
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
 SOCKETIO_ASYNC_MODE = os.getenv('TYPEARENA_SOCKETIO_ASYNC_MODE', 'threading').strip() or 'threading'
@@ -2296,7 +2298,10 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'status': room['status'],
         'mode': room['mode'],
         'language': room['language'],
-        'duration': room['duration'],
+        'duration': max(
+            LIVE_RACE_MIN_DURATION_SECONDS,
+            min(LIVE_RACE_MAX_DURATION_SECONDS, int(room.get('duration') or 60)),
+        ),
         'countdown': room.get('countdown', LIVE_RACE_COUNTDOWN_SECONDS),
         'text': room['text'],
         'contentId': room.get('contentId'),
@@ -5907,11 +5912,9 @@ def queue_live_race():
                     room['players'].append(player_snapshot)
                 if room:
                     room_max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
-                    # A full private room starts its shared countdown automatically.
-                    if room.get('isPrivate') and len(room['players']) >= room_max_players:
-                        room['status'] = 'countdown'
-                        room['startedAt'] = _now_iso()
-                    elif not room.get('isPrivate'):
+                    # Private rooms stay waiting until the host chooses the
+                    # duration and explicitly starts the shared race.
+                    if not room.get('isPrivate'):
                         room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
                         room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
                     _save_live_room(cur, room)
@@ -6070,6 +6073,7 @@ def get_live_race_by_invite(invite_code: str):
 
 @app.post('/api/live-races/<room_id>/start')
 def start_live_race_room(room_id: str):
+    payload = request.get_json(silent=True) or {}
     conn = get_connection()
     try:
         user = _get_user_from_header(conn)
@@ -6087,6 +6091,13 @@ def start_live_race_room(room_id: str):
                 return jsonify({'message': 'This room has already started.'}), 400
             if len(room.get('players', [])) < 2:
                 return jsonify({'message': 'At least two players are required to start.'}), 400
+            try:
+                selected_duration = int(payload.get('duration') or room.get('duration') or 60)
+            except (TypeError, ValueError):
+                return jsonify({'message': 'Race duration must be a valid number of seconds.'}), 400
+            if not LIVE_RACE_MIN_DURATION_SECONDS <= selected_duration <= LIVE_RACE_MAX_DURATION_SECONDS:
+                return jsonify({'message': 'Race duration must be between 15 and 300 seconds.'}), 400
+            room['duration'] = selected_duration
             room['status'] = 'countdown'
             room['startedAt'] = _now_iso()
             _save_live_room(cur, room)

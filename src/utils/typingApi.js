@@ -865,10 +865,11 @@ export const fetchLiveRaceByInvite = async (inviteCode) => {
   return await parseResponse(response);
 };
 
-export const startLiveRaceRoom = async (roomId) => {
+export const startLiveRaceRoom = async (roomId, payload = {}) => {
   const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/start`), {
     method: 'POST',
     headers: buildHeaders(),
+    body: JSON.stringify(payload),
   });
   return await parseResponse(response);
 };

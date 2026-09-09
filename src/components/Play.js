@@ -2647,8 +2647,20 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           {liveRoom?.isPrivate && liveRoom?.players?.length > 0 && (
             <div className="room-roster" aria-label="Players in this room">
               <div className="room-roster__header">
-                <strong>Joined players</strong>
-                <span>{liveRoom.players.length}/{liveRoom.maxPlayers || 2}</span>
+                <div>
+                  <strong>Joined players</strong>
+                  <span className="room-roster__count">{liveRoom.players.length}/{liveRoom.maxPlayers || 2}</span>
+                </div>
+                {liveRoom.status === 'waiting' && String(liveRoom.hostUserId) === String(currentUser?.id) && (
+                  <label className="room-duration-control">
+                    Race time
+                    <select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>
+                      {[30, 60, 90, 120, 180, 300].map((seconds) => (
+                        <option key={seconds} value={seconds}>{seconds}s</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
               <div className="room-roster__players">
                 {liveRoom.players.map((player) => (

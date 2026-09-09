@@ -1406,3 +1406,73 @@
     min-width: 92px;
   }
 }
+/* Shared private-room lobby: keep the roster prominent on every viewport. */
+.room-roster {
+  width: min(100%, 860px);
+  box-sizing: border-box;
+}
+
+.room-roster__header > div {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.room-roster__count {
+  color: var(--arena-accent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.room-roster__players {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.65rem;
+}
+
+.room-roster__player {
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--arena-panel-border);
+  border-radius: 8px;
+  background: hsl(240 14% 8% / 0.7);
+}
+
+.room-roster__player > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-duration-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--arena-muted);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.room-duration-control select {
+  border: 1px solid var(--arena-panel-border);
+  border-radius: 6px;
+  padding: 0.35rem 0.45rem;
+  background: hsl(240 15% 6%);
+  color: var(--arena-text);
+  font: inherit;
+}
+
+@media (max-width: 640px) {
+  .room-roster__header {
+    align-items: flex-start;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+  }
+
+  .room-duration-control {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
