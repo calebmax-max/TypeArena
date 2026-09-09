@@ -1311,3 +1311,80 @@
   .keyboard-preview { display: none; }
   .live-board__grid { grid-template-columns: 1fr; }
 }
+/* Mobile typing mode: keep the active passage line visible above the system keyboard. */
+.keyboard-key.is-next {
+  border-color: var(--arena-accent);
+  box-shadow: 0 0 0 2px var(--arena-accent-soft), 0 0 16px var(--arena-accent-soft);
+  color: var(--arena-text);
+}
+
+.mobile-typing-setup {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .typing-stage {
+    max-height: min(42vh, 320px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 40%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-typing-setup {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0 auto 0.75rem;
+    max-width: 860px;
+    padding: 0.8rem;
+    border: 1px solid var(--arena-panel-border);
+    border-radius: var(--arena-radius-md);
+    background: var(--arena-surface);
+    color: var(--arena-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .mobile-typing-setup strong {
+    color: var(--arena-text);
+    font-size: 0.86rem;
+  }
+
+  .mobile-typing-setup__controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .mobile-typing-setup__controls button {
+    border: 1px solid var(--arena-panel-border);
+    border-radius: 999px;
+    padding: 0.38rem 0.58rem;
+    background: hsl(240 14% 12%);
+    color: var(--arena-muted);
+    font: inherit;
+  }
+
+  .mobile-typing-setup__controls button.is-on {
+    border-color: var(--arena-accent);
+    background: var(--arena-accent-soft);
+    color: var(--arena-text);
+  }
+}
+@media (max-width: 400px) {
+  .keyboard-preview {
+    display: block;
+    padding: 0.7rem;
+    overflow-x: auto;
+  }
+
+  .keyboard-key {
+    min-width: 20px;
+    height: 24px;
+    font-size: 0.58rem;
+  }
+
+  .keyboard-key--space {
+    min-width: 92px;
+  }
+}

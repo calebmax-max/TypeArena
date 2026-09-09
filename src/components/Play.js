@@ -33,6 +33,17 @@ const DAILY_CHALLENGE_KEY = 'typearena_daily_challenge';
 const WIN_STREAK_KEY = 'typearena_win_streak';
 const LOBBY_FEED_POLL_INTERVAL_MS = 8000;
 const SPECTATE_POLL_INTERVAL_MS = 3000;
+const MOBILE_TYPING_SETTINGS_KEY = 'typearena_mobile_typing_settings';
+const DEFAULT_MOBILE_TYPING_SETTINGS = { autoScroll: true, guide: true, haptics: false };
+
+function readMobileTypingSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MOBILE_TYPING_SETTINGS_KEY) || 'null');
+    return { ...DEFAULT_MOBILE_TYPING_SETTINGS, ...(stored && typeof stored === 'object' ? stored : {}) };
+  } catch (_) {
+    return DEFAULT_MOBILE_TYPING_SETTINGS;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Content rotation helpers
@@ -902,7 +913,8 @@ const TypingCharacter = React.memo(function TypingCharacter({
   isCurrent,
   isGhost,
   isTyped,
-  isCorrect,  // Fix #4 (Issue 4): was missing — incorrect chars were styled same as correct
+  isCorrect,
+  activeRef,
 }) {
   let className = 'char untyped';
   if (isTyped) {
@@ -954,6 +966,8 @@ export default function Play({ practicePage = false }){
   const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
   const [commentatorPhrases, setCommentatorPhrases] = useState({});
   const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem('typearena_music') !== 'false');
+  const [mobileTypingSettings, setMobileTypingSettings] = useState(readMobileTypingSettings);
+  const [showMobileTypingSetup, setShowMobileTypingSetup] = useState(() => localStorage.getItem(MOBILE_TYPING_SETTINGS_KEY) === null);
 
   useEffect(() => {
     let active = true;
@@ -1060,6 +1074,8 @@ export default function Play({ practicePage = false }){
   // ────────────────────────────────────────────────────────────────────────────
 
   const inputRef = useRef(null);
+  const typingStageRef = useRef(null);
+  const currentCharacterRef = useRef(null);
   const timerRef = useRef(null);
   // Fix #1: ref-based in-flight guard and loaded-key tracker to prevent re-fetching on page revisit
   const contentLoadingRef = useRef(false);
@@ -1914,6 +1930,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       const expectedChar = src[newLen - 1];
       const isCorrect = typedChar === expectedChar;
       playSound(isCorrect ? 'key' : 'error');
+      if (mobileTypingSettings.haptics && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(isCorrect ? 8 : 18);
+      }
       if (isCorrect) {
         setStreak((s) => {
           const newStreak = s + 1;
@@ -1986,7 +2005,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   // Fix #8 (Issue 8): memoised with useCallback. timeLeftRef.current is read for the
   // sparkline (fix #6). timeLeft is kept for the live-room heartbeat WPM calculation.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentatorEnabled, customText, duration, generatedContent?.passage, isSubmittingRef, liveRoom, penaltyMode, raceOver, submitHeartbeat, timeLeft, typingText, useCustomText]);
+  }, [commentatorEnabled, customText, duration, generatedContent?.passage, isSubmittingRef, liveRoom, mobileTypingSettings.haptics, penaltyMode, raceOver, submitHeartbeat, timeLeft, typingText, useCustomText]);
 
   const hasSignatureInvites = Boolean(currentUser?.storePerks?.customInviteCodes);
   const equippedItems = currentUser?.equippedItems || {};
@@ -2012,6 +2031,34 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
   }, [handleFinishRace, phase, raceOver, sourceText, typingText.length]);
   // ── NEW #E: ghost position — character the ghost has reached ────────────
+  const updateMobileTypingSettings = useCallback((patch) => {
+    setMobileTypingSettings((current) => {
+      const next = { ...current, ...patch };
+      localStorage.setItem(MOBILE_TYPING_SETTINGS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'racing' || raceOver || !mobileTypingSettings.autoScroll) return undefined;
+    const stage = typingStageRef.current;
+    const currentCharacter = currentCharacterRef.current;
+    if (!stage || !currentCharacter || stage.scrollHeight <= stage.clientHeight) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const stageBounds = stage.getBoundingClientRect();
+      const characterBounds = currentCharacter.getBoundingClientRect();
+      const comfortTop = stageBounds.top + stage.clientHeight * 0.28;
+      const comfortBottom = stageBounds.top + stage.clientHeight * 0.70;
+      if (characterBounds.top < comfortTop || characterBounds.bottom > comfortBottom) {
+        stage.scrollTo({
+          top: Math.max(0, stage.scrollTop + characterBounds.top - comfortTop),
+          behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mobileTypingSettings.autoScroll, phase, raceOver, typingText.length]);
+
   const sourceChars = useMemo(() => sourceText.split(''), [sourceText]);
   // Bug E fix: stored PB frames now use compact {len, timestamp} format.
   // Support both old full-text frames and new compact frames.
@@ -2035,6 +2082,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           isGhost={isGhost}
           isTyped={isTyped}
           isCorrect={isCorrect}
+          activeRef={isCurrent ? currentCharacterRef : null}
         />
       );
     })
@@ -2844,7 +2892,20 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           )}
 
           <div className="typing-area">
+            {showMobileTypingSetup && (
+              <section className="mobile-typing-setup" aria-label="Mobile typing preferences">
+                <strong>Mobile typing mode</strong>
+                <span>Auto-scroll and the TypeArena key guide work here. Your phone keyboard theme remains controlled by your device.</span>
+                <div className="mobile-typing-setup__controls">
+                  <button type="button" className={mobileTypingSettings.autoScroll ? 'is-on' : ''} onClick={() => updateMobileTypingSettings({ autoScroll: !mobileTypingSettings.autoScroll })}>Auto-scroll {mobileTypingSettings.autoScroll ? 'on' : 'off'}</button>
+                  <button type="button" className={mobileTypingSettings.guide ? 'is-on' : ''} onClick={() => updateMobileTypingSettings({ guide: !mobileTypingSettings.guide })}>Key guide {mobileTypingSettings.guide ? 'on' : 'off'}</button>
+                  <button type="button" className={mobileTypingSettings.haptics ? 'is-on' : ''} onClick={() => updateMobileTypingSettings({ haptics: !mobileTypingSettings.haptics })}>Haptics {mobileTypingSettings.haptics ? 'on' : 'off'}</button>
+                  <button type="button" onClick={() => { localStorage.setItem(MOBILE_TYPING_SETTINGS_KEY, JSON.stringify(mobileTypingSettings)); setShowMobileTypingSetup(false); }}>Done</button>
+                </div>
+              </section>
+            )}
             <div
+              ref={typingStageRef}
               className="typing-stage"
               onClick={() => inputRef.current?.focus()}
               role="presentation"
@@ -2874,6 +2935,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 spellCheck="false"
                 autoCapitalize="off"
                 autoCorrect="off"
+                autoComplete="off"
+                inputMode="text"
+                enterKeyHint="done"
                 disabled={raceOver}
               />
             </div>
@@ -2883,7 +2947,13 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           </div>
 
           <React.Suspense fallback={null}>
-            <LazyKeyboardDeck phase={phase} normalizeKeyboardKey={normalizeKeyboardKey} />
+            {mobileTypingSettings.guide && (
+              <LazyKeyboardDeck
+                phase={phase}
+                normalizeKeyboardKey={normalizeKeyboardKey}
+                expectedKey={sourceText[typingText.length]}
+              />
+            )}
           </React.Suspense>
 
           <div className="results-actions">
