@@ -111,7 +111,7 @@ function upsertChatMessage(messages, incomingMessage) {
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────
-function Avatar({ name, size = 40 }) {
+function Avatar({ name, image, size = 40 }) {
   const initials = name
     ? name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
@@ -124,7 +124,7 @@ function Avatar({ name, size = 40 }) {
       justifyContent: 'center', fontSize: size * 0.38, fontWeight: 600,
       color: 'hsl(0 0% 95%)', flexShrink: 0, userSelect: 'none',
     }}>
-      {initials}
+      {image ? <img src={image} alt={`${name || 'Player'} profile`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : initials}
     </div>
   );
 }
@@ -168,7 +168,7 @@ function ContactList({ players, onSelect, unread, search }) {
               onMouseLeave={(e) => e.currentTarget.style.background = 'hsl(240 12% 8%)'}
             >
               <div style={{ position: 'relative' }}>
-                <Avatar name={p.username} size={49} />
+                <Avatar name={p.username} image={p.profileImage} size={49} />
                 {p.isOnline ? (
                   <span style={{
                     position: 'absolute', bottom: 1, right: 1,
@@ -410,7 +410,7 @@ function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, 
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
-        <Avatar name={partner.username} size={38} />
+        <Avatar name={partner.username} image={partner.profileImage} size={38} />
         <div style={{ flex: 1 }}>
           <div style={{ color: 'hsl(0 0% 95%)', fontWeight: 600, fontSize: 15 }}>{partner.username}</div>
           <div style={{ color: partner.isOnline ? 'hsl(145 40% 60%)' : 'hsl(240 5% 58%)', fontSize: 12 }}>

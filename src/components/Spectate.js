@@ -122,7 +122,7 @@ function PlayerCard({ player, isWinner, isFinished, side }) {
   return (
     <div className={`sp-player sp-player--${side} ${isWinner ? 'sp-player--winner' : ''} ${isFinished ? 'sp-player--done' : ''}`}>
       <div className="sp-player__avatar">
-        <span>{initials}</span>
+        {player?.profileImage ? <img src={player.profileImage} alt={`${username} profile`} className="sp-player__avatar-image" /> : <span>{initials}</span>}
         {isWinner && <span className="sp-player__crown" aria-label="Winner">👑</span>}
       </div>
 
@@ -671,6 +671,7 @@ const STYLES = `
     position: relative;
     flex-shrink: 0;
   }
+  .sp-player__avatar-image { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
   .sp-player__crown {
     position: absolute;
     top: -10px; right: -6px;

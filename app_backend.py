@@ -1431,6 +1431,10 @@ def _ensure_tournament_prize_paid_column(cur) -> None:
 
 
 def _ensure_user_equipped_columns(cur) -> None:
+    cur.execute("SHOW COLUMNS FROM users LIKE 'profile_image'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE users ADD COLUMN profile_image MEDIUMTEXT NULL AFTER phone_number")
+
     cur.execute("SHOW COLUMNS FROM users LIKE 'equipped_avatar'")
     if not cur.fetchone():
         cur.execute("ALTER TABLE users ADD COLUMN equipped_avatar VARCHAR(80) NULL AFTER balance")
@@ -2273,6 +2277,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
             {
                 'userId': player['userId'],
                 'username': player['username'],
+                'profileImage': player.get('profileImage') or '',
                 'progress': int(player.get('progress') or 0),
                 'currentWpm': float(player.get('currentWpm') or 0),
                 'currentAccuracy': float(player.get('currentAccuracy') or 100),
@@ -2874,6 +2879,7 @@ def _safe_user_with_owned_items(
         'email': user['email'],
         'isAdmin': is_admin,
         'phoneNumber': user.get('phone_number') or '',
+        'profileImage': user.get('profile_image') or '',
         'wpm': _safe_float(user.get('wpm') or 0),
         'accuracy': _safe_float(user.get('accuracy') or 0),
         'totalRaces': total_races,
@@ -5874,6 +5880,7 @@ def queue_live_race():
             player_snapshot = {
                 'userId': user['id'],
                 'username': user['username'],
+                'profileImage': user.get('profile_image') or '',
                 'progress': 0,
                 'currentWpm': 0,
                 'currentAccuracy': 100,
@@ -6818,7 +6825,7 @@ def presence_online():
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT u.id, u.username, u.wpm, p.last_seen
+                SELECT u.id, u.username, u.wpm, u.profile_image, p.last_seen
                 FROM user_presence p
                 JOIN users u ON u.id = p.user_id
                 WHERE p.last_seen >= %s
@@ -6878,6 +6885,7 @@ def _serialize_chat_contact_row(user_row: Dict[str, Any], *, unread_count: int =
         'lastMessageAt': last_message_at,
         'isOnline': bool(is_online),
         'unreadCount': int(unread_count or 0),
+        'profileImage': user_row.get('profile_image') or '',
         'isMe': False,
     }
 
@@ -6909,7 +6917,7 @@ def _fetch_chat_contacts(
     with conn.cursor() as cur:
         cur.execute(
             '''
-            SELECT u.id, u.username, u.wpm, p.last_seen
+            SELECT u.id, u.username, u.wpm, u.profile_image, p.last_seen
             FROM user_presence p
             JOIN users u ON u.id = p.user_id
             WHERE p.user_id <> %s AND p.last_seen >= %s
@@ -6948,6 +6956,7 @@ def _fetch_chat_contacts(
             'id': user_id,
             'username': row['username'],
             'wpm': float(row['wpm'] or 0),
+            'profileImage': row.get('profile_image') or '',
             'lastSeen': row['last_seen'].isoformat() + 'Z' if row.get('last_seen') else None,
             'lastMessageAt': None,
             'isOnline': bool(row.get('last_seen') and row['last_seen'] >= cutoff_dt),
@@ -6960,7 +6969,7 @@ def _fetch_chat_contacts(
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT u.id, u.username, u.wpm, p.last_seen
+                SELECT u.id, u.username, u.wpm, u.profile_image, p.last_seen
                 FROM users u
                 LEFT JOIN user_presence p ON p.user_id = u.id
                 WHERE u.id <> %s AND u.username LIKE %s
@@ -6979,6 +6988,7 @@ def _fetch_chat_contacts(
                 'id': user_id,
                 'username': row['username'],
                 'wpm': float(row['wpm'] or 0),
+                'profileImage': row.get('profile_image') or '',
                 'lastSeen': last_seen.isoformat() + 'Z' if last_seen else None,
                 'lastMessageAt': None,
                 'isOnline': bool(last_seen and last_seen >= cutoff_dt),
@@ -6993,7 +7003,7 @@ def _fetch_chat_contacts(
             with conn.cursor() as cur:
                 cur.execute(
                     f'''
-                    SELECT id, username, wpm
+                    SELECT id, username, wpm, profile_image
                     FROM users
                     WHERE id IN ({placeholders})
                     ''',
@@ -7016,6 +7026,7 @@ def _fetch_chat_contacts(
                     'id': partner_id,
                     'username': partner['username'],
                     'wpm': float(partner['wpm'] or 0),
+                    'profileImage': partner.get('profile_image') or '',
                     'lastSeen': None,
                     'lastMessageAt': last_message_at.isoformat() + 'Z' if last_message_at else None,
                     'isOnline': False,
@@ -7549,6 +7560,7 @@ def update_user(user_id: int):
 
             username = payload.get('username')
             phone_number = payload.get('phoneNumber')
+            profile_image = payload.get('profileImage')
             if username is not None:
                 normalized_username = str(username).strip()
                 if not normalized_username or len(normalized_username) > 50:
@@ -7556,6 +7568,11 @@ def update_user(user_id: int):
                 cur.execute('UPDATE users SET username=%s WHERE id=%s', (normalized_username, user_id))
             if phone_number is not None:
                 cur.execute('UPDATE users SET phone_number=%s WHERE id=%s', (str(phone_number).strip(), user_id))
+            if profile_image is not None:
+                normalized_image = str(profile_image).strip()
+                if normalized_image and (not normalized_image.startswith('data:image/') or len(normalized_image) > 250000):
+                    return jsonify({'message': 'Profile picture must be a compressed image under 250 KB.'}), 400
+                cur.execute('UPDATE users SET profile_image=%s WHERE id=%s', (normalized_image or None, user_id))
 
             cur.execute('SELECT * FROM users WHERE id=%s', (user_id,))
             updated = cur.fetchone()

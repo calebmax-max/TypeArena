@@ -2746,7 +2746,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <div className="player-identity-card">
             <div className={`player-avatar-shell ${frameClassName}`}>
               <div className={`player-avatar ${avatarPreset.aura}`}>
-                <span>{avatarPreset.mark}</span>
+                {currentUser?.profileImage ? <img src={currentUser.profileImage} alt={`${currentUser?.username || 'Player'} profile`} style={{ width: '100%', height: '100%', borderRadius: 'inherit', objectFit: 'cover' }} /> : <span>{avatarPreset.mark}</span>}
               </div>
             </div>
             <div className="player-identity-copy">
@@ -2853,13 +2853,13 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           {liveRoom && (
             <div className="opponent-panel">
               <div className="opponent-panel__item">
-                <span>You</span>
+                {currentUser?.profileImage && <img src={currentUser.profileImage} alt="Your profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>You</span>
                 <strong>{myPlayer?.progress || 0}%</strong>
                 {/* ── NEW #C: your live WPM ── */}
                 <span style={{ fontSize:'0.72rem', color:'var(--arena-accent)', marginTop:'2px' }}>{wpmValue.toFixed(0)} WPM</span>
               </div>
               <div className="opponent-panel__item" style={{ position:'relative' }}>
-                <span>{opponent?.username || 'Opponent'}</span>
+                {opponent?.profileImage && <img src={opponent.profileImage} alt="Opponent profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>{opponent?.username || 'Opponent'}</span>
                 <strong>{opponent?.progress || 0}%</strong>
                 {/* ── NEW #C: opponent live WPM bar ── */}
                 {opponent?.currentWpm != null && (
