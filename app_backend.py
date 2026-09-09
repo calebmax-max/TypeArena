@@ -116,7 +116,7 @@ TOURNAMENT_MATCH_SIZE = 2
 TOURNAMENT_START_DELAY_SECONDS = 30
 WINNER_PRIZE_SHARE = 0.60
 WITHDRAWAL_FEE = 50.0
-LIVE_RACE_COUNTDOWN_SECONDS = 5
+LIVE_RACE_COUNTDOWN_SECONDS = 10
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
 SOCKETIO_ASYNC_MODE = os.getenv('TYPEARENA_SOCKETIO_ASYNC_MODE', 'threading').strip() or 'threading'
@@ -5906,9 +5906,12 @@ def queue_live_race():
                 if room and all(existing['userId'] != user['id'] for existing in room['players']):
                     room['players'].append(player_snapshot)
                 if room:
-                    # Private-room hosts decide when the group is ready. Public
-                    # matchmaking remains an immediate 1v1 start.
-                    if not room.get('isPrivate'):
+                    room_max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
+                    # A full private room starts its shared countdown automatically.
+                    if room.get('isPrivate') and len(room['players']) >= room_max_players:
+                        room['status'] = 'countdown'
+                        room['startedAt'] = _now_iso()
+                    elif not room.get('isPrivate'):
                         room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
                         room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
                     _save_live_room(cur, room)

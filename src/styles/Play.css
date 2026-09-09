@@ -893,6 +893,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+.room-roster {
+  max-width: 680px;
+  margin: 1rem auto;
+  padding: 0.8rem 1rem;
+  background: var(--arena-panel);
+  border: 1px solid var(--arena-panel-border);
+  border-radius: 10px;
+}
+.room-roster__header, .room-roster__player, .room-roster__players { display: flex; align-items: center; }
+.room-roster__header { justify-content: space-between; color: var(--arena-muted); font-size: 0.8rem; }
+.room-roster__players { flex-wrap: wrap; gap: 0.55rem 0.9rem; margin-top: 0.7rem; }
+.room-roster__player { gap: 0.4rem; font-size: 0.82rem; color: var(--arena-text); }
+.room-roster__avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
+.room-roster__avatar--fallback { display: inline-flex; align-items: center; justify-content: center; background: var(--arena-accent-soft); color: var(--arena-accent); font-weight: 700; }
 /* ── Typing area ─────────────────────────────────────────── */
 .typing-area {
   max-width: 860px;
@@ -1310,6 +1324,10 @@
 @media (max-width: 400px) {
   .keyboard-preview { display: none; }
   .live-board__grid { grid-template-columns: 1fr; }
+  .room-roster { padding: 0.65rem 0.75rem; }
+  .room-roster__players { gap: 0.45rem 0.65rem; }
+  .room-roster__avatar,
+  .opponent-panel__item > img { width: 22px !important; height: 22px !important; }
 }
 /* Mobile typing mode: keep the active passage line visible above the system keyboard. */
 .keyboard-key.is-next {

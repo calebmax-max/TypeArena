@@ -2644,6 +2644,28 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           {(liveRoom?.inviteCode || friendBattle.inviteCode) && (
             <p className="results-challenge">Invite code: {liveRoom?.inviteCode || friendBattle.inviteCode}</p>
           )}
+          {liveRoom?.isPrivate && liveRoom?.players?.length > 0 && (
+            <div className="room-roster" aria-label="Players in this room">
+              <div className="room-roster__header">
+                <strong>Joined players</strong>
+                <span>{liveRoom.players.length}/{liveRoom.maxPlayers || 2}</span>
+              </div>
+              <div className="room-roster__players">
+                {liveRoom.players.map((player) => (
+                  <div className="room-roster__player" key={player.userId}>
+                    {player.profileImage ? (
+                      <img src={player.profileImage} alt="" className="room-roster__avatar" />
+                    ) : (
+                      <span className="room-roster__avatar room-roster__avatar--fallback" aria-hidden="true">
+                        {(player.username || 'P').slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    <span>{String(player.userId) === String(currentUser?.id) ? 'You' : player.username}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="results-actions">
             <button className="btn btn-success" onClick={shareToWhatsApp}>
               Share on WhatsApp
