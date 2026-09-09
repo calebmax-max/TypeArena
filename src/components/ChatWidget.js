@@ -211,7 +211,7 @@ function ContactList({ players, onSelect, unread, search }) {
 }
 
 // ── DM thread ────────────────────────────────────────────────────────────────
-function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, sendSocketEvent, onThreadLoaded }) {
+function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, sendSocketEvent, apiFetch, onThreadLoaded }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -247,6 +247,32 @@ function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, 
     });
   }, [socketConnected, partnerId, sendSocketEvent]);
 
+  useEffect(() => {
+    if (!partnerId || !loading) return undefined;
+    let cancelled = false;
+    const fallbackTimer = window.setTimeout(() => {
+      apiFetch(`/api/chat/messages/${partnerId}`)
+        .then((nextMessages) => {
+          if (cancelled) return;
+          setMessages((prev) => {
+            const pendingMessages = prev.filter((message) => String(message.id || '').startsWith('tmp_'));
+            const storedMessages = Array.isArray(nextMessages) ? nextMessages : [];
+            const storedIds = new Set(storedMessages.map((message) => String(message.id)));
+            return sortChatMessages([...storedMessages, ...pendingMessages.filter((message) => !storedIds.has(String(message.id)))]);
+          });
+          setLoading(false);
+          setThreadError('');
+          onThreadLoaded?.(partnerId);
+        })
+        .catch((error) => {
+          if (!cancelled) setThreadError(error.message || 'Could not load this conversation.');
+        });
+    }, 1600);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallbackTimer);
+    };
+  }, [apiFetch, loading, onThreadLoaded, partnerId]);
   useEffect(() => {
     if (!socketEvent || socketEvent.type !== 'chat_thread') return;
     if (String(socketEvent.partnerId) !== String(partnerId)) return;
@@ -294,6 +320,8 @@ function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, 
       lastIdRef.current = Math.max(lastIdRef.current, Number(msg.id) || 0);
     }
     setMessages((prev) => upsertChatMessage(prev, msg));
+    setLoading(false);
+    setThreadError('');
     if (String(msg.senderId) === String(partnerId) && sendSocketEvent) {
       sendSocketEvent({ type: 'mark_read', partnerId });
     }
@@ -344,7 +372,11 @@ function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, 
       });
 
       if (!sentViaSocket) {
-        throw new Error('Chat socket is not connected.');
+        const delivered = await apiFetch('/api/chat/messages', {
+          method: 'POST',
+          body: JSON.stringify({ recipientId: partner.id, body, clientMsgId: tempId }),
+        });
+        setMessages((prev) => upsertChatMessage(prev, delivered));
       }
     } catch (error) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -455,8 +487,8 @@ function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, 
                   </span>
                   {mine && (
                     <svg width="16" height="11" viewBox="0 0 16 11" fill="none">
-                      <path d="M1 5.5L5 9.5L15 1.5" stroke="hsl(145 80% 55%)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M5 5.5L9 9.5" stroke="hsl(145 80% 55%)" strokeWidth="1.8" strokeLinecap="round" />
+                      <path d="M1 5.5L5 9.5L15 1.5" stroke={msg.read ? '#53bdeb' : 'hsl(240 5% 58%)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M5 5.5L9 9.5" stroke={msg.read ? '#53bdeb' : 'hsl(240 5% 58%)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   )}
                 </div>
@@ -902,6 +934,7 @@ function ChatWidget({ currentUser }) {
               socketConnected={socketConnected}
               socketEvent={socketEvent}
               sendSocketEvent={sendSocketEvent}
+              apiFetch={apiFetch}
               onThreadLoaded={(partnerId) => {
                 const existingUnread = Number(unread?.[partnerId] || 0);
                 if (existingUnread > 0) {

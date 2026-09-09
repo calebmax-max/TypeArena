@@ -7133,6 +7133,12 @@ def chat_get_messages(other_user_id: int):
             return jsonify({'message': 'Unauthorized'}), 401
         me = int(user['id'])
         messages = _fetch_thread_messages(conn, me, other_user_id, limit=200, mark_read=True)
+        _emit_socket_payload(other_user_id, 'chat_read', {
+            'type': 'chat_read',
+            'partnerId': me,
+            'readerId': me,
+            'ts': _now_iso(),
+        })
         return jsonify(messages)
     finally:
         _return_connection(conn)
@@ -7242,7 +7248,7 @@ def socketio_chat_ping():
 
 
 @socketio.on('sync_state')
-def socketio_chat_sync_state():
+def socketio_chat_sync_state(payload=None):
     user = _socketio_chat_user()
     if not user:
         return
