@@ -13,7 +13,8 @@ import './css/Loader.css';
 
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
-import { fetchSiteMarquee } from './utils/typingApi';
+import { fetchSiteMarquee, updateUserProfile } from './utils/typingApi';
+import { buildApiUrl } from './utils/api';
 import { arenaMusic } from './utils/arenaMusic';
 import { preloadPlayContent, preloadRoute } from './utils/navigationPrefetch';
 
@@ -165,7 +166,7 @@ function AppLayout() {
         const token = localStorage.getItem('token');
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        const res = await fetch('/api/user/me', { headers });
+        const res = await fetch(buildApiUrl('/api/user/me'), { headers });
         if (!res.ok) return; // server down or truly invalid — leave stored user as-is
 
         const fresh = await res.json();
@@ -177,6 +178,15 @@ function AppLayout() {
 
         // Update stored user with latest server data (balance, wpm, etc.)
         const updated = { ...stored, ...fresh };
+        const legacyProfileImage = localStorage.getItem('typearena_badge_image') || '';
+        if (!updated.profileImage && legacyProfileImage.startsWith('data:image/')) {
+          try {
+            const migratedUser = await updateUserProfile(updated.id, { profileImage: legacyProfileImage });
+            Object.assign(updated, migratedUser);
+          } catch (_) {
+            // The profile page will retry migration and show any upload error.
+          }
+        }
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
         setCurrentUser(updated);
       } catch (_) {
