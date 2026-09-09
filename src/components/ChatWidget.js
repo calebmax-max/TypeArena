@@ -111,26 +111,43 @@ function upsertChatMessage(messages, incomingMessage) {
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────
-function Avatar({ name, image, size = 40 }) {
+function Avatar({ name, image, size = 40, onClick }) {
   const initials = name
     ? name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
   const colors = ['hsl(145 80% 36%)', 'hsl(210 70% 38%)', 'hsl(240 50% 35%)', 'hsl(175 60% 32%)', 'hsl(270 50% 38%)'];
   const color = colors[name?.charCodeAt(0) % colors.length] || colors[0];
+  const activate = (event) => {
+    if (!onClick) return;
+    event.stopPropagation();
+    onClick();
+  };
   return (
-    <div style={{
-      width: size, height: size, borderRadius: '50%',
-      background: color, display: 'flex', alignItems: 'center',
-      justifyContent: 'center', fontSize: size * 0.38, fontWeight: 600,
-      color: 'hsl(0 0% 95%)', flexShrink: 0, userSelect: 'none',
-    }}>
-      {image ? <img src={image} alt={`${name || 'Player'} profile`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : initials}
+    <div
+      style={{
+        width: size, height: size, borderRadius: '50%',
+        background: color, display: 'flex', alignItems: 'center',
+        justifyContent: 'center', fontSize: size * 0.38, fontWeight: 600,
+        color: 'hsl(0 0% 95%)', flexShrink: 0, userSelect: 'none',
+        cursor: onClick ? 'zoom-in' : 'default',
+      }}
+      onClick={onClick ? activate : undefined}
+      onKeyDown={onClick ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          activate(event);
+        }
+      } : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? 'Enlarge ' + (name || 'player') + ' profile picture' : undefined}
+    >
+      {image ? <img src={image} alt={(name || 'Player') + ' profile'} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : initials}
     </div>
   );
 }
-
 // ── Online / contact list ────────────────────────────────────────────────────
-function ContactList({ players, onSelect, unread, search }) {
+function ContactList({ players, onSelect, unread, search, onAvatarClick }) {
   const others = players.filter((p) => !p.isMe);
 
   return (
@@ -168,7 +185,7 @@ function ContactList({ players, onSelect, unread, search }) {
               onMouseLeave={(e) => e.currentTarget.style.background = 'hsl(240 12% 8%)'}
             >
               <div style={{ position: 'relative' }}>
-                <Avatar name={p.username} image={p.profileImage} size={49} />
+                <Avatar name={p.username} image={p.profileImage} size={49} onClick={p.profileImage ? () => onAvatarClick?.(p) : undefined} />
                 {p.isOnline ? (
                   <span style={{
                     position: 'absolute', bottom: 1, right: 1,
@@ -211,7 +228,7 @@ function ContactList({ players, onSelect, unread, search }) {
 }
 
 // ── DM thread ────────────────────────────────────────────────────────────────
-function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, sendSocketEvent, apiFetch, onThreadLoaded }) {
+function Thread({ partner, currentUserId, onBack, onAvatarClick, socketConnected, socketEvent, sendSocketEvent, apiFetch, onThreadLoaded }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -410,7 +427,7 @@ function Thread({ partner, currentUserId, onBack, socketConnected, socketEvent, 
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
-        <Avatar name={partner.username} image={partner.profileImage} size={38} />
+        <Avatar name={partner.username} image={partner.profileImage} size={38} onClick={partner.profileImage ? () => onAvatarClick?.(partner) : undefined} />
         <div style={{ flex: 1 }}>
           <div style={{ color: 'hsl(0 0% 95%)', fontWeight: 600, fontSize: 15 }}>{partner.username}</div>
           <div style={{ color: partner.isOnline ? 'hsl(145 40% 60%)' : 'hsl(240 5% 58%)', fontSize: 12 }}>
@@ -566,8 +583,18 @@ function ChatWidget({ currentUser }) {
   const [listError, setListError] = useState('');
   const [socketConnected, setSocketConnected] = useState(false);
   const [socketEvent, setSocketEvent] = useState(null);
+  const [enlargedProfile, setEnlargedProfile] = useState(null);
 
   const isLoggedIn = Boolean(currentUser?.id);
+
+  useEffect(() => {
+    if (!enlargedProfile) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setEnlargedProfile(null);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [enlargedProfile]);
   const socketRef = useRef(null);
   const socketConnectedRef = useRef(false);
   const socketEventQueueRef = useRef([]);
@@ -841,6 +868,65 @@ function ChatWidget({ currentUser }) {
 
   return (
     <>
+      {enlargedProfile && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={(enlargedProfile.name || 'Player') + ' profile picture'}
+          onClick={() => setEnlargedProfile(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10001,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            background: 'rgba(0, 0, 0, 0.82)',
+            cursor: 'zoom-out',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setEnlargedProfile(null)}
+            aria-label="Close enlarged profile picture"
+            style={{
+              position: 'absolute',
+              top: 20,
+              right: 20,
+              width: 40,
+              height: 40,
+              border: '1px solid rgba(255,255,255,0.28)',
+              borderRadius: '50%',
+              background: 'rgba(0,0,0,0.45)',
+              color: '#fff',
+              fontSize: 24,
+              lineHeight: 1,
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
+          <div onClick={(event) => event.stopPropagation()} style={{ cursor: 'default', textAlign: 'center' }}>
+            <img
+              src={enlargedProfile.image}
+              alt={(enlargedProfile.name || 'Player') + ' enlarged profile'}
+              style={{
+                display: 'block',
+                width: 'min(78vw, 420px)',
+                height: 'min(78vw, 420px)',
+                objectFit: 'cover',
+                borderRadius: '20px',
+                border: '3px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 18px 70px rgba(0,0,0,0.65)',
+              }}
+            />
+            <div style={{ marginTop: 12, color: '#fff', fontWeight: 700, fontSize: 16 }}>
+              {enlargedProfile.name || 'Player'}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Inline styles (scoped) */}
       <style>{`
         .cw-panel-wa {
@@ -931,6 +1017,7 @@ function ChatWidget({ currentUser }) {
               partner={partner}
               currentUserId={currentUser.id}
               onBack={() => setPartner(null)}
+              onAvatarClick={setEnlargedProfile}
               socketConnected={socketConnected}
               socketEvent={socketEvent}
               sendSocketEvent={sendSocketEvent}
@@ -1041,6 +1128,7 @@ function ChatWidget({ currentUser }) {
               <ContactList
                 players={filteredPlayers}
                 onSelect={setPartner}
+                onAvatarClick={setEnlargedProfile}
                 unread={unread}
                 search={search}
               />
