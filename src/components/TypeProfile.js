@@ -36,6 +36,7 @@ import {
   getStoredUserSnapshot,
   loginUser,
   signupUser,
+  updateUserProfile,
   verifyWalletTopupSession,
   withdrawFundsToWallet,
 } from '../utils/typingApi';
@@ -95,10 +96,14 @@ const medalColour = (place) => {
  *   initials  {string}  – fallback text (e.g. "JD")
  *   size      {number}  – diameter in px (default 96)
  */
-function AvatarBadge({ initials = 'TA', size = 96 }) {
-  const [imgSrc, setImgSrc] = useState(() => loadBadgeImage());
+function AvatarBadge({ initials = 'TA', size = 96, image = '', onImageChange }) {
+  const [imgSrc, setImgSrc] = useState(() => image || loadBadgeImage());
   const [hovered, setHovered] = useState(false);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    setImgSrc(image || loadBadgeImage());
+  }, [image]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -124,6 +129,7 @@ function AvatarBadge({ initials = 'TA', size = 96 }) {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         setImgSrc(dataUrl);
         saveBadgeImage(dataUrl);
+        onImageChange?.(dataUrl);
       };
       img.src = ev.target.result;
     };
@@ -136,6 +142,7 @@ function AvatarBadge({ initials = 'TA', size = 96 }) {
     e.stopPropagation();
     setImgSrc(null);
     removeBadgeImage();
+    onImageChange?.('');
   };
 
   return (
@@ -287,6 +294,28 @@ export default function TypeProfile() {
     setCurrentUser(user);
     window.dispatchEvent(new Event(USER_CHANGE_EVENT));
   }, []);
+
+  const handleProfileImageChange = useCallback(async (profileImage) => {
+    if (!currentUser?.id) return;
+    try {
+      const updatedUser = await updateUserProfile(currentUser.id, { profileImage });
+      applyFreshUserState(updatedUser);
+    } catch (error) {
+      setAuthNotice(error.message || 'Could not save your profile picture.');
+    }
+  }, [applyFreshUserState, currentUser?.id]);
+
+  useEffect(() => {
+    const legacyImage = loadBadgeImage();
+    if (!currentUser?.id || currentUser.profileImage || !legacyImage) return;
+    let cancelled = false;
+    updateUserProfile(currentUser.id, { profileImage: legacyImage })
+      .then((updatedUser) => {
+        if (!cancelled) applyFreshUserState(updatedUser);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [applyFreshUserState, currentUser?.id, currentUser?.profileImage]);
 
   const loadProfile = useCallback(async () => {
     const requestId = profileRequestRef.current + 1;
@@ -624,7 +653,7 @@ export default function TypeProfile() {
 
           {/* Identity */}
           <div className="tp-identity">
-            <AvatarBadge initials={initials} size={92} />
+            <AvatarBadge initials={initials} size={92} image={currentUser.profileImage} onImageChange={handleProfileImageChange} />
             <div className="tp-identity__info">
               <h1 className="tp-identity__name">{currentUser.username}</h1>
               <span className="tp-identity__tier">{currentUser.tier || 'Standard'} Tier</span>
@@ -892,9 +921,9 @@ export default function TypeProfile() {
                 <span className="tp-section-head__sub">Your profile badge — visible in races and standings</span>
               </div>
               <div className="tp-badge-editor">
-                <AvatarBadge initials={initials} size={110} />
+                <AvatarBadge initials={initials} size={110} image={currentUser.profileImage} onImageChange={handleProfileImageChange} />
                 <div className="tp-badge-editor__hint">
-                  <p>Click the badge to upload a custom photo.<br />Supports JPG, PNG, WebP. Stored locally on this device.</p>
+                  <p>Click the badge to upload a custom photo.<br />Supports JPG, PNG, WebP. Saved to your TypeArena profile and visible in races and chat.</p>
                 </div>
               </div>
 
