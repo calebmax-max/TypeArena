@@ -3,7 +3,7 @@
     name: typearena-api
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --workers 1 --timeout 120 --graceful-timeout 30 --keep-alive 5 wsgi:application
+    startCommand: gunicorn --workers 1 --threads 100 --timeout 120 --graceful-timeout 30 --keep-alive 5 wsgi:application
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION

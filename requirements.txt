@@ -6,5 +6,4 @@ gunicorn>=23.0,<24.0
 python-dotenv
 flask-sock
 flask-socketio>=5.3,<6.0
-gevent
-gevent-websocket>=0.10.1,<0.11
+simple-websocket>=1.0,<2.0

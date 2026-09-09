@@ -119,7 +119,8 @@ WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 5
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 
-socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='gevent')
+SOCKETIO_ASYNC_MODE = os.getenv('TYPEARENA_SOCKETIO_ASYNC_MODE', 'threading').strip() or 'threading'
+socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode=SOCKETIO_ASYNC_MODE)
 app.extensions['socketio'] = socketio
 
 
