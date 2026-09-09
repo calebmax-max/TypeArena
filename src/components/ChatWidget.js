@@ -872,7 +872,7 @@ function ChatWidget({ currentUser }) {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={(enlargedProfile.name || 'Player') + ' profile picture'}
+          aria-label={(enlargedProfile.username || enlargedProfile.name || 'Player') + ' profile picture'}
           onClick={() => setEnlargedProfile(null)}
           style={{
             position: 'fixed',
@@ -909,8 +909,8 @@ function ChatWidget({ currentUser }) {
           </button>
           <div onClick={(event) => event.stopPropagation()} style={{ cursor: 'default', textAlign: 'center' }}>
             <img
-              src={enlargedProfile.image}
-              alt={(enlargedProfile.name || 'Player') + ' enlarged profile'}
+              src={enlargedProfile.profileImage || enlargedProfile.image}
+              alt={(enlargedProfile.username || enlargedProfile.name || 'Player') + ' enlarged profile'}
               style={{
                 display: 'block',
                 width: 'min(78vw, 420px)',
@@ -922,7 +922,7 @@ function ChatWidget({ currentUser }) {
               }}
             />
             <div style={{ marginTop: 12, color: '#fff', fontWeight: 700, fontSize: 16 }}>
-              {enlargedProfile.name || 'Player'}
+              {enlargedProfile.username || enlargedProfile.name || 'Player'}
             </div>
           </div>
         </div>
