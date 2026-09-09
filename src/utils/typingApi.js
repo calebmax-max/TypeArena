@@ -865,6 +865,14 @@ export const fetchLiveRaceByInvite = async (inviteCode) => {
   return await parseResponse(response);
 };
 
+export const startLiveRaceRoom = async (roomId) => {
+  const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/start`), {
+    method: 'POST',
+    headers: buildHeaders(),
+  });
+  return await parseResponse(response);
+};
+
 export const cancelLiveRaceRoom = async (roomId) => {
   const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/cancel`), {
     method: 'POST',

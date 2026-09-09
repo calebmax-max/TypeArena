@@ -957,6 +957,7 @@ export default function Play({ practicePage = false }){
     inviteCode: '',
     password: '',
     customInviteCode: '',
+    maxPlayers: 2,
   });
   const [tournamentId, setTournamentId] = useState('');
   // ── new feature state ──────────────────────────────────────────────────────
@@ -1316,6 +1317,7 @@ export default function Play({ practicePage = false }){
     syncRoomClock,
     startLiveRace,
     createFriendBattle,
+    hostStartFriendBattle,
     joinFriendBattle,
     cancelPrivateRoom,
     leaveLiveRoom,
@@ -2558,7 +2560,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   <span className="result-label">{room.mode}</span>
                   <span className="result-value">{room.status}</span>
                   <p>
-                    {room.players?.length || 0}/2 players | {room.spectators || 0} spectators
+                    {room.players?.length || 0}/{room.maxPlayers || 2} players | {room.spectators || 0} spectators
                   </p>
                   {room.status === 'racing' && (
                     <button
@@ -2652,6 +2654,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             <button className="btn btn-outline-light" onClick={copyInviteLink}>
               Copy Link
             </button>
+            {liveRoom?.isPrivate && String(liveRoom?.hostUserId) === String(currentUser?.id) && liveRoom?.status === 'waiting' && (
+              <button className="btn btn-primary" onClick={hostStartFriendBattle} disabled={loadingLive || (liveRoom?.players?.length || 0) < 2}>
+                {loadingLive ? 'Starting...' : 'Start Race'}
+              </button>
+            )}
             {liveRoom?.isPrivate ? (
               <button className="btn btn-outline-danger" onClick={cancelPrivateRoom} disabled={loadingLive}>
                 {loadingLive ? 'Canceling Room…' : 'Cancel Room'}
@@ -2851,6 +2858,20 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           </div>
 
           {liveRoom && (
+            liveRoom.players?.length > 2 ? (
+              <div className="live-board" style={{ marginBottom: '1rem' }}>
+                <div className="live-board__header"><h2>Live Leaderboard</h2><span>{liveRoom.players.length}/{liveRoom.maxPlayers || 2} racers</span></div>
+                <div className="live-board__grid">
+                  {[...liveRoom.players].sort((left, right) => Number(right.progress || 0) - Number(left.progress || 0)).map((player, index) => (
+                    <div key={player.userId} className="result-card">
+                      <span className="result-label">#{index + 1} {String(player.userId) === String(currentUser?.id) ? 'You' : player.username}</span>
+                      <span className="result-value">{Number(player.progress || 0)}%</span>
+                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem' }}>{Number(player.currentWpm || 0).toFixed(0)} WPM � {Number(player.currentAccuracy || 0).toFixed(0)}%</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
             <div className="opponent-panel">
               <div className="opponent-panel__item">
                 {currentUser?.profileImage && <img src={currentUser.profileImage} alt="Your profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>You</span>
@@ -2889,6 +2910,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 <strong>{liveRoom.spectators || 0}</strong>
               </div>
             </div>
+            )
           )}
 
           <div className="typing-area">

@@ -41,6 +41,10 @@ export default function PrivateRoomPanel({
           }
           placeholder="Invite code"
         />
+        <label className="friend-battle-player-limit">
+          Max players
+          <input type="number" min="2" max="10" value={friendBattle.maxPlayers} onChange={(event) => setFriendBattle((prev) => ({ ...prev, maxPlayers: Math.max(2, Math.min(10, Number(event.target.value) || 2)) }))} />
+        </label>
         <input
           value={friendBattle.password}
           onChange={(event) =>

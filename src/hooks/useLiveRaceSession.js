@@ -8,6 +8,7 @@ import {
   cancelLiveRaceRoom,
   fetchLiveRaceRoom,
   queueLiveRace,
+  startLiveRaceRoom,
   submitLiveRaceResult,
   updateLiveRaceHeartbeat,
 } from '../utils/typingApi';
@@ -374,6 +375,7 @@ export function useLiveRaceSession({
         isPrivate: true,
         inviteCode: friendBattle.customInviteCode.trim(),
         password: friendBattle.password,
+        maxPlayers: friendBattle.maxPlayers,
         excludeContentIds: getUsedContentIds(mode, language),
       });
 
@@ -405,6 +407,7 @@ export function useLiveRaceSession({
     currentUser,
     duration,
     friendBattle.customInviteCode,
+    friendBattle.maxPlayers,
     friendBattle.password,
     getUsedContentIds,
     language,
@@ -416,6 +419,22 @@ export function useLiveRaceSession({
     showNotice,
     startQueuedRoom,
   ]);
+
+  const hostStartFriendBattle = useCallback(async () => {
+    if (!liveRoom?.id) return;
+    setLoadingLive(true);
+    setLiveAction('starting');
+    try {
+      const response = await startLiveRaceRoom(liveRoom.id);
+      startQueuedRoom(response.room, { message: response.message || 'Race countdown started.', type: 'success' });
+      refreshFeed();
+    } catch (error) {
+      showNotice(error.message || 'Could not start the private room.', 'error');
+    } finally {
+      setLoadingLive(false);
+      setLiveAction(null);
+    }
+  }, [liveRoom?.id, refreshFeed, showNotice, startQueuedRoom]);
 
   const joinFriendBattle = useCallback(async () => {
     if (currentUser === undefined) return;
@@ -759,6 +778,7 @@ export function useLiveRaceSession({
     buildRoomResultPayload,
     startLiveRace,
     createFriendBattle,
+    hostStartFriendBattle,
     joinFriendBattle,
     requestRematch,
     cancelPrivateRoom: leaveLiveRoomAndReset,

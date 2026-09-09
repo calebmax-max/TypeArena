@@ -2309,6 +2309,8 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'totalEscrow': float(room.get('totalEscrow') or 0),
         'winnerTakesAll': bool(room.get('winnerTakesAll')),
         'isPrivate': bool(room.get('isPrivate')),
+        'hostUserId': room.get('hostUserId'),
+        'maxPlayers': max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE))),
         'hasPassword': bool(room.get('password')),
         'tournamentId': room.get('tournamentId'),
         'spectators': spectator_count,
@@ -5856,6 +5858,12 @@ def queue_live_race():
             duration = int(payload.get('duration') or 60)
             tournament_id = payload.get('tournamentId')
             is_private = bool(payload.get('isPrivate'))
+            requested_max_players = payload.get('maxPlayers', TOURNAMENT_MATCH_SIZE)
+            try:
+                requested_max_players = int(requested_max_players)
+            except (TypeError, ValueError):
+                return jsonify({'message': 'Max players must be a number between 2 and 10.'}), 400
+            max_players = max(2, min(10, requested_max_players)) if is_private else TOURNAMENT_MATCH_SIZE
             invite_code = str(payload.get('inviteCode') or '').strip().upper()
             room_password = str(payload.get('password') or '').strip()
             winner_prize = float(payload.get('winnerPrize') or 0)
@@ -5892,13 +5900,17 @@ def queue_live_race():
                     return jsonify({'message': 'Friend battle room not found.'}), 404
                 if room and room.get('password') and room.get('password') != room_password:
                     return jsonify({'message': 'Private room password is incorrect.'}), 403
-                if room and all(existing['userId'] != user['id'] for existing in room['players']) and len(room['players']) >= TOURNAMENT_MATCH_SIZE:
+                room_max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
+                if room and all(existing['userId'] != user['id'] for existing in room['players']) and len(room['players']) >= room_max_players:
                     return jsonify({'message': 'This private room is already full.'}), 400
                 if room and all(existing['userId'] != user['id'] for existing in room['players']):
                     room['players'].append(player_snapshot)
                 if room:
-                    room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
-                    room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
+                    # Private-room hosts decide when the group is ready. Public
+                    # matchmaking remains an immediate 1v1 start.
+                    if not room.get('isPrivate'):
+                        room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
+                        room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
                     _save_live_room(cur, room)
                     conn.commit()
                     return jsonify(
@@ -5980,6 +5992,8 @@ def queue_live_race():
                 'inviteCode': generated_invite,
                 'password': room_password if is_private else '',
                 'isPrivate': is_private,
+                'hostUserId': user['id'] if is_private else None,
+                'maxPlayers': max_players,
                 'winnerTakesAll': winner_takes_all,
                 'stakeAmount': stake_amount,
                 'escrow': {},
@@ -6047,6 +6061,34 @@ def get_live_race_by_invite(invite_code: str):
             viewer = _get_user_from_header(conn)
             viewer_user_id = int(viewer['id']) if viewer else None
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
+    finally:
+        _return_connection(conn)
+
+
+@app.post('/api/live-races/<room_id>/start')
+def start_live_race_room(room_id: str):
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            room = _get_live_room(cur, room_id, for_update=True)
+            if not room:
+                return jsonify({'message': 'Live race room not found.'}), 404
+            if not room.get('isPrivate'):
+                return jsonify({'message': 'Only private-room hosts can start a room.'}), 400
+            if str(room.get('hostUserId')) != str(user['id']):
+                return jsonify({'message': 'Only the room host can start this race.'}), 403
+            if room.get('status') != 'waiting':
+                return jsonify({'message': 'This room has already started.'}), 400
+            if len(room.get('players', [])) < 2:
+                return jsonify({'message': 'At least two players are required to start.'}), 400
+            room['status'] = 'countdown'
+            room['startedAt'] = _now_iso()
+            _save_live_room(cur, room)
+            conn.commit()
+            return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True, 'message': 'Race countdown started.'})
     finally:
         _return_connection(conn)
 
