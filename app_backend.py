@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 import os
 import math
@@ -1080,12 +1079,17 @@ def _season_name() -> str:
     return _get_current_season_name()
 
 
-def _tier_for_user(user: Dict[str, Any]) -> str:
+def _tier_for_user(user: Dict[str, Any], thresholds: Dict[str, int] | None = None) -> str:
     """
     Tier is determined only by the current season point thresholds.
+
+    `thresholds` can be passed in by callers that already loaded site
+    settings (e.g. the leaderboard endpoint looping over many users) to
+    avoid re-fetching the same config from the DB for every single row.
+    If omitted, thresholds are loaded fresh (fine for one-off lookups).
     """
     season_pts = _safe_int(user.get('season_points_stored') or user.get('seasonPoints') or 0)
-    return _tier_for_season_points(season_pts)
+    return _tier_for_season_points(season_pts, thresholds)
 
 
 def _store_perks_from_owned_items(owned_items: list[str] | set[str] | tuple[str, ...]) -> Dict[str, Any]:
@@ -1099,45 +1103,99 @@ def _store_perks_from_owned_items(owned_items: list[str] | set[str] | tuple[str,
     }
 
 
-def _competitive_season_points(
-    user: Dict[str, Any],
+# Season points are now awarded/deducted per race as they happen, scaled by
+# how competitive that race mode actually is, instead of being recomputed
+# from lifetime (or even season-aggregate) stats on every request. This is
+# what makes a defeat cost points, and what makes a tournament win worth
+# more than a 1v1/private-room win, which in turn is worth far more than a
+# practice run.
+SEASON_RACE_POINTS: Dict[str, Dict[str, int]] = {
+    # Tournaments are the highest-stakes competitive mode: biggest reward
+    # for winning, biggest hit for losing.
+    'tournament': {'win': 60, 'loss': -22},
+    # 1v1 matchmaking and private-room battles are both "versus" play —
+    # real opponents, but lower stakes than a paid tournament bracket.
+    'versus': {'win': 28, 'loss': -12},
+}
+# Practice (solo) races have no opponent and can't be lost, so they only
+# ever trickle in a small flat reward — never more than this, regardless
+# of how fast the run was.
+PRACTICE_SEASON_POINTS_CAP = 10
+
+
+def _season_points_delta_for_race(
     *,
-    live_races: int = 0,
-    tournament_entries: int = 0,
-    tournament_payouts: float = 0.0,
-    live_earnings: float = 0.0,
+    race_category: str,
+    did_win: bool,
+    wpm: float,
+    accuracy: float,
+    placement: int = 1,
+    total_players: int = 2,
     owned_items: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> int:
-    wpm = _safe_float(user.get('wpm') or 0)
-    accuracy = _safe_float(user.get('accuracy') or 0)
-    wins = _safe_int(user.get('wins') or 0)
-    total_races = _safe_int(user.get('total_races') or 0)
+    """
+    Points earned or lost from a single just-completed race, meant to be
+    added directly onto season_points_stored (see _apply_season_points_delta).
 
-    base_points = (wpm * 2.4) + (accuracy * 1.6) + (wins * 24) + (min(total_races, 120) * 0.5)
+    race_category is one of:
+      - 'tournament': a live race that belongs to a paid tournament bracket
+      - 'versus':     a live race that is 1v1 matchmaking or a private room
+      - 'practice':   a solo practice run with no opponent
 
-    consistency_bonus = 0
-    if accuracy >= 98:
-        consistency_bonus = 45
-    elif accuracy >= 95:
-        consistency_bonus = 25
-
-    speed_bonus = 0
-    if wpm >= 120:
-        speed_bonus = 40
-    elif wpm >= 100:
-        speed_bonus = 20
-
-    activity_points = (min(max(live_races, 0), 60) * 2) + (min(max(tournament_entries, 0), 20) * 5)
-    earnings_points = min(120, round(max((tournament_payouts + live_earnings), 0.0) / 60))
-
-    subtotal = base_points + consistency_bonus + speed_bonus + activity_points + earnings_points
+    placement/total_players describe where this player finished in a room
+    that can hold more than two racers (currently only tournament rooms —
+    matchmaking and private rooms are always exactly 2 players). They only
+    affect the size of a *loss*: for a normal 2-player race the scale below
+    always works out to 1.0, i.e. an unchanged flat loss.
+    """
+    wpm = max(0.0, _safe_float(wpm))
+    accuracy = max(0.0, _safe_float(accuracy))
     perks = _store_perks_from_owned_items(owned_items or [])
-    return int(round(subtotal * float(perks.get('seasonPointsMultiplier') or 1.0)))
+    multiplier = float(perks.get('seasonPointsMultiplier') or 1.0)
+
+    if race_category == 'practice':
+        # Small, gentle, hard-capped — grinding practice should never be
+        # able to substitute for playing real matches.
+        delta = min(PRACTICE_SEASON_POINTS_CAP, max(2, round(wpm / 15)))
+        return int(round(delta * multiplier))
+
+    tier_points = SEASON_RACE_POINTS.get(race_category, SEASON_RACE_POINTS['versus'])
+
+    if not did_win:
+        # Defeats always cost points. The multiplier is a *reward* perk, so
+        # it never softens a loss. In a room bigger than 2 players (only
+        # tournaments can be), a close runner-up loses far less than
+        # someone who finished last — placement 2 of 2 always scales to
+        # a full loss, matching the old flat behaviour exactly.
+        total_players = max(2, total_players)
+        placement = min(max(placement, 2), total_players)
+        scale = (placement - 1) / (total_players - 1)
+        return int(round(tier_points['loss'] * scale))
+
+    skill_bonus = 0
+    if accuracy >= 98:
+        skill_bonus += 6
+    elif accuracy >= 95:
+        skill_bonus += 3
+    if wpm >= 120:
+        skill_bonus += 8
+    elif wpm >= 100:
+        skill_bonus += 4
+
+    delta = tier_points['win'] + skill_bonus
+    return int(round(delta * multiplier))
 
 
-def _season_points_for_user(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> int:
-    tournament_entries = _safe_int(user.get('tournament_entries') or user.get('tournamentEntries') or 0)
-    return _competitive_season_points(user, tournament_entries=tournament_entries, owned_items=owned_items)
+def _apply_season_points_delta(cur, *, user_id: int, delta: int) -> int:
+    """Apply one race's point delta onto the running season total, floored at 0."""
+    cur.execute(
+        'UPDATE users SET season_points_stored = GREATEST(0, season_points_stored + %s) WHERE id = %s',
+        (delta, user_id),
+    )
+    cur.execute('SELECT season_points_stored FROM users WHERE id = %s', (user_id,))
+    row = cur.fetchone() or {}
+    _clear_leaderboard_cache()
+    return int(row.get('season_points_stored') or 0)
 
 
 def _referral_code_for_user(user: Dict[str, Any]) -> str:
@@ -1429,11 +1487,97 @@ def _ensure_season_tables(cur) -> None:
         cur.execute(
             "ALTER TABLE users ADD COLUMN season_wins INT NOT NULL DEFAULT 0 AFTER season_races"
         )
+    cur.execute("SHOW COLUMNS FROM users LIKE 'season_losses'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN season_losses INT NOT NULL DEFAULT 0 AFTER season_wins"
+        )
     cur.execute("SHOW COLUMNS FROM users LIKE 'season_earnings'")
     if not cur.fetchone():
         cur.execute(
             "ALTER TABLE users ADD COLUMN season_earnings DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER season_wins"
         )
+
+
+def _ensure_race_history_audit_columns(cur) -> None:
+    """
+    Adds an audit trail to race_history so every race's category
+    (practice/versus/tournament) and the season-points delta it produced
+    are recorded permanently, instead of being computed and thrown away.
+
+    race_category is left NULL-able with no default specifically so we can
+    tell "written before this column existed" (NULL) apart from a genuine
+    new row (always explicitly set) — that's what lets
+    _backfill_legacy_race_history below run safely exactly once.
+    """
+    cur.execute("SHOW COLUMNS FROM race_history LIKE 'race_category'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE race_history ADD COLUMN race_category VARCHAR(20) NULL AFTER place_position"
+        )
+    cur.execute("SHOW COLUMNS FROM race_history LIKE 'points_delta'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE race_history ADD COLUMN points_delta INT NOT NULL DEFAULT 0 AFTER race_category"
+        )
+
+
+def _backfill_legacy_race_history(cur) -> None:
+    """
+    One-time, idempotent correction for race_history rows written before
+    race_category existed — which is also every row written before the
+    solo-practice win-tracking fix. Those old practice rows could carry
+    place_position=1 for merely beating your own rolling average, which
+    then fed straight into users.wins/total_races/wpm/accuracy forever.
+
+    Only rows with race_category still NULL get touched, so after the
+    first successful run this is a no-op on every subsequent boot.
+    Live-race rows are recognisable because the server (never the client)
+    always names them 'live_<roomId>_<userId>' — anything else reaching
+    race_history came from the solo/practice endpoint.
+    """
+    cur.execute("SELECT 1 FROM race_history WHERE race_category IS NULL LIMIT 1")
+    if not cur.fetchone():
+        return
+
+    cur.execute(
+        """
+        UPDATE race_history
+        SET race_category = IF(LEFT(race_code, 5) = 'live_', 'versus', 'practice')
+        WHERE race_category IS NULL
+        """
+    )
+    # Neutralise the actual bug: a practice row was never a real win, so it
+    # should never have been recorded as place_position=1.
+    cur.execute(
+        """
+        UPDATE race_history
+        SET place_position = 2
+        WHERE race_category = 'practice' AND place_position = 1
+        """
+    )
+    # Recompute every user's lifetime stats from the now-corrected history
+    # in one pass, rather than only the users touched by this boot's races.
+    cur.execute(
+        """
+        UPDATE users u
+        JOIN (
+            SELECT
+                user_id,
+                COUNT(*) AS total_races,
+                SUM(CASE WHEN place_position = 1 THEN 1 ELSE 0 END) AS wins,
+                AVG(wpm) AS avg_wpm,
+                AVG(accuracy) AS avg_accuracy
+            FROM race_history
+            GROUP BY user_id
+        ) agg ON agg.user_id = u.id
+        SET u.total_races = agg.total_races,
+            u.wins         = agg.wins,
+            u.wpm          = ROUND(agg.avg_wpm, 1),
+            u.accuracy     = ROUND(agg.avg_accuracy, 1)
+        """
+    )
+    _clear_leaderboard_cache()
 
 
 def _get_current_season_name() -> str:
@@ -1475,15 +1619,18 @@ def _ensure_season_reset(conn) -> None:
             SELECT id, username, season_name, season_points_stored, season_races, season_wins, season_earnings
             FROM users
             WHERE season_name IS NOT NULL AND season_name != %s AND season_points_stored > 0
-            ORDER BY season_points_stored DESC
+            ORDER BY season_points_stored DESC, season_wins DESC
             """,
             (current_season,),
         )
         ending_players = cur.fetchall()
         now_dt = datetime.utcnow()
+        # Load thresholds once for the whole snapshot pass instead of once
+        # per player (was re-querying site_settings for every row).
+        snapshot_thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
         for rank_idx, player in enumerate(ending_players, start=1):
             old_season = player.get('season_name') or 'Unknown'
-            tier = _tier_for_season_points(int(player.get('season_points_stored') or 0), rank_idx)
+            tier = _tier_for_season_points(int(player.get('season_points_stored') or 0), snapshot_thresholds)
             cur.execute(
                 """
                 INSERT INTO season_snapshots
@@ -1514,31 +1661,56 @@ def _ensure_season_reset(conn) -> None:
                 season_points_stored = 0,
                 season_races         = 0,
                 season_wins          = 0,
+                season_losses        = 0,
                 season_earnings      = 0
             """,
             (current_season,),
         )
     conn.commit()
+    # The season just rolled over — any cached leaderboard payload now
+    # reflects the wrong season's points, so drop it immediately rather
+    # than waiting for the TTL to expire.
+    _clear_leaderboard_cache()
 
 
-def _increment_season_stats(cur, *, user_id: int, wpm: float, accuracy: float, earnings: float, did_win: bool) -> None:
-    """Accumulate per-season counters on every race submission."""
+def _increment_season_stats(
+    cur,
+    *,
+    user_id: int,
+    earnings: float,
+    did_win: bool,
+    delta: int,
+    race_category: str = 'versus',
+) -> None:
+    """
+    Accumulate per-season counters and apply this race's already-computed
+    season-points delta (see _season_points_delta_for_race — computed once
+    by the caller so the number applied here always matches what got
+    written to race_history.points_delta). race_category controls whether
+    a non-win counts as a loss: practice races have no opponent, so they
+    never register as a loss.
+    """
     current_season = _get_current_season_name()
+    is_competitive = race_category in ('tournament', 'versus')
     cur.execute(
         """
         UPDATE users
         SET season_name     = %s,
             season_races    = season_races + 1,
             season_wins     = season_wins + %s,
+            season_losses   = season_losses + %s,
             season_earnings = season_earnings + %s
         WHERE id = %s
         """,
-        (current_season, 1 if did_win else 0, max(0.0, earnings), user_id),
+        (
+            current_season,
+            1 if did_win else 0,
+            1 if (is_competitive and not did_win) else 0,
+            max(0.0, earnings),
+            user_id,
+        ),
     )
-    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
-    refreshed_user = cur.fetchone()
-    if refreshed_user:
-        _refresh_season_points_for_user(cur, refreshed_user)
+    _apply_season_points_delta(cur, user_id=user_id, delta=delta)
 
 
 def _clear_leaderboard_cache() -> None:
@@ -1546,45 +1718,29 @@ def _clear_leaderboard_cache() -> None:
         _leaderboard_cache.update({'key': None, 'expires_at': 0, 'payload': None})
 
 
-def _refresh_season_points_for_user(cur, user: dict) -> int:
-    """
-    Recompute and persist season_points_stored for a single user based on
-    their current-season counters, then return the new value.
-    """
-    owned = _owned_store_items_for_user(cur.connection if hasattr(cur, 'connection') else None, int(user.get('id') or 0))
-    tournament_entries = _safe_int(user.get('tournament_entries') or user.get('tournamentEntries') or 0)
-    if hasattr(cur, 'connection') and cur.connection is not None:
-        try:
-            cur.execute(
-                'SELECT COUNT(*) AS total FROM tournament_joins WHERE user_id = %s AND paid_amount > 0',
-                (int(user.get('id') or 0),),
-            )
-            row = cur.fetchone() or {}
-            tournament_entries = int(row.get('total') or tournament_entries)
-        except Exception:
-            pass
-    pts = _competitive_season_points(
-        user,
-        live_races=int(user.get('season_races') or 0),
-        tournament_entries=tournament_entries,
-        tournament_payouts=float(user.get('season_earnings') or 0),
-        live_earnings=0.0,
-        owned_items=owned,
-    )
-    cur.execute(
-        "UPDATE users SET season_points_stored = %s WHERE id = %s",
-        (pts, int(user.get('id') or 0)),
-    )
-    _clear_leaderboard_cache()
-    return pts
+# NOTE: season points used to be fully recomputed from aggregate stats on
+# demand (see the old _competitive_season_points/_refresh_season_points_for_user
+# pair). That's gone now — season_points_stored is a running total built up
+# race-by-race via _apply_season_points_delta, so there's nothing to "refresh"
+# from scratch anymore. A store perk that boosts season points (e.g.
+# perk_season_booster) is applied at the moment each future race's delta is
+# computed, not retroactively to points already earned.
 
 
-def _tier_for_season_points(season_points: int, rank: int = 0) -> str:
+def _tier_for_season_points(season_points: int, thresholds: Dict[str, int] | None = None) -> str:
     """
     Determines tier from adjustable season-point thresholds.
-    Scores below the configured Bronze threshold remain Bronze.
+
+    `thresholds` should be a dict like _default_leaderboard_tiers() returns.
+    Pass it in explicitly when computing tiers for many users in a loop
+    (e.g. building the leaderboard) so this doesn't hit the DB per user.
+
+    Scores below the configured Bronze threshold are 'Unranked' rather than
+    silently defaulting to Bronze — this makes the admin-configured Bronze
+    value actually mean something instead of being unused.
     """
-    thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
+    if thresholds is None:
+        thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
     if season_points >= thresholds['grandmaster']:
         return 'Grandmaster'
     if season_points >= thresholds['diamond']:
@@ -1593,7 +1749,9 @@ def _tier_for_season_points(season_points: int, rank: int = 0) -> str:
         return 'Gold'
     if season_points >= thresholds['silver']:
         return 'Silver'
-    return 'Bronze'
+    if season_points >= thresholds['bronze']:
+        return 'Bronze'
+    return 'Unranked'
 
 
 def _equip_field_for_category(category: str) -> str | None:
@@ -2693,7 +2851,11 @@ def _wallet_capabilities() -> Dict[str, Any]:
     }
 
 
-def _safe_user_with_owned_items(user: Dict[str, Any], owned_items: list[str] | set[str] | tuple[str, ...]) -> Dict[str, Any]:
+def _safe_user_with_owned_items(
+    user: Dict[str, Any],
+    owned_items: list[str] | set[str] | tuple[str, ...],
+    tier_thresholds: Dict[str, int] | None = None,
+) -> Dict[str, Any]:
     total_races = _safe_int(user.get('total_races') or 0)
     wins = _safe_int(user.get('wins') or 0)
     owned_list = list(owned_items or [])
@@ -2711,9 +2873,9 @@ def _safe_user_with_owned_items(user: Dict[str, Any], owned_items: list[str] | s
         'gamesPlayed': total_races,
         'wins': wins,
         'balance': _safe_float(user.get('balance') or 0),
-        'tier': _tier_for_user(user),
+        'tier': _tier_for_user(user, tier_thresholds),
         'season': _season_name(),
-        'seasonPoints': _safe_int(user.get('season_points_stored') or _season_points_for_user(user, owned_list)),
+        'seasonPoints': _safe_int(user.get('season_points_stored') or 0),
         'premium': wins >= 10 or _safe_float(user.get('balance') or 0) >= 5000,
         'aiCoachTip': _coach_tip_for_user(user),
         'ownedStoreItems': owned_list,
@@ -3042,13 +3204,33 @@ def _apply_user_performance_update(
     duration: Any,
     earnings: float,
     did_win: bool,
+    race_category: str = 'versus',
+    placement: int = 1,
+    total_players: int = 2,
 ) -> Dict[str, Any]:
     now_dt = datetime.utcnow()
+
+    # Compute the season-points delta once, up front, so the exact same
+    # number gets written to race_history.points_delta (the audit trail)
+    # and applied to the user's running season total — no risk of the two
+    # drifting apart.
+    connection = getattr(cur, 'connection', None)
+    owned_items = _owned_store_items_for_user(connection, user_id) if connection is not None else []
+    points_delta = _season_points_delta_for_race(
+        race_category=race_category,
+        did_win=did_win,
+        wpm=wpm,
+        accuracy=accuracy,
+        placement=placement,
+        total_players=total_players,
+        owned_items=owned_items,
+    )
+
     cur.execute(
         '''
         INSERT INTO race_history
-        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             username = VALUES(username),
             wpm = VALUES(wpm),
@@ -3056,9 +3238,14 @@ def _apply_user_performance_update(
             duration = VALUES(duration),
             place_position = VALUES(place_position),
             earnings = VALUES(earnings),
-            race_timestamp = VALUES(race_timestamp)
+            race_timestamp = VALUES(race_timestamp),
+            race_category = VALUES(race_category),
+            points_delta = VALUES(points_delta)
         ''',
-        (race_code, user_id, username, round(wpm, 1), round(accuracy, 1), duration, 1 if did_win else 2, earnings, now_dt),
+        (
+            race_code, user_id, username, round(wpm, 1), round(accuracy, 1), duration,
+            1 if did_win else 2, earnings, now_dt, race_category, points_delta,
+        ),
     )
     cur.execute(
         '''
@@ -3089,14 +3276,15 @@ def _apply_user_performance_update(
     )
     cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
     updated_user = cur.fetchone()
-    # Accumulate per-season counters so season_points_stored stays current
+    # Accumulate per-season counters and apply this race's point delta so
+    # season_points_stored stays current.
     _increment_season_stats(
         cur,
         user_id=user_id,
-        wpm=wpm,
-        accuracy=accuracy,
         earnings=earnings,
         did_win=did_win,
+        delta=points_delta,
+        race_category=race_category,
     )
     return updated_user
 
@@ -3115,6 +3303,25 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
 
     winner_user_id = room.get('winnerUserId')
     winner_prize = float(room.get('winnerPrize') or 0)
+    # Tournament bracket matches score at the top 'tournament' tier; both
+    # 1v1 matchmaking and private-room battles score as 'versus' — same
+    # tier for either, since a private room is just an invite-only 1v1/small
+    # group match rather than a lower-stakes mode.
+    race_category = 'tournament' if room.get('tournamentId') else 'versus'
+
+    # Matchmaking and private rooms are always exactly 2 players, but a
+    # tournament room can hold more (admin-configurable maxParticipants).
+    # Rank everyone by the same (wpm, accuracy) metric used to pick the
+    # winner so a close runner-up in a big room can be scored differently
+    # from someone who finished last — see _season_points_delta_for_race.
+    total_players = max(1, len(player_ids))
+
+    def _placement_sort_key(pid: int):
+        result = results.get(pid, {})
+        return (-float(result.get('wpm') or 0), -float(result.get('accuracy') or 0))
+
+    ranked_player_ids = sorted(player_ids, key=_placement_sort_key)
+    placements = {pid: idx + 1 for idx, pid in enumerate(ranked_player_ids)}
 
     # Use the caller's connection if provided â€” avoids an extra TCP round-trip
     _owns_conn = conn is None
@@ -3125,6 +3332,7 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
             for player in room.get('players', []):
                 user_id = int(player['userId'])
                 result = results.get(user_id, {})
+                did_win = user_id == winner_user_id
                 _apply_user_performance_update(
                     cur,
                     user_id=user_id,
@@ -3133,8 +3341,11 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
                     wpm=float(result.get('wpm') or 0),
                     accuracy=float(result.get('accuracy') or 0),
                     duration=room.get('duration'),
-                    earnings=winner_prize if user_id == winner_user_id else 0,
-                    did_win=user_id == winner_user_id,
+                    earnings=winner_prize if did_win else 0,
+                    did_win=did_win,
+                    race_category=race_category,
+                    placement=placements.get(user_id, total_players),
+                    total_players=total_players,
                 )
         if _owns_conn:
             conn.commit()
@@ -6083,10 +6294,9 @@ def store_purchase():
                     cur.execute(f'UPDATE users SET {equip_field}=%s WHERE id=%s', (item['id'], user['id']))
                 cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
                 updated_user = cur.fetchone()
-                if updated_user:
-                    _refresh_season_points_for_user(cur, updated_user)
-                    cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
-                    updated_user = cur.fetchone()
+                # A season-points perk (e.g. perk_season_booster) applies to
+                # this and future races' point deltas going forward — there's
+                # no retroactive recompute of points already banked.
             except ValueError as exc:
                 conn.rollback()
                 return jsonify({'message': str(exc)}), 400
@@ -6365,10 +6575,9 @@ def join_tournament(tournament_id: int):
                 'UPDATE tournament_joins SET paid_amount=%s WHERE tournament_id=%s AND paid_amount=0',
                 (entry_fee, tournament_id),
             )
-            for joined_user_id in joined_user_ids:
-                refreshed_joined_user = joined_users.get(joined_user_id)
-                if refreshed_joined_user:
-                    _refresh_season_points_for_user(cur, refreshed_joined_user)
+            # Tournament entry no longer feeds a season-points recompute here —
+            # points for this tournament are awarded per-match once results
+            # come in (see _persist_completed_live_race / race_category='tournament').
             cur.execute(
                 'UPDATE tournaments SET participants=%s, status=%s, start_time=%s WHERE id=%s',
                 (match_size, 'upcoming', datetime.utcnow() + timedelta(seconds=TOURNAMENT_START_DELAY_SECONDS), tournament_id),
@@ -6491,7 +6700,12 @@ def leaderboard():
                     WHERE status = 'completed' AND tournament_id IS NOT NULL
                     GROUP BY user_id
                 ) pp ON pp.user_id = u.id
-                ORDER BY u.season_points_stored DESC, u.wins DESC, u.wpm DESC
+                -- Tiebreak on this season's wins first (season_wins), not
+                -- lifetime career stats — two players tied on season points
+                -- should be separated by how they did *this season*. Lifetime
+                -- wins/wpm are kept only as a last-resort tiebreak for the
+                -- (very rare) case for perfectly tied season stats.
+                ORDER BY u.season_points_stored DESC, u.season_wins DESC, u.wins DESC, u.wpm DESC
                 LIMIT %s
                 """,
                 (limit,),
@@ -6499,6 +6713,9 @@ def leaderboard():
             users = cur.fetchall()
 
         owned_by_user = _owned_store_items_for_users(conn, [int(u.get('id') or 0) for u in users])
+        # Load tier thresholds once for the whole board instead of once per
+        # row — this was previously opening a new DB connection per user.
+        tier_thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
         board = []
         for idx, user in enumerate(users, start=1):
             user_with_rank = dict(user)
@@ -6506,6 +6723,7 @@ def leaderboard():
             row = _safe_user_with_owned_items(
                 user_with_rank,
                 owned_by_user.get(int(user.get('id') or 0), []),
+                tier_thresholds,
             )
             row['tournamentEntries'] = int(user.get('tournament_entries') or 0)
             row['tournamentPayouts'] = float(user.get('tournament_payouts') or 0)
@@ -7163,46 +7381,42 @@ def submit_race():
             if cur.fetchone():
                 return jsonify({'message': 'This race result has already been submitted.'}), 409
 
-        place = 1 if wpm >= float(user.get('wpm') or 0) else 2
+        # Solo practice has no opponent, so it is never a competitive "win" —
+        # that's reserved for real multiplayer results (see
+        # _persist_completed_live_race / did_win=user_id==winner_user_id).
+        # We still track whether the player beat their own rolling average,
+        # purely as a "personal best this run" signal for the response/UI —
+        # it does NOT feed into users.wins or race_history.place_position,
+        # which the live-race path also aggregates from. Previously this
+        # endpoint wrote its own place_position (1/2) into race_history and
+        # recomputed wpm/accuracy with a different formula than live races,
+        # so playing both modes corrupted the shared wins/wpm/accuracy stats
+        # that the leaderboard sorts and season points are built from.
+        beat_own_average = wpm >= float(user.get('wpm') or 0)
         earnings = int(max(50, round(wpm * 3)))
         now_dt = datetime.utcnow()
 
         with conn.cursor() as cur:
-            cur.execute(
-                '''
-                INSERT INTO race_history
-                (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''',
-                (race_code, user['id'], user['username'], round(wpm, 1), round(accuracy, 1), duration, place, earnings, now_dt),
-            )
-
-            total_races = int(user.get('total_races') or 0) + 1
-            wins = int(user.get('wins') or 0) + (1 if place == 1 else 0)
-            next_wpm = round((float(user.get('wpm') or 0) * 0.8) + (wpm * 0.2), 1)
-            next_accuracy = round((float(user.get('accuracy') or 0) * 0.8) + (accuracy * 0.2), 1)
-
-            cur.execute(
-                '''
-                UPDATE users
-                SET total_races=%s, wins=%s, wpm=%s, accuracy=%s, balance=balance+%s
-                WHERE id=%s
-                ''',
-                (total_races, wins, next_wpm, next_accuracy, earnings, user['id']),
-            )
-
-        with conn.cursor() as season_cur:
-            _increment_season_stats(
-                season_cur,
+            updated_user = _apply_user_performance_update(
+                cur,
                 user_id=user['id'],
+                username=user['username'],
+                race_code=race_code,
                 wpm=wpm,
                 accuracy=accuracy,
-                earnings=float(earnings),
-                did_win=(place == 1),
+                duration=duration,
+                earnings=earnings,
+                did_win=False,
+                race_category='practice',
             )
+            # Solo earnings still credit the player's balance directly here;
+            # _apply_user_performance_update intentionally doesn't touch
+            # balance since live races pay out prizes separately.
+            cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (earnings, user['id']))
 
         conn.commit()
 
+        updated_user = updated_user or {}
         return jsonify(
             {
                 'id': race_code,
@@ -7211,14 +7425,18 @@ def submit_race():
                 'wpm': round(wpm, 1),
                 'accuracy': round(accuracy, 1),
                 'duration': duration,
-                'place': place,
+                # Kept for backward compatibility with any client reading
+                # this field, but it's presentational only now — it no
+                # longer drives win-counting.
+                'place': 1 if beat_own_average else 2,
+                'personalBest': beat_own_average,
                 'earnings': earnings,
                 'timestamp': now_dt.isoformat() + 'Z',
                 'coachTip': _coach_tip_for_user(
                     {
-                        'wpm': next_wpm,
-                        'accuracy': next_accuracy,
-                        'wins': wins,
+                        'wpm': updated_user.get('wpm', wpm),
+                        'accuracy': updated_user.get('accuracy', accuracy),
+                        'wins': updated_user.get('wins', user.get('wins')),
                     }
                 ),
             }
@@ -7238,7 +7456,7 @@ def user_races(user_id: int):
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp
+                SELECT race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta
                 FROM race_history
                 WHERE user_id=%s
                 ORDER BY race_timestamp DESC
@@ -7258,6 +7476,8 @@ def user_races(user_id: int):
                 'place': int(row['place_position'] or 0),
                 'earnings': float(row['earnings'] or 0),
                 'timestamp': row['race_timestamp'].isoformat() + 'Z' if row.get('race_timestamp') else None,
+                'raceCategory': row.get('race_category') or 'versus',
+                'seasonPointsDelta': int(row.get('points_delta') or 0),
             }
             for row in rows
         ]
@@ -7358,6 +7578,8 @@ def _bootstrap_db() -> None:
                 _ensure_auth_token_column(cur)
                 _ensure_user_equipped_columns(cur)
                 _ensure_season_tables(cur)
+                _ensure_race_history_audit_columns(cur)
+                _backfill_legacy_race_history(cur)
             conn.commit()
         finally:
             _return_connection(conn)

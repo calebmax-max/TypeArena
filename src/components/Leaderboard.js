@@ -632,7 +632,7 @@ export default function Leaderboard({ currentUserUsername }) {
               <span className="col-rank"   role="columnheader">Rank</span>
               <span className="col-player" role="columnheader">Player</span>
               <span className="col-elo"    role="columnheader">Season Pts</span>
-              <span className="col-wpm"    role="columnheader">Peak WPM</span>
+              <span className="col-wpm"    role="columnheader">Avg WPM</span>
               <span className="col-tier"   role="columnheader">Tier</span>
               <span className="col-wins"   role="columnheader">Wins</span>
             </div>
