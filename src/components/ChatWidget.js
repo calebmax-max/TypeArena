@@ -672,7 +672,7 @@ function ChatWidget({ currentUser }) {
     }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      apiFetch(/api/chat/contacts?search=)
+      apiFetch(`/api/chat/contacts?search=${encodeURIComponent(query)}`)
         .then((contacts) => {
           if (!cancelled) setSearchResults(Array.isArray(contacts) ? contacts : []);
         })
