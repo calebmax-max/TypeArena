@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+﻿import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCurrentUser, fetchTournaments, fetchTournamentWinner, getStoredUserSnapshot, joinTournament } from '../utils/typingApi';
 import '../styles/Tournaments.css';
@@ -65,7 +65,7 @@ function CountdownStrip({ startTime, isFull }) {
 
   return (
     <div className="countdown-strip">
-      <span className="countdown-icon">▶</span>
+      <span className="countdown-icon">â–¶</span>
       {isFull ? `Starting in ${mm}:${ss}` : `Starts at ${new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
     </div>
   );
@@ -111,8 +111,8 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
   else if (!isLoggedIn) btnLabel = 'Sign in to join';
   else if (isProcessing) btnLabel = 'Joining...';
   else if (isFull) btnLabel = 'Lobby full';
-  else if (savings > 0) btnLabel = `Join — KES ${cost.toLocaleString()} (net)`;
-  else btnLabel = `Join — KES ${cost.toLocaleString()}`;
+  else if (savings > 0) btnLabel = `Join â€” KES ${cost.toLocaleString()} (net)`;
+  else btnLabel = `Join â€” KES ${cost.toLocaleString()}`;
 
   const btnDisabled = isProcessing || isFull || isCompleted || joinClosed;
 
@@ -128,7 +128,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
 
       {isCompleted && winner ? (
         <div className="prize-block prize-block--winner">
-          <p className="prize-label">🏆 Winner</p>
+          <p className="prize-label">ðŸ† Winner</p>
           <p className="prize-amount prize-amount--winner">
             {winner.username || winner.name || 'Unknown'}
           </p>
@@ -157,7 +157,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
 
       {savings > 0 && isLoggedIn && (
         <span className="cashback-badge">
-          ↩ KES {savings.toLocaleString()} cashback after entry
+          â†© KES {savings.toLocaleString()} cashback after entry
         </span>
       )}
 
@@ -171,7 +171,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
       )}
 
       {joinClosed && !isCompleted && (
-        <div className="cutoff-closed">Joining closed — match in progress</div>
+        <div className="cutoff-closed">Joining closed â€” match in progress</div>
       )}
 
       <LobbyBar joined={joinedPlayers} max={requiredPlayers} />
@@ -200,6 +200,10 @@ export default function Tournaments() {
   const [notice, setNotice] = useState(null);
   const [filter, setFilter] = useState('all');
   const [showPast, setShowPast] = useState(false);
+  useEffect(() => {
+    const activeRoom = tournaments.find((t) => t.roomId && ['upcoming', 'active'].includes(String(t.status || '').toLowerCase()));
+    if (activeRoom?.roomId && currentUser?.id) navigate(`/play?tournamentId=${activeRoom.id}&room=${encodeURIComponent(activeRoom.roomId)}`, { replace: true });
+  }, [currentUser?.id, navigate, tournaments]);
 
   // Derive live status from startTime client-side so cards update without a re-fetch
   // Duration comes from the tournament's matchDurationMins field (default 10 min)
@@ -229,7 +233,7 @@ export default function Tournaments() {
         setTournaments(nextTournaments);
         writeTournamentCache(nextTournaments);
       } catch (_) {
-        // silent refresh failures — don't disrupt the user
+        // silent refresh failures â€” don't disrupt the user
       } finally {
         if (isInitial && !cancelled) setLoading(false);
       }
@@ -240,7 +244,7 @@ export default function Tournaments() {
     // Re-fetch every 45 seconds to keep lobby counts and statuses current
     const pollId = setInterval(() => load(false), 45000);
 
-    // Also tick client-side status every 30 seconds for instant upcoming→active flips
+    // Also tick client-side status every 30 seconds for instant upcomingâ†’active flips
     const tickId = setInterval(() => {
       setTournaments((prev) => withLiveStatus(prev));
     }, 30000);
@@ -324,7 +328,7 @@ export default function Tournaments() {
         <div className="loading-state">Loading tournaments...</div>
       ) : filtered.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-icon">⬡</span>
+          <span className="empty-icon">â¬¡</span>
           <p>No {filter !== 'all' ? filter : ''} tournaments right now.</p>
           <p>Check back soon.</p>
         </div>
@@ -348,7 +352,7 @@ export default function Tournaments() {
             className="past-toggle"
             onClick={() => setShowPast((p) => !p)}
           >
-            <span>{showPast ? '▲' : '▼'}</span>
+            <span>{showPast ? 'â–²' : 'â–¼'}</span>
             Past Tournaments ({completedTournaments.length})
           </button>
           {showPast && (
@@ -369,3 +373,4 @@ export default function Tournaments() {
     </div>
   );
 }
+

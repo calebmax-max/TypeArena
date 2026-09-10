@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   calculateAccuracy,
   calculateWPM,
@@ -32,6 +32,7 @@ export function useLiveRaceSession({
   friendBattle,
   setFriendBattle,
   tournamentId,
+  initialRoomId,
   wpmFilter,
   generatedContentPassage,
   redirectToProfile,
@@ -201,7 +202,7 @@ export function useLiveRaceSession({
     // on EVERY call, including the local 250ms interpolation ticks that pass in
     // the same already-seen room object (no new network data). Since room.serverNow
     // is frozen at fetch time but Date.now() keeps moving, that made the offset
-    // drift further off with each tick and only snap back correct on the next poll —
+    // drift further off with each tick and only snap back correct on the next poll â€”
     // a sawtooth that differs per-client, so the two players' countdowns visibly
     // disagreed. Now we only re-derive the offset when a genuinely new serverNow
     // shows up (i.e. this room object came from a fresh server response).
@@ -327,7 +328,7 @@ export function useLiveRaceSession({
           totalContentCount: response.totalContentCount || 0,
         },
         {
-          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player…',
+          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another playerâ€¦',
           type: response.matched ? 'success' : 'info',
         }
       );
@@ -349,6 +350,7 @@ export function useLiveRaceSession({
     showNotice,
     startQueuedRoom,
     tournamentId,
+  initialRoomId,
     wpmFilter.max,
     wpmFilter.min,
   ]);
@@ -467,7 +469,7 @@ export function useLiveRaceSession({
         {
           message: response.message || (
             response.matched
-              ? 'Joined successfully. Opponent connected — race is starting.'
+              ? 'Joined successfully. Opponent connected â€” race is starting.'
               : 'Joined successfully. Waiting for the host to start.'
           ),
           type: response.matched ? 'success' : 'info',
@@ -643,6 +645,16 @@ export function useLiveRaceSession({
   useEffect(() => {
     liveRoomRef.current = liveRoom;
   }, [liveRoom]);
+  useEffect(() => {
+    if (!initialRoomId || liveRoom?.id || !currentUser?.id) return;
+    let cancelled = false;
+    fetchLiveRaceRoom(initialRoomId).then((room) => {
+      if (!cancelled && room?.players?.some((player) => String(player.userId) === String(currentUser.id))) {
+        startQueuedRoom(room, { message: 'Tournament lobby locked. Race starts shortly.', type: 'success' }, room.mode, room.language);
+      }
+    }).catch((error) => showNotice(error.message || 'Could not open the tournament room.', 'error'));
+    return () => { cancelled = true; };
+  }, [currentUser?.id, initialRoomId, liveRoom?.id, showNotice, startQueuedRoom]);
 
   useEffect(() => {
     if (!liveRoom?.id || phase === 'lobby') {
@@ -688,7 +700,7 @@ export function useLiveRaceSession({
 
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown') {
-      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} seconds…`, 'info');
+      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} secondsâ€¦`, 'info');
       if (countdownRemaining <= 0) {
         setPhase('racing');
         window.setTimeout(() => inputRef.current?.focus(), 150);
@@ -772,3 +784,4 @@ export function useLiveRaceSession({
     opponent,
   };
 }
+
