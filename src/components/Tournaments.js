@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCurrentUser, fetchTournaments, fetchTournamentWinner, getStoredUserSnapshot, joinTournament } from '../utils/typingApi';
 import '../styles/Tournaments.css';

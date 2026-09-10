@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   calculateAccuracy,
   calculateWPM,
@@ -350,7 +350,6 @@ export function useLiveRaceSession({
     showNotice,
     startQueuedRoom,
     tournamentId,
-  initialRoomId,
     wpmFilter.max,
     wpmFilter.min,
   ]);
