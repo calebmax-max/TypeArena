@@ -90,9 +90,7 @@ export default function Results() {
         </div>
 
         <div className="action-buttons">
-          <Link to="/play" className="btn btn-primary">
-            Race Again
-          </Link>
+
           <Link to="/leaderboard" className="btn btn-secondary">
             View Leaderboard
           </Link>

@@ -57,7 +57,6 @@ export function useLiveRaceSession({
   const [liveAction, setLiveAction] = useState(null);
   const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [queueElapsed, setQueueElapsed] = useState(0);
-  const [pendingRematch, setPendingRematch] = useState(false);
 
   const heartbeatTimerRef = useRef(null);
   const heartbeatPayloadRef = useRef(null);
@@ -67,6 +66,7 @@ export function useLiveRaceSession({
   const isLeavingRef = useRef(false);
   const queuedAtRef = useRef(null);
   const liveRoomRef = useRef(null);
+  const startRequestRef = useRef(false);
   const serverClockOffsetRef = useRef(0);
   // Tracks which room.serverNow value the offset was last derived from, so we
   // only recompute the offset when a genuinely fresh server timestamp arrives
@@ -201,7 +201,7 @@ export function useLiveRaceSession({
     // on EVERY call, including the local 250ms interpolation ticks that pass in
     // the same already-seen room object (no new network data). Since room.serverNow
     // is frozen at fetch time but Date.now() keeps moving, that made the offset
-    // drift further off with each tick and only snap back correct on the next poll —
+    // drift further off with each tick and only snap back correct on the next poll â€”
     // a sawtooth that differs per-client, so the two players' countdowns visibly
     // disagreed. Now we only re-derive the offset when a genuinely new serverNow
     // shows up (i.e. this room object came from a fresh server response).
@@ -327,7 +327,7 @@ export function useLiveRaceSession({
           totalContentCount: response.totalContentCount || 0,
         },
         {
-          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player…',
+          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another playerâ€¦',
           type: response.matched ? 'success' : 'info',
         }
       );
@@ -421,7 +421,8 @@ export function useLiveRaceSession({
   ]);
 
   const hostStartFriendBattle = useCallback(async () => {
-    if (!liveRoom?.id) return;
+    if (!liveRoom?.id || liveRoom.status !== 'waiting' || startRequestRef.current) return;
+    startRequestRef.current = true;
     setLoadingLive(true);
     setLiveAction('starting');
     try {
@@ -466,7 +467,7 @@ export function useLiveRaceSession({
         {
           message: response.message || (
             response.matched
-              ? 'Joined successfully. Opponent connected — race is starting.'
+              ? 'Joined successfully. Opponent connected â€” race is starting.'
               : 'Joined successfully. Waiting for the host to start.'
           ),
           type: response.matched ? 'success' : 'info',
@@ -513,9 +514,6 @@ export function useLiveRaceSession({
     startQueuedRoom,
   ]);
 
-  const requestRematch = useCallback(() => {
-    setPendingRematch(true);
-  }, []);
 
   const submitHeartbeat = useCallback(({ progress, currentWpm, currentAccuracy }) => {
     if (!liveRoomRef.current?.id) {
@@ -608,6 +606,7 @@ export function useLiveRaceSession({
     // now accepts cancel requests for public waiting rooms too (as long as no
     // opponent has joined yet), so route both flows through the same call.
     isLeavingRef.current = true;
+    startRequestRef.current = false;
     setLoadingLive(true);
     try {
       const result = await cancelLiveRaceRoom(liveRoomRef.current.id);
@@ -631,6 +630,7 @@ export function useLiveRaceSession({
 
   const resetLiveSession = useCallback(() => {
     isLeavingRef.current = true;
+    startRequestRef.current = false;
     isSubmittingRef.current = false;
     clearLiveTimers();
     setLiveRoom(null);
@@ -638,7 +638,6 @@ export function useLiveRaceSession({
     setCountdownRemaining(LIVE_RACE_COUNTDOWN_FALLBACK);
     setQueueElapsed(0);
     queuedAtRef.current = null;
-    setPendingRematch(false);
   }, [clearLiveTimers]);
 
   useEffect(() => {
@@ -689,7 +688,7 @@ export function useLiveRaceSession({
 
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown') {
-      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} seconds…`, 'info');
+      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} secondsâ€¦`, 'info');
       if (countdownRemaining <= 0) {
         setPhase('racing');
         window.setTimeout(() => inputRef.current?.focus(), 150);
@@ -737,13 +736,6 @@ export function useLiveRaceSession({
     return undefined;
   }, [finalizeRoomIfCompleted, liveRoom, phase, syncRoomClock]);
 
-  useEffect(() => {
-    if (!pendingRematch || phase !== 'lobby') {
-      return;
-    }
-    setPendingRematch(false);
-    joinFriendBattle();
-  }, [joinFriendBattle, pendingRematch, phase]);
 
   useEffect(() => () => {
     clearLiveTimers();
@@ -763,8 +755,6 @@ export function useLiveRaceSession({
     liveAction,
     countdownRemaining,
     queueElapsed,
-    pendingRematch,
-    setPendingRematch,
     isSubmittingRef,
     isLeavingRef,
     syncRoomClock,
@@ -773,7 +763,6 @@ export function useLiveRaceSession({
     createFriendBattle,
     hostStartFriendBattle,
     joinFriendBattle,
-    requestRematch,
     cancelPrivateRoom: leaveLiveRoomAndReset,
     leaveLiveRoom: leaveLiveRoomAndReset,
     submitHeartbeat,

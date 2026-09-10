@@ -913,9 +913,11 @@ function ChatWidget({ currentUser }) {
               alt={(enlargedProfile.username || enlargedProfile.name || 'Player') + ' enlarged profile'}
               style={{
                 display: 'block',
-                width: 'min(78vw, 420px)',
-                height: 'min(78vw, 420px)',
-                objectFit: 'cover',
+                width: 'auto',
+                height: 'auto',
+                maxWidth: 'min(78vw, 420px)',
+                maxHeight: '78vh',
+                objectFit: 'contain',
                 borderRadius: '20px',
                 border: '3px solid rgba(255,255,255,0.8)',
                 boxShadow: '0 18px 70px rgba(0,0,0,0.65)',

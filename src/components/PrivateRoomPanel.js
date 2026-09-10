@@ -6,9 +6,7 @@ export default function PrivateRoomPanel({
   setFriendBattle,
   createFriendBattle,
   joinFriendBattle,
-  shareToWhatsApp,
   copyInviteCode,
-  copyInviteLink,
   loadingLive,
   liveAction,
   currentUser,
@@ -60,15 +58,10 @@ export default function PrivateRoomPanel({
         <button className="btn btn-outline-primary" onClick={joinFriendBattle} disabled={loadingLive || !friendBattle.inviteCode.trim()}>
           Join With Invite
         </button>
-        <button className="btn btn-success" onClick={shareToWhatsApp} disabled={!activeInviteCode}>
-          Share on WhatsApp
-        </button>
         <button className="btn btn-outline-light" onClick={copyInviteCode} disabled={!activeInviteCode}>
           Copy Code
         </button>
-        <button className="btn btn-outline-light" onClick={copyInviteLink} disabled={!activeInviteCode}>
-          Copy Link
-        </button>
+
       </div>
       {loadingLive && (
         <div className="friend-battle-status" role="status" aria-live="polite">

@@ -5905,6 +5905,9 @@ def queue_live_race():
                     return jsonify({'message': 'Friend battle room not found.'}), 404
                 if room and room.get('password') and room.get('password') != room_password:
                     return jsonify({'message': 'Private room password is incorrect.'}), 403
+                # Freeze the roster when countdown starts so late invitees cannot be left out.
+                if room and room.get('status') != 'waiting' and all(str(existing.get('userId')) != str(user['id']) for existing in room.get('players', [])):
+                    return jsonify({'message': 'This race has already started. Create or join a new room.'}), 409
                 room_max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
                 if room and all(existing['userId'] != user['id'] for existing in room['players']) and len(room['players']) >= room_max_players:
                     return jsonify({'message': 'This private room is already full.'}), 400
@@ -6088,7 +6091,7 @@ def start_live_race_room(room_id: str):
             if str(room.get('hostUserId')) != str(user['id']):
                 return jsonify({'message': 'Only the room host can start this race.'}), 403
             if room.get('status') != 'waiting':
-                return jsonify({'message': 'This room has already started.'}), 400
+                return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': room.get('status') in {'countdown', 'racing'}, 'message': 'Race countdown already started.'})
             if len(room.get('players', [])) < 2:
                 return jsonify({'message': 'At least two players are required to start.'}), 400
             try:
@@ -7621,6 +7624,9 @@ def update_user(user_id: int):
                 normalized_username = str(username).strip()
                 if not normalized_username or len(normalized_username) > 50:
                     return jsonify({'message': 'Username must be between 1 and 50 characters.'}), 400
+                cur.execute('SELECT id FROM users WHERE username=%s AND id<>%s LIMIT 1', (normalized_username, user_id))
+                if cur.fetchone():
+                    return jsonify({'message': 'That username is already in use. Choose another one.'}), 409
                 cur.execute('UPDATE users SET username=%s WHERE id=%s', (normalized_username, user_id))
             if phone_number is not None:
                 cur.execute('UPDATE users SET phone_number=%s WHERE id=%s', (str(phone_number).strip(), user_id))
