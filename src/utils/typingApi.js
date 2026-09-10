@@ -748,6 +748,52 @@ export const updateAdminMediaSettings = async (payload) => {
   return await parseResponse(response);
 };
 
+// Uploads an audio file from the admin's device. Sent as multipart/form-data,
+// so the Content-Type header must NOT be set manually — the browser adds the
+// correct multipart boundary itself. The backend stores the bytes in the
+// database and returns a track descriptor ({id, title, artist, url}) whose
+// url points at the streaming endpoint (/api/media/music/<id>).
+export const uploadAdminMusicTrack = async (file, { title = '', artist = '' } = {}, { onProgress } = {}) => {
+  const { 'Content-Type': _omit, ...headers } = buildAdminHeaders();
+  const formData = new FormData();
+  formData.append('file', file);
+  if (title) formData.append('title', title);
+  if (artist) formData.append('artist', artist);
+
+  // Use XHR instead of fetch so we can report upload progress for larger files.
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', buildApiUrl('/api/admin/media-upload'));
+    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+    }
+
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch { data = {}; }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data);
+      } else {
+        reject(new Error(data.message || `Upload failed (${xhr.status}).`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Upload failed. Check your connection and try again.'));
+    xhr.send(formData);
+  });
+};
+
+export const deleteAdminMusicFile = async (trackId) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/media-upload/${encodeURIComponent(trackId)}`), {
+    method: 'DELETE',
+    headers: buildAdminHeaders(),
+  });
+  return await parseResponse(response);
+};
+
 export const fetchAdminContent = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/content'), {

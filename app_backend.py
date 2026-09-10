@@ -23,9 +23,10 @@ from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
+import re
 import pymysql
-from flask import Flask, jsonify, request, send_from_directory
-from werkzeug.exceptions import HTTPException
+from flask import Flask, jsonify, request, send_from_directory, Response
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -41,6 +42,12 @@ ALLOWED_ORIGINS = (
     else '*'
 )
 CORS(app, origins=ALLOWED_ORIGINS)
+
+# Uploaded music is stored as a DB blob (see music_files table), so cap the
+# request body well below the DB column's practical limit to keep rows and
+# memory usage sane. 20MB is generous for a compressed MP3/OGG track.
+MUSIC_UPLOAD_MAX_BYTES = int(os.getenv('TYPEARENA_MUSIC_MAX_BYTES', str(20 * 1024 * 1024)))
+app.config['MAX_CONTENT_LENGTH'] = MUSIC_UPLOAD_MAX_BYTES
 
 BASE_DIR = Path(__file__).resolve().parent
 BUILD_DIR = BASE_DIR / 'build'
@@ -2592,6 +2599,85 @@ except (TypeError, ValueError):
 _db_pool = _ConnectionPool(size=_db_pool_size)
 
 
+MUSIC_UPLOAD_ALLOWED_MIME = {
+    'audio/mpeg': '.mp3',
+    'audio/mp3': '.mp3',
+    'audio/ogg': '.ogg',
+    'audio/wav': '.wav',
+    'audio/x-wav': '.wav',
+    'audio/wave': '.wav',
+    'audio/flac': '.flac',
+    'audio/x-flac': '.flac',
+    'audio/aac': '.aac',
+    'audio/mp4': '.m4a',
+    'audio/x-m4a': '.m4a',
+    'audio/webm': '.weba',
+}
+
+
+def _ensure_music_files_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS music_files (
+            id VARCHAR(80) PRIMARY KEY,
+            filename VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            size_bytes INT NOT NULL,
+            data LONGBLOB NOT NULL,
+            uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+
+
+def _save_music_file(track_id: str, filename: str, mime_type: str, data: bytes) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_music_files_table(cur)
+            cur.execute(
+                """
+                INSERT INTO music_files (id, filename, mime_type, size_bytes, data)
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    filename = VALUES(filename),
+                    mime_type = VALUES(mime_type),
+                    size_bytes = VALUES(size_bytes),
+                    data = VALUES(data),
+                    uploaded_at = CURRENT_TIMESTAMP
+                """,
+                (track_id, filename, mime_type, len(data), data),
+            )
+        conn.commit()
+    finally:
+        _return_connection(conn)
+
+
+def _load_music_file(track_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_music_files_table(cur)
+            cur.execute(
+                'SELECT filename, mime_type, size_bytes, data FROM music_files WHERE id = %s LIMIT 1',
+                (track_id,),
+            )
+            return cur.fetchone()
+    finally:
+        _return_connection(conn)
+
+
+def _delete_music_file(track_id: str) -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_music_files_table(cur)
+            cur.execute('DELETE FROM music_files WHERE id = %s', (track_id,))
+        conn.commit()
+    finally:
+        _return_connection(conn)
+
+
 def get_connection() -> pymysql.connections.Connection:
     return _db_pool.get()
 
@@ -5090,6 +5176,121 @@ def admin_update_media_settings():
         payload.get('commentatorPhrases'),
     )
     return jsonify({'message': 'Media settings updated.', 'settings': settings})
+
+
+@app.post('/api/admin/media-upload')
+def admin_upload_music_file():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    upload = request.files.get('file')
+    if upload is None or not upload.filename:
+        return jsonify({'message': 'No audio file was uploaded.'}), 400
+
+    mime_type = (upload.mimetype or '').lower().split(';')[0].strip()
+    ext = MUSIC_UPLOAD_ALLOWED_MIME.get(mime_type)
+    if not ext:
+        # Some browsers send a generic/empty mimetype for less common audio
+        # formats — fall back to sniffing the filename extension instead of
+        # rejecting outright.
+        fallback_ext = os.path.splitext(upload.filename)[1].lower()
+        if fallback_ext in {'.mp3', '.ogg', '.wav', '.flac', '.aac', '.m4a', '.weba'}:
+            ext = fallback_ext
+            mime_type = mime_type or 'application/octet-stream'
+        else:
+            return jsonify({'message': 'Unsupported audio format. Use MP3, OGG, WAV, FLAC, AAC, or M4A.'}), 400
+
+    data = upload.read()
+    if not data:
+        return jsonify({'message': 'The uploaded file is empty.'}), 400
+    if len(data) > MUSIC_UPLOAD_MAX_BYTES:
+        limit_mb = MUSIC_UPLOAD_MAX_BYTES // (1024 * 1024)
+        return jsonify({'message': f'Audio file is too large. Max size is {limit_mb}MB.'}), 413
+
+    track_id = 'music_' + secrets.token_hex(8)
+    safe_filename = (os.path.basename(upload.filename) or f'track{ext}')[:255]
+
+    try:
+        _save_music_file(track_id, safe_filename, mime_type, data)
+    except Exception:
+        return jsonify({'message': 'Could not save the audio file on the server.'}), 500
+
+    title = str(request.form.get('title') or os.path.splitext(safe_filename)[0]).strip()[:150] or 'Untitled Track'
+    artist = str(request.form.get('artist') or 'Unknown Artist').strip()[:150]
+
+    track = {
+        'id': track_id,
+        'title': title,
+        'artist': artist,
+        'url': f'/api/media/music/{track_id}',
+    }
+    return jsonify({'message': 'Track uploaded.', 'track': track})
+
+
+@app.delete('/api/admin/media-upload/<track_id>')
+def admin_delete_music_file(track_id):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    try:
+        _delete_music_file(track_id)
+    except Exception:
+        return jsonify({'message': 'Could not delete the audio file.'}), 500
+    return jsonify({'message': 'Audio file deleted.'})
+
+
+_RANGE_HEADER_RE = re.compile(r'bytes=(\d*)-(\d*)')
+
+
+@app.get('/api/media/music/<track_id>')
+def serve_music_file(track_id):
+    # Public endpoint (no admin check) — everyone in the arena needs to hear
+    # the track, not just admins.
+    if not re.fullmatch(r'music_[0-9a-f]{16}', track_id):
+        return jsonify({'message': 'Track not found.'}), 404
+
+    try:
+        record = _load_music_file(track_id)
+    except Exception:
+        return jsonify({'message': 'Could not load the audio file.'}), 500
+
+    if not record:
+        return jsonify({'message': 'Track not found.'}), 404
+
+    data: bytes = record['data']
+    mime_type = record.get('mime_type') or 'application/octet-stream'
+    total_len = len(data)
+
+    range_header = request.headers.get('Range', '')
+    match = _RANGE_HEADER_RE.match(range_header) if range_header else None
+
+    if match:
+        start_raw, end_raw = match.groups()
+        start = int(start_raw) if start_raw else 0
+        end = int(end_raw) if end_raw else total_len - 1
+        end = min(end, total_len - 1)
+        if start > end or start >= total_len:
+            resp = Response(status=416)
+            resp.headers['Content-Range'] = f'bytes */{total_len}'
+            return resp
+        chunk = data[start:end + 1]
+        resp = Response(chunk, status=206, mimetype=mime_type)
+        resp.headers['Content-Range'] = f'bytes {start}-{end}/{total_len}'
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = str(len(chunk))
+    else:
+        resp = Response(data, status=200, mimetype=mime_type)
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = str(total_len)
+
+    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    resp.headers['Content-Disposition'] = f'inline; filename="{record.get("filename") or track_id}"'
+    return resp
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_upload_too_large(_err):
+    limit_mb = MUSIC_UPLOAD_MAX_BYTES // (1024 * 1024)
+    return jsonify({'message': f'Upload is too large. Max size is {limit_mb}MB.'}), 413
 
 
 @app.get('/api/admin/leaderboard-settings')
@@ -8106,7 +8307,3 @@ def _bootstrap_db() -> None:
 if __name__ == '__main__':
     _bootstrap_db()
     socketio.run(app, host=APP_HOST, port=APP_PORT, debug=False)
-
-
-
-

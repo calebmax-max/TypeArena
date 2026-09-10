@@ -29,6 +29,8 @@ import {
   updateAdminLeaderboardSettings,
   updateAdminMediaSettings,
   updateAdminSiteMarquee,
+  uploadAdminMusicTrack,
+  deleteAdminMusicFile,
   withdrawFromAdminWallet,
 } from '../utils/typingApi';
 import { arenaMusic, useMusicState } from '../utils/arenaMusic';
@@ -107,6 +109,9 @@ export default function AdminPanel() {
   const [musicNotice, setMusicNotice] = useState('');
   const [trackAddMode, setTrackAddMode] = useState('file');
   const [localFileObjectUrl, setLocalFileObjectUrl] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadingTrack, setUploadingTrack] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = React.useCallback(async () => {
@@ -430,19 +435,28 @@ export default function AdminPanel() {
   };
 
   // Music
+  const MAX_MUSIC_UPLOAD_BYTES = 20 * 1024 * 1024; // keep in sync with backend TYPEARENA_MUSIC_MAX_BYTES
+
   const handleFileSelected = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_MUSIC_UPLOAD_BYTES) {
+      setMusicNotice(`"${file.name}" is too large. Max upload size is ${Math.round(MAX_MUSIC_UPLOAD_BYTES / (1024 * 1024))}MB.`);
+      e.target.value = '';
+      return;
+    }
     if (localFileObjectUrl) URL.revokeObjectURL(localFileObjectUrl);
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file); // local preview only, not the final track url
     setLocalFileObjectUrl(objectUrl);
+    setSelectedFile(file);
     const autoTitle = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
-    setNewTrack(p => ({ ...p, url: objectUrl, title: p.title || autoTitle }));
+    setNewTrack(p => ({ ...p, title: p.title || autoTitle }));
   };
 
   const handleSwitchMode = (mode) => {
     setTrackAddMode(mode);
     if (mode === 'url' && localFileObjectUrl) { URL.revokeObjectURL(localFileObjectUrl); setLocalFileObjectUrl(null); }
+    if (mode === 'url') setSelectedFile(null);
     setNewTrack(p => ({ ...p, url: '' }));
   };
 
@@ -468,20 +482,46 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not update media settings.'); }
   };
 
-  const handleAddTrack = () => {
-    if (trackAddMode === 'file') {
-      setMusicNotice('Use a hosted audio URL for a shared playlist. Device files only work in this browser.');
-      return;
-    }
-    const url = trackAddMode === 'file' ? (localFileObjectUrl || '') : newTrack.url.trim();
+  const handleAddTrack = async () => {
     const title = newTrack.title.trim() || 'Untitled Track';
     const artist = newTrack.artist.trim() || 'Unknown Artist';
-    if (!url) { setMusicNotice(trackAddMode === 'file' ? 'Select an audio file.' : 'Enter a URL.'); return; }
+
+    if (trackAddMode === 'file') {
+      if (!selectedFile) { setMusicNotice('Select an audio file.'); return; }
+      setUploadingTrack(true);
+      setUploadProgress(0);
+      try {
+        const result = await uploadAdminMusicTrack(
+          selectedFile,
+          { title, artist },
+          { onProgress: setUploadProgress },
+        );
+        const track = result?.track;
+        if (!track?.url) throw new Error(result?.message || 'Upload did not return a track.');
+        arenaMusic.addTrack(track);
+        void persistMediaSettings([...musicState.tracks, track]);
+        if (localFileObjectUrl) URL.revokeObjectURL(localFileObjectUrl);
+        setLocalFileObjectUrl(null);
+        setSelectedFile(null);
+        setNewTrack({ title: '', artist: '', url: '' });
+        setMusicNotice(`"${track.title}" uploaded and added.`);
+        setTimeout(() => setMusicNotice(''), 3000);
+        if (!musicState.playing) arenaMusic.play();
+      } catch (err) {
+        setMusicNotice(err.message || 'Could not upload the audio file.');
+      } finally {
+        setUploadingTrack(false);
+        setUploadProgress(0);
+      }
+      return;
+    }
+
+    const url = newTrack.url.trim();
+    if (!url) { setMusicNotice('Enter a URL.'); return; }
     const track = { id: 'track_' + Date.now(), title, artist, url };
     arenaMusic.addTrack(track);
     void persistMediaSettings([...musicState.tracks, track]);
     setNewTrack({ title: '', artist: '', url: '' });
-    setLocalFileObjectUrl(null);
     setMusicNotice(`"${title}" added.`);
     setTimeout(() => setMusicNotice(''), 3000);
     if (!musicState.playing) arenaMusic.play();
@@ -491,6 +531,11 @@ export default function AdminPanel() {
     if (!window.confirm(`Remove "${title}"?`)) return;
     arenaMusic.removeTrack(id);
     void persistMediaSettings(musicState.tracks.filter((track) => track.id !== id));
+    // Uploaded tracks (id like "music_<hex>") store their bytes in the DB —
+    // free that storage too. Ignore failures; a stray orphaned blob isn't harmful.
+    if (/^music_[0-9a-f]{16}$/.test(id)) {
+      deleteAdminMusicFile(id).catch(() => {});
+    }
     setMusicNotice(`"${title}" removed.`);
     setTimeout(() => setMusicNotice(''), 3000);
   };
@@ -1625,15 +1670,23 @@ export default function AdminPanel() {
 
                   {trackAddMode === 'file' ? (
                     <>
-                      <input id="music-file-input" type="file" accept="audio/*,.mp3,.ogg,.wav,.flac,.aac,.m4a" style={{ display: 'none' }} onChange={handleFileSelected} />
+                      <input id="music-file-input" type="file" accept="audio/*,.mp3,.ogg,.wav,.flac,.aac,.m4a" style={{ display: 'none' }} onChange={handleFileSelected} disabled={uploadingTrack} />
                       <label htmlFor="music-file-input" className={`ap-file-label${localFileObjectUrl ? ' has-file' : ''}`}>
                         {localFileObjectUrl
-                          ? `Ã¯Â¿Â½o" ${newTrack.title || 'File selected'} Ã¯Â¿Â½?" click to change`
-                          : 'Ã¯Â¿Â½YZÃ¯Â¿Â½ Click to choose MP3, OGG, WAV, or FLAC from your device'}
+                          ? `Selected: ${selectedFile?.name || 'file'} — click to change`
+                          : 'Click to choose MP3, OGG, WAV, or FLAC from your device'}
                       </label>
                       <p style={{ fontSize: '0.68rem', color: 'var(--ap-muted)', margin: '4px 0 0' }}>
-                        Plays via a temporary browser URL Ã¯Â¿Â½?" won't survive a page refresh. Use the URL tab for permanent tracks.
+                        Uploaded to the server and saved to the shared playlist — plays for every player, on every device. Max {Math.round(MAX_MUSIC_UPLOAD_BYTES / (1024 * 1024))}MB per file.
                       </p>
+                      {uploadingTrack && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#63cab7', transition: 'width 0.2s' }} />
+                          </div>
+                          <p style={{ fontSize: '0.68rem', color: 'var(--ap-muted)', margin: '4px 0 0' }}>Uploading... {uploadProgress}%</p>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="ap-field">
@@ -1643,8 +1696,8 @@ export default function AdminPanel() {
                   )}
 
                   <div className="ap-btn-row">
-                    <button className="ap-btn" onClick={handleAddTrack}>Add to Playlist</button>
-                    <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={handleResetPlaylist}>Reset Defaults</button>
+                    <button className="ap-btn" onClick={handleAddTrack} disabled={uploadingTrack}>{uploadingTrack ? 'Uploading...' : 'Add to Playlist'}</button>
+                    <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={handleResetPlaylist} disabled={uploadingTrack}>Reset Defaults</button>
                   </div>
                 </div>
 
