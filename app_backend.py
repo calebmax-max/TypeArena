@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import os
 import math
 from flask_socketio import SocketIO, emit, join_room
