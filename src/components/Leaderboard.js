@@ -170,7 +170,7 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label={`${player.username} profile`}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">Ã—</button>
+        <button className="modal-close" onClick={onClose} aria-label="Close">X</button>
 
         <div className={`modal-tier-banner tier-${getTierClass(player.tier)}`}>
           <span className="modal-tier-icon">{getTierIcon(player.tier)}</span>
@@ -546,7 +546,7 @@ export default function Leaderboard({ currentUserUsername }) {
             <div className="leaderboard-table">{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}</div>
           ) : !pastError && pastSeasons.length === 0 ? (
             <div className="empty-leaderboard">
-              <span className="empty-icon">â€”</span>
+              <span className="empty-icon">-</span>
               <p>No past season archives yet. They appear here after each monthly reset.</p>
             </div>
           ) : !pastError && (
@@ -558,7 +558,7 @@ export default function Leaderboard({ currentUserUsername }) {
                   const rows = pastSeasons.filter(r => r.seasonName === sName);
                   return (
                     <div key={sName} className="past-season-block" style={{ marginBottom: '1.5rem' }}>
-                      <h3 className="past-season-title" style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem', opacity: 0.85 }}>?? {sName}</h3>
+                      <h3 className="past-season-title" style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem', opacity: 0.85 }}>Season {sName}</h3>
                       <div className="leaderboard-table" role="table">
                         <div className="table-header" role="row">
                           <span className="col-rank"   role="columnheader">Rank</span>
@@ -573,7 +573,7 @@ export default function Leaderboard({ currentUserUsername }) {
                               <span className="player-name">{r.username}</span>
                             </div>
                             <span className="col-elo">
-                              <span className="elo-display-badge">? {r.seasonPoints}</span>
+                              <span className="elo-display-badge">{String.fromCharCode(9733)} {r.seasonPoints}</span>
                             </span>
                             <span className="col-tier">
                               <span className={`tier-badge tier-${getTierClass(r.tier)}`}>
@@ -616,10 +616,10 @@ export default function Leaderboard({ currentUserUsername }) {
                     onClick={() => setSelected(p)}
                     aria-label={`${p.username}, rank ${displayPos}`}
                   >
-                    {displayPos === 1 && <div className="crown-icon">â˜…</div>}
+                    {displayPos === 1 && <div className="crown-icon">{String.fromCharCode(9733)}</div>}
                     <span className="podium-badge">#{displayPos}</span>
                     <div className="podium-username">{p.username}</div>
-                    <div className="podium-stat">â˜… {p.seasonPoints ?? 0} pts</div>
+                    <div className="podium-stat">{String.fromCharCode(9733)} {p.seasonPoints ?? 0} pts</div>
                     <div className="podium-substat">{Number(p.wpm ?? 0).toFixed(0)} WPM</div>
                   </button>
                 );
