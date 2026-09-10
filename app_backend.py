@@ -8305,5 +8305,10 @@ def _bootstrap_db() -> None:
 
 
 if __name__ == '__main__':
-    _bootstrap_db()
+    # Database bootstrap is best-effort.  A temporary/slow AlwaysData DB
+    # connection must never prevent the web server from starting.
+    try:
+        _bootstrap_db()
+    except BaseException as exc:
+        app.logger.warning('Database bootstrap skipped; starting server anyway: %s', exc)
     socketio.run(app, host=APP_HOST, port=APP_PORT, debug=False)
