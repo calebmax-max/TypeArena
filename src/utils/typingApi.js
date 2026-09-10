@@ -187,13 +187,13 @@ export const fetchCurrentUser = async () => {
   }
 };
 
-export const loginUser = async (email, password) => {
+export const loginUser = async (email, password, otp = "") => {
   authGeneration += 1;
   try {
     const response = await apiFetch(buildApiUrl('/api/auth/login'), {
       method: 'POST',
       headers: buildHeaders(),
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, otp }),
     });
     const user = await parseResponse(response);
     setStoredUser(user);
@@ -479,12 +479,12 @@ export const sendPrizeToWinner = async ({ userId, amount, tournamentId = null })
 
 // --- Admin Infrastructure APIs ---
 
-export const adminLogin = async (email, password) => {
+export const adminLogin = async (email, password, otp = "") => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/login'), {
       method: 'POST',
       headers: buildHeaders(),
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, otp }),
     });
     const data = await parseResponse(response);
     if (data?.token) {

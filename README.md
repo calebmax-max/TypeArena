@@ -1,4 +1,4 @@
-﻿# TypeArena
+# TypeArena
 
 TypeArena is a React frontend plus a Flask backend. The recommended free deployment is:
 
@@ -54,6 +54,7 @@ Add the required backend environment variables in Render:
 - `TYPEARENA_ADMIN_EMAIL`
 - `TYPEARENA_ADMIN_PASSWORD`
 - `TYPEARENA_ADMIN_TOKEN_SECRET`
+- TYPEARENA_ADMIN_TOTP_SECRET (optional Base32 secret; when set, admin sign-in requires a 6-digit authenticator code)
 - `TYPEARENA_ALLOWED_ORIGINS` — comma-separated frontend origins, for example
   `https://your-site.netlify.app,https://www.yourdomain.com`. Set it in the
   **Render service's Environment**; a local `.env` is not deployed to Render.
@@ -94,6 +95,7 @@ That means the frontend can stay on one origin while forwarding API requests to 
 - `TYPEARENA_ADMIN_EMAIL`
 - `TYPEARENA_ADMIN_PASSWORD`
 - `TYPEARENA_ADMIN_TOKEN_SECRET`
+- TYPEARENA_ADMIN_TOTP_SECRET (optional Base32 secret; when set, admin sign-in requires a 6-digit authenticator code)
 - `TYPEARENA_ALLOWED_ORIGINS` — comma-separated frontend origins, for example
   `https://your-site.netlify.app,https://www.yourdomain.com`. Set it in the
   **Render service's Environment**; a local `.env` is not deployed to Render.
