@@ -943,6 +943,11 @@ const FALLBACK_PASSAGES = [
 // Adjust here if your Render instance regularly needs more warm-up time.
 const CONTENT_LOAD_TIMEOUT_MS = 5000;
 
+export const fetchDailyContent = async (language = 'english') => {
+  const query = new URLSearchParams({ language: String(language || 'english') });
+  const response = await apiFetch(buildApiUrl(`/api/daily-content?${query.toString()}`), { headers: buildHeaders() });
+  return await parseResponse(response);
+};
 export const generateRaceContent = async (mode, language, options = {}) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONTENT_LOAD_TIMEOUT_MS);

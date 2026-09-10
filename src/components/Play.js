@@ -8,6 +8,7 @@ import {
 } from '../utils/typingEngine';
 import {
   fetchCurrentUser,
+  fetchDailyContent,
   fetchLiveRaceRoom,
   fetchLiveRaces,
   fetchMediaSettings,
@@ -1275,7 +1276,7 @@ export default function Play({ practicePage = false }){
     return () => { cancelled = true; };
   }, [language, mode, phase, showNotice]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  
+
   // Refs that mirror fast-changing state so useCallback dependencies stay stable
   const typingTextRef = useRef(typingText);
   const timeLeftRef   = useRef(timeLeft);
@@ -1385,7 +1386,7 @@ export default function Play({ practicePage = false }){
             || '';
         const wpm = calculateWPM(currentTypingText, elapsed);
         const accuracy = calculateAccuracy(sourceText, currentTypingText);
-        
+
         const finalData = {
             id: generateRaceId(),
             wpm,
@@ -1514,17 +1515,19 @@ export default function Play({ practicePage = false }){
 
   // ── Feature #4: Daily challenge loader ────────────────────────────────────
   const loadDailyChallenge = useCallback(async () => {
-    const cached = getDailyChallenge();
-    if (cached) { setDailyChallenge(cached); setShowDailyChallenge(true); return; }
     try {
-      const content = await getRaceContent('standard', language, {});
-      const entry = { passage: content.passage, id: content.id, language };
+      // The backend is authoritative: it uses Nairobi time and may have rotated the passage.
+      const content = await fetchDailyContent(language);
+      const entry = { passage: content.passage, id: content.id, language, publishAt: content.publishAt, expiryAt: content.expiryAt, isScheduled: content.isScheduled };
       saveDailyChallenge(entry);
       setDailyChallenge(entry);
       setShowDailyChallenge(true);
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language]);
+
+  // Show the server-selected Daily Challenge at the top of every practice lobby.
+  useEffect(() => { loadDailyChallenge(); }, [loadDailyChallenge]);
 
   // Queue elapsed now comes from useLiveRaceSession.
 
@@ -2197,7 +2200,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       URL.revokeObjectURL(url);
     }, 'image/png');
   };
-  
+
 
   return (
     <div className="play-container">
@@ -2339,7 +2342,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             <div style={{ background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg)', padding:'1rem 1.25rem', marginBottom:'1rem' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
                 <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', textTransform:'uppercase', letterSpacing:'0.12em', color:'var(--arena-accent)' }}>📅 Today's Challenge</span>
-                <span style={{ fontSize:'0.75rem', color:'var(--arena-muted)' }}>{new Date().toLocaleDateString()}</span>
+                <span style={{ fontSize:'0.75rem', color:'var(--arena-muted)' }}>{dailyChallenge.isScheduled ? 'Nairobi daily passage' : 'Daily fallback'}</span>
               </div>
               <p style={{ fontFamily:'var(--font-mono)', fontSize:'0.88rem', color:'var(--arena-text)', lineHeight:'1.7', margin:'0 0 0.75rem' }}>"{dailyChallenge.passage?.slice(0, 140)}…"</p>
               <button className="btn btn-primary btn-sm" onClick={() => { setUseCustomText(false); setShowDailyChallenge(true); startPracticeRace(); }}>
