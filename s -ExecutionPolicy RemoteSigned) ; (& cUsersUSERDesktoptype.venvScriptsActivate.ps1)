@@ -1,0 +1,40 @@
+[1mdiff --git a/src/hooks/useLiveRaceSession.js b/src/hooks/useLiveRaceSession.js[m
+[1mindex 73df923..3833087 100644[m
+[1m--- a/src/hooks/useLiveRaceSession.js[m
+[1m+++ b/src/hooks/useLiveRaceSession.js[m
+[36m@@ -202,7 +202,7 @@[m [mexport function useLiveRaceSession({[m
+     // on EVERY call, including the local 250ms interpolation ticks that pass in[m
+     // the same already-seen room object (no new network data). Since room.serverNow[m
+     // is frozen at fetch time but Date.now() keeps moving, that made the offset[m
+[31m-    // drift further off with each tick and only snap back correct on the next poll â€”[m
+[32m+[m[32m    // drift further off with each tick and only snap back correct on the next poll �?"[m
+     // a sawtooth that differs per-client, so the two players' countdowns visibly[m
+     // disagreed. Now we only re-derive the offset when a genuinely new serverNow[m
+     // shows up (i.e. this room object came from a fresh server response).[m
+[36m@@ -328,7 +328,7 @@[m [mexport function useLiveRaceSession({[m
+           totalContentCount: response.totalContentCount || 0,[m
+         },[m
+         {[m
+[31m-          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another playerâ€¦',[m
+[32m+[m[32m          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player�?�',[m
+           type: response.matched ? 'success' : 'info',[m
+         }[m
+       );[m
+[36m@@ -468,7 +468,7 @@[m [mexport function useLiveRaceSession({[m
+         {[m
+           message: response.message || ([m
+             response.matched[m
+[31m-              ? 'Joined successfully. Opponent connected â€” race is starting.'[m
+[32m+[m[32m              ? 'Joined successfully. Opponent connected �?" race is starting.'[m
+               : 'Joined successfully. Waiting for the host to start.'[m
+           ),[m
+           type: response.matched ? 'success' : 'info',[m
+[36m@@ -699,7 +699,7 @@[m [mexport function useLiveRaceSession({[m
+ [m
+   useEffect(() => {[m
+     if (phase === 'queued' && liveRoom?.status === 'countdown') {[m
+[31m-      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} secondsâ€¦`, 'info');[m
+[32m+[m[32m      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} seconds�?�`, 'info');[m
+       if (countdownRemaining <= 0) {[m
+         setPhase('racing');[m
+         window.setTimeout(() => inputRef.current?.focus(), 150);[m
