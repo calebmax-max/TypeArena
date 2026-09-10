@@ -74,7 +74,7 @@ export default function AdminPanel() {
   const [token, setToken] = useState(getAdminToken());
   const [authChecked, setAuthChecked] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
-  const [formData, setFormData] = useState({ name: '', entryFee: '', maxParticipants: '2', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
+  const [formData, setFormData] = useState({ name: '', entryFee: '', maxParticipants: '3', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
   const [notice, setNotice] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [tournaments, setTournaments] = useState([]);
@@ -94,7 +94,7 @@ export default function AdminPanel() {
   const [deletingTournamentId, setDeletingTournamentId] = useState(null);
   const [clearingTournaments, setClearingTournaments] = useState(false);
   const [editingTournament, setEditingTournament] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', entryFee: '', maxParticipants: '2', image: '', startDate: '', startTime: '', matchDurationMins: '10' });
+  const [editForm, setEditForm] = useState({ name: '', entryFee: '', maxParticipants: '3', image: '', startDate: '', startTime: '', matchDurationMins: '10' });
   const [savingEditId, setSavingEditId] = useState(null);
   const [viewingParticipantsId, setViewingParticipantsId] = useState(null);
   const [participants, setParticipants] = useState({});
@@ -221,7 +221,7 @@ export default function AdminPanel() {
         status,
       });
       showNotice(result.message || 'Tournament created.');
-      setFormData({ name: '', entryFee: '', maxParticipants: '2', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
+      setFormData({ name: '', entryFee: '', maxParticipants: '3', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
       await loadAdminData();
     } catch (err) { showNotice(err.message || 'Could not create tournament.'); }
   };
@@ -1700,6 +1700,7 @@ export default function AdminPanel() {
                         <select className="ap-select" value={contentForm.contentType} onChange={e => setContentForm(p => ({ ...p, contentType: e.target.value }))}>
                           <option value="practice">Practice</option>
                           <option value="live">1v1 / Live</option>
+                          <option value="tournament">Tournament</option>
                           <option value="daily">Daily Challenge</option>
                         </select>
                       </div>

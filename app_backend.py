@@ -116,9 +116,11 @@ ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
 ADMIN_TOKEN_TTL_SECONDS = 8 * 60 * 60
 ADMIN_TOKEN_SECRET = os.getenv('TYPEARENA_ADMIN_TOKEN_SECRET', '').strip()
 ADMIN_TOTP_SECRET = os.getenv('TYPEARENA_ADMIN_TOTP_SECRET', '').strip().replace(' ', '')
-TOURNAMENT_MATCH_SIZE = 2
+TOURNAMENT_MATCH_SIZE = 3
 TOURNAMENT_START_DELAY_SECONDS = 30
-WINNER_PRIZE_SHARE = 0.60
+TOURNAMENT_PODIUM_SHARES = (0.50, 0.20, 0.10)
+TOURNAMENT_ADMIN_SHARE = 0.20
+WINNER_PRIZE_SHARE = TOURNAMENT_PODIUM_SHARES[0]
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 10
 LIVE_RACE_MIN_DURATION_SECONDS = 15
@@ -2026,7 +2028,7 @@ def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None)
     }
 
 
-def _generate_live_battle_passage(mode: str, language: str, is_private: bool = False, exclude_content_ids: Any = None) -> Dict[str, Any]:
+def _generate_live_battle_passage(mode: str, language: str, is_private: bool = False, is_tournament: bool = False, exclude_content_ids: Any = None) -> Dict[str, Any]:
     normalized_mode = str(mode or 'standard').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
 
@@ -2039,7 +2041,8 @@ def _generate_live_battle_passage(mode: str, language: str, is_private: bool = F
     else:
         passages = LIVE_BATTLE_PASSAGE_BANK.get(normalized_mode) or LIVE_BATTLE_PASSAGE_BANK.get('standard') or []
 
-    curated = _fetch_admin_content(normalized_mode, normalized_language, 'live', exclude_content_ids)
+    curated_type = 'tournament' if is_tournament else 'live'
+    curated = _fetch_admin_content(normalized_mode, normalized_language, curated_type, exclude_content_ids)
     if curated:
         passage = curated['passage']
         if is_private:
@@ -3534,6 +3537,39 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
         if _owns_conn:
             _return_connection(conn)
 
+def _settle_tournament_podium(room: Dict[str, Any], ranked_player_ids: list[int], conn) -> None:
+    """Credit first, second and third from one tournament entry pool."""
+    tournament_id = int(room.get('tournamentId') or 0)
+    if not tournament_id or room.get('tournamentSettled'):
+        return
+    with conn.cursor() as cur:
+        _ensure_tournament_prize_paid_column(cur)
+        cur.execute('SELECT * FROM tournaments WHERE id=%s FOR UPDATE', (tournament_id,))
+        tournament = cur.fetchone()
+        if not tournament:
+            return
+        cur.execute('SELECT COALESCE(SUM(paid_amount), 0) AS total FROM tournament_joins WHERE tournament_id=%s AND paid_amount > 0', (tournament_id,))
+        pool = round(float((cur.fetchone() or {}).get('total') or 0), 2)
+        podium = []
+        for place, user_id in enumerate(ranked_player_ids[:3], start=1):
+            amount = round(pool * TOURNAMENT_PODIUM_SHARES[place - 1], 2)
+            cur.execute('SELECT * FROM users WHERE id=%s FOR UPDATE', (user_id,))
+            user = cur.fetchone()
+            if not user:
+                continue
+            _record_prize_wallet_credit(cur, user_id=user_id, amount=amount, tournament_id=tournament_id, phone_number=str(user.get('phone_number') or ''), payout_code_prefix=f'tournament_p{place}')
+            cur.execute('UPDATE tournament_joins SET prize_paid=%s WHERE tournament_id=%s AND user_id=%s', (amount, tournament_id, user_id))
+            podium.append({'place': place, 'userId': user_id, 'username': str(user.get('username') or 'Player'), 'prize': amount})
+        admin_share = round(pool * TOURNAMENT_ADMIN_SHARE, 2)
+        admin_user = _get_admin_user(cur)
+        if admin_user and admin_share > 0:
+            cur.execute('UPDATE users SET balance=balance+%s WHERE id=%s', (admin_share, admin_user['id']))
+            _record_admin_wallet_transaction(cur, admin_user_id=int(admin_user['id']), transaction_type='tournament_profit', amount=admin_share, direction='in', source='tournament', note=f'20% tournament share: {tournament.get("name") or tournament_id}')
+        cur.execute("UPDATE tournaments SET status='completed' WHERE id=%s", (tournament_id,))
+    room['podium'] = podium
+    room['winnerPrize'] = podium[0]['prize'] if podium else 0
+    room['tournamentSettled'] = True
+
 def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
     player_ids = [player['userId'] for player in room.get('players', [])]
     if len(player_ids) < 2:
@@ -3551,13 +3587,25 @@ def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
     room['status'] = 'completed'
     room['completedAt'] = _now_iso()
 
+    ranked_player_ids = sorted(player_ids, key=result_sort_key, reverse=True)
+    if room.get('tournamentId'):
+        owns_conn = conn is None
+        settlement_conn = conn or get_connection()
+        try:
+            _settle_tournament_podium(room, ranked_player_ids, settlement_conn)
+            if owns_conn:
+                settlement_conn.commit()
+        finally:
+            if owns_conn:
+                _return_connection(settlement_conn)
+        _persist_completed_live_race(room, conn=conn)
+        return
+
     escrow_total = float(room.get('totalEscrow') or 0)
     winner_prize = escrow_total if room.get('isPrivate') and escrow_total > 0 else float(room.get('winnerPrize') or 0)
     if winner_prize <= 0:
         _persist_completed_live_race(room, conn=conn)
-        return
-
-    # Use the caller's connection if provided ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â avoids an extra TCP round-trip
+        return    # Use the caller's connection if provided ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â avoids an extra TCP round-trip
     _owns_conn = conn is None
     if _owns_conn:
         conn = get_connection()
@@ -4242,8 +4290,8 @@ def admin_force_start_tournament(tournament_id: int):
             joins = cur.fetchall()
             actual_count = len(joins)
 
-            if actual_count < 2:
-                return jsonify({'message': f'Cannot force-start: only {actual_count} player(s) in the lobby. Need at least 2.'}), 400
+            if actual_count < TOURNAMENT_MATCH_SIZE:
+                return jsonify({'message': f'Cannot force-start: only {actual_count} player(s) in the lobby. Need at least 3.'}), 400
 
             entry_fee = float(tournament.get('entry_fee') or 0)
 
@@ -4270,9 +4318,9 @@ def admin_force_start_tournament(tournament_id: int):
                 )
                 joins = cur.fetchall()
                 actual_count = len(joins)
-                if actual_count < 2:
+                if actual_count < TOURNAMENT_MATCH_SIZE:
                     conn.commit()
-                    return jsonify({'message': f'After removing players with insufficient funds, only {actual_count} remain. Need at least 2.'}), 400
+                    return jsonify({'message': f'After removing players with insufficient funds, only {actual_count} remain. Need at least 3.'}), 400
 
             # Charge uncharged players
             for join_row in joins:
@@ -4796,7 +4844,7 @@ def _validate_admin_content_payload(payload: Dict[str, Any]) -> tuple[Any, ...]:
     mode = str(payload.get('mode') or 'standard').strip().lower()
     language = str(payload.get('language') or 'english').strip().lower()
     passage = str(payload.get('passage') or '').strip()
-    if content_type not in {'practice', 'live', 'daily'} or not mode or not language or not passage or len(passage) > 10000:
+    if content_type not in {'practice', 'live', 'tournament', 'daily'} or not mode or not language or not passage or len(passage) > 10000:
         return (None,) * 8
     active = payload.get('isActive', True) is not False
     scheduled_for = publish_at = expiry_at = None
@@ -6169,6 +6217,7 @@ def queue_live_race():
                 mode,
                 language,
                 is_private=is_private,
+                is_tournament=bool(tournament_id),
                 exclude_content_ids=exclude_content_ids,
             )
             text = content.get('passage') or LIVE_RACE_TEXTS.get(mode, LIVE_RACE_TEXTS['standard'])
