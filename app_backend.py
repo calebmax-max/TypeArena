@@ -1311,6 +1311,52 @@ def _ensure_typing_content_table(cur) -> None:
     )
 
 
+def _ensure_marketplace_catalog_table(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS marketplace_items (
+            id VARCHAR(80) PRIMARY KEY,
+            item_json LONGTEXT NOT NULL,
+            price DECIMAL(12,2) NOT NULL DEFAULT 0,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+    )
+    cur.execute('SELECT COUNT(*) AS item_count FROM marketplace_items')
+    count = int((cur.fetchone() or {}).get('item_count') or 0)
+    if count:
+        return
+    cur.executemany(
+        'INSERT INTO marketplace_items (id, item_json, price, is_active) VALUES (%s, %s, %s, 1)',
+        [(item['id'], json.dumps(item), float(item.get('price') or 0)) for item in MARKETPLACE_ITEMS],
+    )
+
+
+def _marketplace_items_from_db(cur, include_inactive: bool = False) -> list[Dict[str, Any]]:
+    _ensure_marketplace_catalog_table(cur)
+    query = 'SELECT id, item_json, price, is_active FROM marketplace_items'
+    if not include_inactive:
+        query += ' WHERE is_active = 1'
+    query += ' ORDER BY updated_at DESC, id ASC'
+    cur.execute(query)
+    items = []
+    for row in cur.fetchall():
+        try:
+            item = json.loads(row.get('item_json') or '{}')
+        except (TypeError, ValueError):
+            item = {}
+        item['id'] = row['id']
+        item['price'] = float(row.get('price') or 0)
+        item['isActive'] = bool(row.get('is_active'))
+        items.append(item)
+    return items
+
+
+def _marketplace_item_from_db(cur, item_id: str) -> Dict[str, Any] | None:
+    return next((item for item in _marketplace_items_from_db(cur) if item.get('id') == item_id), None)
+
 def _ensure_marketplace_revenue_table(cur) -> None:
     cur.execute(
         """
@@ -4500,6 +4546,97 @@ def admin_ai_settings():
     return jsonify(settings)
 
 
+@app.get('/api/admin/marketplace')
+def admin_marketplace_list():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            items = _marketplace_items_from_db(cur, include_inactive=True)
+            _ensure_store_purchase_table(cur)
+            cur.execute('SELECT item_id, COUNT(*) AS purchase_count FROM store_purchases GROUP BY item_id')
+            counts = {row['item_id']: int(row.get('purchase_count') or 0) for row in cur.fetchall()}
+        for item in items:
+            item['purchaseCount'] = counts.get(item['id'], 0)
+        return jsonify({'items': items})
+    finally:
+        _return_connection(conn)
+
+
+def _validate_marketplace_item_payload(payload: Dict[str, Any], item_id: str | None = None) -> Dict[str, Any] | None:
+    item_id = item_id or str(payload.get('id') or '').strip().lower()
+    name = str(payload.get('name') or '').strip()
+    category = str(payload.get('category') or '').strip()
+    if not item_id or not name or not category or len(item_id) > 80 or len(name) > 150:
+        return None
+    try:
+        price = round(float(payload.get('price') or 0), 2)
+    except (TypeError, ValueError):
+        return None
+    if price < 0 or price > 10000000:
+        return None
+    tags = payload.get('tags') if isinstance(payload.get('tags'), list) else []
+    return {
+        'id': item_id,
+        'name': name,
+        'category': category,
+        'price': price,
+        'rarity': str(payload.get('rarity') or 'common').strip().lower(),
+        'collection': str(payload.get('collection') or 'Admin Catalog').strip(),
+        'description': str(payload.get('description') or '').strip(),
+        'benefit': str(payload.get('benefit') or '').strip(),
+        'tags': [str(tag).strip() for tag in tags if str(tag).strip()][:10],
+        'isActive': payload.get('isActive', True) is not False,
+    }
+
+
+@app.post('/api/admin/marketplace')
+def admin_marketplace_create():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    item = _validate_marketplace_item_payload(request.get_json(silent=True) or {})
+    if not item:
+        return jsonify({'message': 'Provide a valid item id, name, category, and price.'}), 400
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_marketplace_catalog_table(cur)
+            cur.execute('SELECT id FROM marketplace_items WHERE id=%s', (item['id'],))
+            if cur.fetchone():
+                return jsonify({'message': 'An item with that id already exists.'}), 409
+            cur.execute('INSERT INTO marketplace_items (id, item_json, price, is_active) VALUES (%s, %s, %s, %s)', (item['id'], json.dumps(item), item['price'], 1 if item['isActive'] else 0))
+        conn.commit()
+        return jsonify({'message': 'Marketplace item added.', 'item': item}), 201
+    finally:
+        _return_connection(conn)
+
+
+@app.put('/api/admin/marketplace/<item_id>')
+def admin_marketplace_update(item_id: str):
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_marketplace_catalog_table(cur)
+            cur.execute('SELECT item_json FROM marketplace_items WHERE id=%s FOR UPDATE', (item_id,))
+            existing = cur.fetchone()
+            if not existing:
+                return jsonify({'message': 'Marketplace item not found.'}), 404
+            try:
+                current = json.loads(existing.get('item_json') or '{}')
+            except (TypeError, ValueError):
+                current = {'id': item_id}
+            item = _validate_marketplace_item_payload({**current, **(request.get_json(silent=True) or {})}, item_id=item_id)
+            if not item:
+                return jsonify({'message': 'Provide valid marketplace item details.'}), 400
+            cur.execute('UPDATE marketplace_items SET item_json=%s, price=%s, is_active=%s WHERE id=%s', (json.dumps(item), item['price'], 1 if item['isActive'] else 0, item_id))
+        conn.commit()
+        return jsonify({'message': 'Marketplace item updated.', 'item': item})
+    finally:
+        _return_connection(conn)
+
 @app.get('/api/admin/content')
 def admin_content_list():
     if not _is_admin_request():
@@ -6313,8 +6450,10 @@ def store_catalog():
                 cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
                 user = cur.fetchone()
         owned = set(_owned_store_items_for_user(conn, int(user.get('id') or 0))) if user else set()
+        with conn.cursor() as cur:
+            catalog_items = _marketplace_items_from_db(cur)
         items = []
-        for item in MARKETPLACE_ITEMS:
+        for item in catalog_items:
             enriched = dict(item)
             enriched['owned'] = item['id'] in owned
             equip_field = _equip_field_for_category(item.get('category'))
@@ -6329,20 +6468,21 @@ def store_catalog():
 def store_purchase():
     payload = request.get_json(silent=True) or {}
     item_id = str(payload.get('itemId') or '').strip()
-    item = next((candidate for candidate in MARKETPLACE_ITEMS if candidate['id'] == item_id), None)
-    if not item:
-        return jsonify({'message': 'Store item not found.'}), 404
-
     conn = get_connection()
     try:
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            item = _marketplace_item_from_db(cur, item_id)
+        if not item:
+            return jsonify({'message': 'Store item not found.'}), 404
         owned_item_ids = set(_owned_store_items_for_user(conn, int(user.get('id') or 0)))
         if item_id in owned_item_ids:
             return jsonify({'message': 'You already own this store item.'}), 400
         with conn.cursor() as cur:
             try:
+                _ensure_marketplace_catalog_table(cur)
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_user_equipped_columns(cur)
@@ -6398,7 +6538,12 @@ def store_bundle_purchase():
     if not bundle:
         return jsonify({'message': 'Store bundle not found.'}), 404
 
-    item_map = {item['id']: item for item in MARKETPLACE_ITEMS}
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            item_map = {item['id']: item for item in _marketplace_items_from_db(cur)}
+    finally:
+        _return_connection(conn)
     bundle_items = [item_map[item_id] for item_id in bundle['item_ids'] if item_id in item_map]
     if not bundle_items:
         return jsonify({'message': 'This bundle has no valid store items.'}), 400
@@ -6420,6 +6565,7 @@ def store_bundle_purchase():
 
         with conn.cursor() as cur:
             try:
+                _ensure_marketplace_catalog_table(cur)
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_user_equipped_columns(cur)
@@ -7697,6 +7843,7 @@ def _bootstrap_db() -> None:
                 _ensure_chat_tables(cur)
                 _ensure_live_race_rooms_table(cur)
                 _ensure_typing_content_table(cur)
+                _ensure_marketplace_catalog_table(cur)
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_admin_wallet_transactions_table(cur)

@@ -1002,6 +1002,24 @@ export const loadGeneratedContentSafe = (mode, language) =>
     ),
   ]);
 
+export const fetchAdminMarketplace = async () => {
+  const response = await apiFetch(buildApiUrl('/api/admin/marketplace'), { headers: buildAdminHeaders() });
+  return await parseResponse(response);
+};
+
+export const createAdminMarketplaceItem = async (payload) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/marketplace'), {
+    method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
+export const updateAdminMarketplaceItem = async (itemId, payload) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/marketplace/${encodeURIComponent(itemId)}`), {
+    method: 'PUT', headers: buildAdminHeaders(), body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
 // --- Marketplace & Store Catalog APIs ---
 
 export const fetchStoreCatalog = async () => {

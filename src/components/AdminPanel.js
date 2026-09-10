@@ -14,6 +14,9 @@ import {
   fetchAdminContent,
   fetchAdminLeaderboardSettings,
   fetchAdminMediaSettings,
+  fetchAdminMarketplace,
+  createAdminMarketplaceItem,
+  updateAdminMarketplaceItem,
   fetchAdminAiSettings,
   fetchAdminSiteMarquee,
   fetchAdminWallet,
@@ -61,7 +64,8 @@ const NAV_ITEMS = [
   { id: 'players',     label: 'Top Players',   icon: '◉' },
   { id: 'leaderboard', label: 'Leaderboard',   icon: '★' },
   { id: 'music',       label: 'Music',         icon: '♫' },
-  { id: 'content',     label: 'Content',       icon: '⊞' },
+    { id: 'content',     label: 'Content',       icon: 'Content' },
+    { id: 'marketplace', label: 'Marketplace',   icon: 'Store' },
   { id: 'ai',          label: 'AI Settings',   icon: '⬡' },
 ];
 
@@ -77,6 +81,9 @@ export default function AdminPanel() {
   const [aiSettings, setAiSettings] = useState(normalizeAiSettings());
   const [adminContent, setAdminContent] = useState([]);
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
+  const [marketplaceItems, setMarketplaceItems] = useState([]);
+  const [marketplaceForm, setMarketplaceForm] = useState({ id: '', name: '', category: 'avatars', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
+  const [editingMarketplaceId, setEditingMarketplaceId] = useState(null);
   const [commentatorEnabled, setCommentatorEnabled] = useState(true);
   const [leaderboardTiers, setLeaderboardTiers] = useState(DEFAULT_LEADERBOARD_TIERS);
   const [commentatorConfig, setCommentatorConfig] = useState({ rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 });
@@ -103,8 +110,8 @@ export default function AdminPanel() {
   const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = React.useCallback(async () => {
-    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, mediaData, leaderboardData] = await Promise.all([
-      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminMediaSettings(), fetchAdminLeaderboardSettings(),
+    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, mediaData, leaderboardData, marketplaceData] = await Promise.all([
+      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminMediaSettings(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(),
     ]);
     setAnalytics(analyticsData);
     setTournaments(normalizeTournamentList(tournamentData));
@@ -112,6 +119,7 @@ export default function AdminPanel() {
     setSiteMarqueeText((siteMarqueeData?.items || DEFAULT_SITE_MARQUEE_ITEMS).join('\n'));
     setAdminWallet(walletData);
     setAdminContent(Array.isArray(contentData) ? contentData : []);
+    setMarketplaceItems(Array.isArray(marketplaceData?.items) ? marketplaceData.items : []);
     setCommentatorEnabled(mediaData?.commentatorEnabled !== false);
     if (mediaData?.commentatorConfig) setCommentatorConfig(mediaData.commentatorConfig);
     if (mediaData?.commentatorPhrases) {
@@ -276,6 +284,39 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not save typing content.'); }
   };
 
+  const resetMarketplaceForm = () => setMarketplaceForm({ id: '', name: '', category: 'avatars', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
+
+  const handleMarketplaceSave = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    const itemId = marketplaceForm.id.trim().toLowerCase();
+    const name = marketplaceForm.name.trim();
+    const price = Number(marketplaceForm.price);
+    if (!itemId || !/^[a-z0-9_-]+$/.test(itemId)) { showNotice('Use a unique ID with lowercase letters, numbers, hyphens, or underscores.'); return; }
+    if (!name || !Number.isFinite(price) || price < 0) { showNotice('Enter an item name and a valid non-negative price.'); return; }
+    try {
+      const payload = { ...marketplaceForm, id: itemId, name, price };
+      const result = editingMarketplaceId
+        ? await updateAdminMarketplaceItem(editingMarketplaceId, payload)
+        : await createAdminMarketplaceItem(payload);
+      const savedItem = result.item;
+      setMarketplaceItems((items) => editingMarketplaceId
+        ? items.map((item) => item.id === editingMarketplaceId ? savedItem : item)
+        : [savedItem, ...items]);
+      resetMarketplaceForm();
+      setEditingMarketplaceId(null);
+      showNotice(result.message || 'Marketplace item saved.');
+    } catch (err) { showNotice(err.message || 'Could not save marketplace item.'); }
+  };
+
+  const openMarketplaceEdit = (item) => {
+    setEditingMarketplaceId(item.id);
+    setMarketplaceForm({
+      id: item.id || '', name: item.name || '', category: item.category || 'avatars',
+      price: String(item.price ?? ''), rarity: item.rarity || 'common', collection: item.collection || '',
+      description: item.description || '', benefit: item.benefit || '', isActive: item.isActive !== false,
+    });
+    setActiveSection('marketplace');
+  };
   const handleContentDelete = async (item) => {
     if (!window.confirm('Delete this passage? Active-room passages will be deactivated instead.')) return;
     try {
@@ -1713,6 +1754,40 @@ export default function AdminPanel() {
               </>
             )}
 
+            {activeSection === 'marketplace' && (
+              <>
+                <div className="ap-section-header">
+                  <h1 className="ap-section-title">Marketplace</h1>
+                  <p className="ap-section-sub">Add items and manage the live catalog prices shown to players.</p>
+                </div>
+                <div className="ap-card">
+                  <p className="ap-card-title">{editingMarketplaceId ? 'Edit Marketplace Item' : 'Add Marketplace Item'}</p>
+                  <form onSubmit={handleMarketplaceSave}>
+                    <div className="ap-two-col">
+                      <div className="ap-field"><label className="ap-label">Item ID</label><input className="ap-input" value={marketplaceForm.id} disabled={Boolean(editingMarketplaceId)} onChange={e => setMarketplaceForm(p => ({ ...p, id: e.target.value }))} placeholder="neon_frame" /></div>
+                      <div className="ap-field"><label className="ap-label">Name</label><input className="ap-input" value={marketplaceForm.name} onChange={e => setMarketplaceForm(p => ({ ...p, name: e.target.value }))} placeholder="Neon Frame" /></div>
+                      <div className="ap-field"><label className="ap-label">Price (KES)</label><input className="ap-input" type="number" min="0" step="0.01" value={marketplaceForm.price} onChange={e => setMarketplaceForm(p => ({ ...p, price: e.target.value }))} /></div>
+                      <div className="ap-field"><label className="ap-label">Category</label><select className="ap-select" value={marketplaceForm.category} onChange={e => setMarketplaceForm(p => ({ ...p, category: e.target.value }))}><option value="avatars">Avatars</option><option value="typingThemes">Typing Themes</option><option value="keyboardSkins">Keyboard Skins</option><option value="premiumBadges">Premium Badges</option><option value="animatedEffects">Animated Effects</option><option value="profileFrames">Profile Frames</option><option value="cursors">Cursors</option></select></div>
+                      <div className="ap-field"><label className="ap-label">Rarity</label><select className="ap-select" value={marketplaceForm.rarity} onChange={e => setMarketplaceForm(p => ({ ...p, rarity: e.target.value }))}><option value="common">Common</option><option value="rare">Rare</option><option value="epic">Epic</option><option value="legendary">Legendary</option></select></div>
+                      <div className="ap-field"><label className="ap-label">Collection</label><input className="ap-input" value={marketplaceForm.collection} onChange={e => setMarketplaceForm(p => ({ ...p, collection: e.target.value }))} /></div>
+                    </div>
+                    <div className="ap-field"><label className="ap-label">Description</label><input className="ap-input" value={marketplaceForm.description} onChange={e => setMarketplaceForm(p => ({ ...p, description: e.target.value }))} /></div>
+                    <div className="ap-field"><label className="ap-label">Player Benefit</label><input className="ap-input" value={marketplaceForm.benefit} onChange={e => setMarketplaceForm(p => ({ ...p, benefit: e.target.value }))} placeholder="Cosmetic only" /></div>
+                    <label style={{ color: 'var(--ap-muted)', fontSize: '0.78rem' }}><input type="checkbox" checked={marketplaceForm.isActive} onChange={e => setMarketplaceForm(p => ({ ...p, isActive: e.target.checked }))} /> Visible in marketplace</label>
+                    <div className="ap-btn-row"><button className="ap-btn" type="submit">{editingMarketplaceId ? 'Save Item' : 'Add Item'}</button>{editingMarketplaceId && <button className="ap-btn ap-btn-danger ap-btn-sm" type="button" onClick={() => { resetMarketplaceForm(); setEditingMarketplaceId(null); }}>Cancel Edit</button>}</div>
+                  </form>
+                </div>
+                <div className="ap-card">
+                  <p className="ap-card-title">Current Items ({marketplaceItems.length})</p>
+                  {marketplaceItems.length ? marketplaceItems.map((item) => (
+                    <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}><div><strong>{item.name}</strong><div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.id} · {item.category} · {item.purchaseCount || 0} purchases</div></div><strong style={{ color: 'var(--ap-accent)' }}>KES {Number(item.price || 0).toFixed(2)}</strong></div>
+                      <div className="ap-btn-row" style={{ marginTop: 8 }}><span style={{ color: item.isActive ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.isActive ? 'Visible' : 'Hidden'}</span><button className="ap-btn ap-btn-sm" onClick={() => openMarketplaceEdit(item)}>Edit</button></div>
+                    </div>
+                  )) : <div className="ap-empty">No marketplace items found.</div>}
+                </div>
+              </>
+            )}
             {activeSection === 'leaderboard' && (
               <>
                 <div className="ap-section-header">
