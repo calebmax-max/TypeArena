@@ -58,15 +58,15 @@ const parseCommentatorPhrases = (text = '') => String(text || '')
   .filter((line) => line.length > 0);
 
 const NAV_ITEMS = [
-  { id: 'overview',    label: 'Overview',     icon: '�-^' },
-  { id: 'wallet',      label: 'Wallet',        icon: '�-Z' },
-  { id: 'tournaments', label: 'Tournaments',   icon: '⬡' },
-  { id: 'players',     label: 'Top Players',   icon: '�-?' },
-  { id: 'leaderboard', label: 'Leaderboard',   icon: '�~.' },
-  { id: 'music',       label: 'Music',         icon: '�T�' },
+  { id: 'overview',    label: 'Overview',     icon: 'ï¿½-^' },
+  { id: 'wallet',      label: 'Wallet',        icon: 'ï¿½-Z' },
+  { id: 'tournaments', label: 'Tournaments',   icon: 'â¬¡' },
+  { id: 'players',     label: 'Top Players',   icon: 'ï¿½-?' },
+  { id: 'leaderboard', label: 'Leaderboard',   icon: 'ï¿½~.' },
+  { id: 'music',       label: 'Music',         icon: 'ï¿½Tï¿½' },
     { id: 'content',     label: 'Content',       icon: 'Content' },
     { id: 'marketplace', label: 'Marketplace',   icon: 'Store' },
-  { id: 'ai',          label: 'AI Settings',   icon: '⬡' },
+  { id: 'ai',          label: 'AI Settings',   icon: 'â¬¡' },
 ];
 
 export default function AdminPanel() {
@@ -549,7 +549,7 @@ export default function AdminPanel() {
   const winnerAmount = totalStake * 0.6;
   const platformFee = totalStake * 0.4;
 
-  // �"?�"?�"? Metric data �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"?ï¿½"? Metric data ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const primaryMetrics = [
     { label: 'Revenue Today',       value: `KES ${Number(analytics?.revenueToday || 0).toLocaleString()}`,        accent: '#63cab7' },
     { label: 'Admin Wallet',        value: `KES ${Number(analytics?.adminWalletBalance || 0).toLocaleString()}`,  accent: '#63cab7' },
@@ -600,7 +600,7 @@ export default function AdminPanel() {
           font-family: var(--ap-font-mono);
         }
 
-        /* �"?�"? Sidebar �"?�"? */
+        /* ï¿½"?ï¿½"? Sidebar ï¿½"?ï¿½"? */
         .ap-sidebar {
           width: var(--ap-sidebar);
           background: var(--ap-surface);
@@ -682,7 +682,7 @@ export default function AdminPanel() {
         }
         .ap-signout-btn:hover { background: rgba(224,123,90,0.1); border-color: var(--ap-warn); }
 
-        /* �"?�"? Main content �"?�"? */
+        /* ï¿½"?ï¿½"? Main content ï¿½"?ï¿½"? */
         .ap-main {
           flex: 1;
           min-width: 0;
@@ -690,7 +690,7 @@ export default function AdminPanel() {
           overflow-y: auto;
         }
 
-        /* �"?�"? Section header �"?�"? */
+        /* ï¿½"?ï¿½"? Section header ï¿½"?ï¿½"? */
         .ap-section-header {
           margin-bottom: 28px;
         }
@@ -709,7 +709,7 @@ export default function AdminPanel() {
           margin: 0;
         }
 
-        /* �"?�"? Notice toast �"?�"? */
+        /* ï¿½"?ï¿½"? Notice toast ï¿½"?ï¿½"? */
         .ap-toast {
           position: fixed;
           top: 24px;
@@ -730,7 +730,7 @@ export default function AdminPanel() {
           to   { opacity: 1; transform: translateX(0); }
         }
 
-        /* �"?�"? Metric grid �"?�"? */
+        /* ï¿½"?ï¿½"? Metric grid ï¿½"?ï¿½"? */
         .ap-metrics-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -786,7 +786,7 @@ export default function AdminPanel() {
         .ap-metric-sm .ap-metric-label { font-size: 0.6rem; margin-bottom: 4px; }
         .ap-metric-sm .ap-metric-value { font-size: 1rem; }
 
-        /* �"?�"? Card �"?�"? */
+        /* ï¿½"?ï¿½"? Card ï¿½"?ï¿½"? */
         .ap-card {
           background: var(--ap-surface);
           border: 1px solid var(--ap-border);
@@ -806,7 +806,7 @@ export default function AdminPanel() {
         .ap-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .ap-three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
 
-        /* �"?�"? Form elements �"?�"? */
+        /* ï¿½"?ï¿½"? Form elements ï¿½"?ï¿½"? */
         .ap-input, .ap-select, .ap-textarea {
           width: 100%;
           background: var(--ap-bg);
@@ -837,7 +837,7 @@ export default function AdminPanel() {
         }
         .ap-field { margin-bottom: 14px; }
 
-        /* �"?�"? Buttons �"?�"? */
+        /* ï¿½"?ï¿½"? Buttons ï¿½"?ï¿½"? */
         .ap-btn {
           display: inline-flex;
           align-items: center;
@@ -871,7 +871,7 @@ export default function AdminPanel() {
         .ap-btn-sm { padding: 7px 12px; font-size: 0.72rem; border-radius: 6px; }
         .ap-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
 
-        /* �"?�"? Wallet summary �"?�"? */
+        /* ï¿½"?ï¿½"? Wallet summary ï¿½"?ï¿½"? */
         .ap-wallet-row {
           display: flex;
           gap: 12px;
@@ -887,7 +887,7 @@ export default function AdminPanel() {
         .ap-wallet-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ap-muted); margin-bottom: 6px; display: block; }
         .ap-wallet-stat-value { font-family: var(--ap-font-head); font-size: 1.2rem; font-weight: 700; }
 
-        /* �"?�"? Transaction list �"?�"? */
+        /* ï¿½"?ï¿½"? Transaction list ï¿½"?ï¿½"? */
         .ap-tx-list { display: flex; flex-direction: column; gap: 6px; }
         .ap-tx-item {
           display: flex;
@@ -905,7 +905,7 @@ export default function AdminPanel() {
         .ap-tx-type { flex: 1; color: var(--ap-muted); text-transform: capitalize; }
         .ap-tx-note { font-size: 0.68rem; color: rgba(232,237,245,0.3); }
 
-        /* �"?�"? Tournament list �"?�"? */
+        /* ï¿½"?ï¿½"? Tournament list ï¿½"?ï¿½"? */
         .ap-tourney-list { display: flex; flex-direction: column; gap: 8px; }
         .ap-tourney-item {
           display: flex;
@@ -940,7 +940,7 @@ export default function AdminPanel() {
         .ap-status-badge.active   { color: var(--ap-gold); border-color: rgba(201,168,76,0.3); background: rgba(201,168,76,0.07); }
         .ap-status-badge.completed{ color: var(--ap-muted); border-color: var(--ap-border); }
 
-        /* �"?�"? Players table �"?�"? */
+        /* ï¿½"?ï¿½"? Players table ï¿½"?ï¿½"? */
         .ap-players-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
         .ap-players-table th {
           text-align: left;
@@ -970,7 +970,7 @@ export default function AdminPanel() {
         .ap-rank-3 { background: rgba(224,123,90,0.15); color: var(--ap-warn); border: 1px solid rgba(224,123,90,0.3); }
         .ap-rank-n { background: rgba(255,255,255,0.04); color: var(--ap-muted); border: 1px solid var(--ap-border); }
 
-        /* �"?�"? Music section �"?�"? */
+        /* ï¿½"?ï¿½"? Music section ï¿½"?ï¿½"? */
         .ap-now-playing {
           display: flex;
           align-items: center;
@@ -1068,7 +1068,7 @@ export default function AdminPanel() {
         .ap-track-row-artist { font-size: 0.68rem; color: var(--ap-muted); margin-top: 1px; }
         .ap-track-url { font-size: 0.62rem; color: rgba(232,237,245,0.2); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        /* �"?�"? Summary bar �"?�"? */
+        /* ï¿½"?ï¿½"? Summary bar ï¿½"?ï¿½"? */
         .ap-summary-bar {
           display: flex;
           gap: 10px;
@@ -1083,7 +1083,7 @@ export default function AdminPanel() {
         .ap-summary-bar span { color: var(--ap-muted); }
         .ap-summary-bar span strong { color: var(--ap-accent); margin-left: 4px; font-family: var(--ap-font-head); }
 
-        /* �"?�"? Empty state �"?�"? */
+        /* ï¿½"?ï¿½"? Empty state ï¿½"?ï¿½"? */
         .ap-empty {
           text-align: center;
           padding: 40px 20px;
@@ -1143,7 +1143,7 @@ export default function AdminPanel() {
 
       {!token ? (
         <div className="ap-lock">
-          <p style={{ fontSize: '2rem', margin: 0 }}>⬡</p>
+          <p style={{ fontSize: '2rem', margin: 0 }}>â¬¡</p>
           <h1 className="ap-lock-title">Restricted Area</h1>
           <p className="ap-lock-sub">Admin access requires authentication. Sign in from the main profile page.</p>
           {notice ? <p className="ap-lock-sub" style={{ color: 'var(--ap-warn)' }}>{notice}</p> : null}
@@ -1151,14 +1151,14 @@ export default function AdminPanel() {
         </div>
       ) : !authChecked ? (
         <div className="ap-lock">
-          <p style={{ fontSize: '2rem', margin: 0 }}>�-O</p>
+          <p style={{ fontSize: '2rem', margin: 0 }}>ï¿½-O</p>
           <h1 className="ap-lock-title">Verifying Access</h1>
           <p className="ap-lock-sub">Checking your admin session before opening the console.</p>
           {notice ? <p className="ap-lock-sub" style={{ color: 'var(--ap-warn)' }}>{notice}</p> : null}
         </div>
       ) : (
         <div className="ap-root">
-          {/* �"?�"? Sidebar �"?�"? */}
+          {/* ï¿½"?ï¿½"? Sidebar ï¿½"?ï¿½"? */}
           <aside className="ap-sidebar">
             <div className="ap-sidebar-logo">
               <div className="ap-sidebar-logo-text">TypeArena</div>
@@ -1179,7 +1179,7 @@ export default function AdminPanel() {
             </div>
           </aside>
 
-          {/* �"?�"? Main �"?�"? */}
+          {/* ï¿½"?ï¿½"? Main ï¿½"?ï¿½"? */}
           <main className="ap-main">
             {notice && <div className="ap-toast">{notice}</div>}
 
@@ -1210,11 +1210,11 @@ export default function AdminPanel() {
                     </div>
                   </>
                 ) : (
-                  <div className="ap-empty">Loading analytics�?�</div>
+                  <div className="ap-empty">Loading analyticsï¿½?ï¿½</div>
                 )}
                 <div className="ap-btn-row">
                   <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={handleClearAllTournaments} disabled={clearingTournaments || tournaments.length === 0}>
-                    {clearingTournaments ? 'Clearing�?�' : 'Clear All Tournaments'}
+                    {clearingTournaments ? 'Clearingï¿½?ï¿½' : 'Clear All Tournaments'}
                   </button>
                 </div>
               </>
@@ -1254,7 +1254,7 @@ export default function AdminPanel() {
                     </div>
                     <div className="ap-field">
                       <label className="ap-label">Note</label>
-                      <input className="ap-input" type="text" placeholder="Reason�?�" value={walletForm.topupNote} onChange={e => setWalletForm(p => ({ ...p, topupNote: e.target.value }))} />
+                      <input className="ap-input" type="text" placeholder="Reasonï¿½?ï¿½" value={walletForm.topupNote} onChange={e => setWalletForm(p => ({ ...p, topupNote: e.target.value }))} />
                     </div>
                     <button className="ap-btn" onClick={handleAdminWalletTopUp}>Add Funds</button>
                   </div>
@@ -1266,7 +1266,7 @@ export default function AdminPanel() {
                     </div>
                     <div className="ap-field">
                       <label className="ap-label">Note</label>
-                      <input className="ap-input" type="text" placeholder="Reason�?�" value={walletForm.withdrawNote} onChange={e => setWalletForm(p => ({ ...p, withdrawNote: e.target.value }))} />
+                      <input className="ap-input" type="text" placeholder="Reasonï¿½?ï¿½" value={walletForm.withdrawNote} onChange={e => setWalletForm(p => ({ ...p, withdrawNote: e.target.value }))} />
                     </div>
                     <button className="ap-btn ap-btn-ghost" onClick={handleAdminWalletWithdraw}>Withdraw</button>
                   </div>
@@ -1279,10 +1279,10 @@ export default function AdminPanel() {
                       {(adminWallet.history.items).map(item => (
                         <div key={item.code} className="ap-tx-item">
                           <span className={`ap-tx-amount ${item.direction === 'out' ? 'out' : 'in'}`}>
-                            {item.direction === 'out' ? '�^'' : '+'}KES {Number(item.amount || 0).toLocaleString()}
+                            {item.direction === 'out' ? '-' : '+'}KES {Number(item.amount || 0).toLocaleString()}
                           </span>
                           <span className="ap-tx-type">{(item.type || '').replace(/_/g, ' ')}</span>
-                          <span className="ap-tx-note">{(item.source || '').replace(/_/g, ' ')}{item.note ? ` · ${item.note}` : ''}</span>
+                          <span className="ap-tx-note">{(item.source || '').replace(/_/g, ' ')}{item.note ? ` Â· ${item.note}` : ''}</span>
                         </div>
                       ))}
                     </div>
@@ -1315,7 +1315,7 @@ export default function AdminPanel() {
                     </div>
                     <div className="ap-field">
                       <label className="ap-label">Icon / Emoji</label>
-                      <input className="ap-input" type="text" placeholder="�Y�?" value={formData.image} onChange={e => setFormData(p => ({ ...p, image: e.target.value }))} />
+                      <input className="ap-input" type="text" placeholder="ï¿½Yï¿½?" value={formData.image} onChange={e => setFormData(p => ({ ...p, image: e.target.value }))} />
                     </div>
                     <div className="ap-field">
                       <label className="ap-label">Start Date</label>
@@ -1362,13 +1362,13 @@ export default function AdminPanel() {
                         <div key={t.id} className="ap-tourney-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
                           {/* Row summary */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                            <span className="ap-tourney-icon">{t.image || '�Y�?'}</span>
+                            <span className="ap-tourney-icon">{t.image || 'ï¿½Yï¿½?'}</span>
                             <div className="ap-tourney-info">
                               <div className="ap-tourney-name">{t.name}</div>
                               <div className="ap-tourney-meta">
-                                KES {Number(t.entryFee || 0).toLocaleString()} entry · {Number(t.matchSize || t.maxParticipants || 2)} players · Pot KES {Number(t.totalPlayerStake || 0).toLocaleString()} · Winner KES {Number(t.winnerPrize || 0).toLocaleString()} · {Number(t.matchDurationMins || 10)} min match
+                                KES {Number(t.entryFee || 0).toLocaleString()} entry Â· {Number(t.matchSize || t.maxParticipants || 2)} players Â· Pot KES {Number(t.totalPlayerStake || 0).toLocaleString()} Â· Winner KES {Number(t.winnerPrize || 0).toLocaleString()} Â· {Number(t.matchDurationMins || 10)} min match
                               </div>
-                              <div className="ap-tourney-meta" style={{ marginTop: 3 }}>⏰ {startLabel}</div>
+                              <div className="ap-tourney-meta" style={{ marginTop: 3 }}>â° {startLabel}</div>
                             </div>
                             <span className={`ap-status-badge ${liveStatus}`}>{liveStatus}</span>
                             <button
@@ -1384,7 +1384,7 @@ export default function AdminPanel() {
                               {viewingParticipantsId === t.id ? 'Hide Players' : 'Players'}
                             </button>
                             <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleDeleteTournament(t)} disabled={deletingTournamentId === t.id}>
-                              {deletingTournamentId === t.id ? '�?�' : 'Delete'}
+                              {deletingTournamentId === t.id ? 'ï¿½?ï¿½' : 'Delete'}
                             </button>
                           </div>
 
@@ -1395,7 +1395,7 @@ export default function AdminPanel() {
                                 Players ({(participants[t.id] || []).length} / {Number(t.matchSize || t.maxParticipants || 2)})
                               </p>
                               {loadingParticipantsId === t.id ? (
-                                <div style={{ fontSize: '0.78rem', color: 'var(--ap-muted)' }}>Loading�?�</div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--ap-muted)' }}>Loadingï¿½?ï¿½</div>
                               ) : (participants[t.id] || []).length === 0 ? (
                                 <div className="ap-empty" style={{ padding: '20px' }}>No players have joined yet.</div>
                               ) : (
@@ -1453,7 +1453,7 @@ export default function AdminPanel() {
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
                                 <button className="ap-btn ap-btn-sm" onClick={handleSaveEdit} disabled={savingEditId === t.id}>
-                                  {savingEditId === t.id ? 'Saving�?�' : 'Save Changes'}
+                                  {savingEditId === t.id ? 'Savingï¿½?ï¿½' : 'Save Changes'}
                                 </button>
                                 <span style={{ fontSize: '0.72rem', color: 'var(--ap-muted)' }}>
                                   Status will be: <strong style={{ color: computeStatus(editForm.startDate, editForm.startTime) === 'active' ? 'var(--ap-gold)' : 'var(--ap-accent)' }}>
@@ -1509,7 +1509,7 @@ export default function AdminPanel() {
                                 onClick={() => handleImpersonatePlayer(p)}
                                 disabled={!p.id || impersonatingId === p.id}
                               >
-                                {impersonatingId === p.id ? 'Signing in�?�' : 'Sign in as'}
+                                {impersonatingId === p.id ? 'Signing inï¿½?ï¿½' : 'Sign in as'}
                               </button>
                             </td>
                           </tr>
@@ -1541,9 +1541,9 @@ export default function AdminPanel() {
                     <div className="ap-track-artist">{musicState.currentTrack?.artist || ''}</div>
                   </div>
                   <div className="ap-music-controls">
-                    <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.prev}>�?��?�</button>
-                    <button className="ap-btn ap-btn-sm" onClick={arenaMusic.toggle}>{musicState.playing ? '⏸' : '�-�'}</button>
-                    <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.next}>�?��?�</button>
+                    <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.prev}>ï¿½?ï¿½ï¿½?ï¿½</button>
+                    <button className="ap-btn ap-btn-sm" onClick={arenaMusic.toggle}>{musicState.playing ? 'â¸' : 'ï¿½-ï¿½'}</button>
+                    <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.next}>ï¿½?ï¿½ï¿½?ï¿½</button>
                   </div>
                 </div>
 
@@ -1557,7 +1557,7 @@ export default function AdminPanel() {
                     onChange={e => { arenaMusic.setMuted(false); arenaMusic.setVolume(Number(e.target.value)); }}
                   />
                   <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.toggleMute}>
-                    {musicState.muted ? '�Y"? Muted' : '�Y"S Live'}
+                    {musicState.muted ? 'ï¿½Y"? Muted' : 'ï¿½Y"S Live'}
                   </button>
                 </div>
 
@@ -1608,8 +1608,8 @@ export default function AdminPanel() {
                 <div className="ap-card">
                   <p className="ap-card-title">Add Track</p>
                   <div className="ap-mode-tabs">
-                    <button type="button" className={`ap-mode-tab${trackAddMode === 'file' ? ' active' : ''}`} onClick={() => handleSwitchMode('file')}>�Y"� From Device</button>
-                    <button type="button" className={`ap-mode-tab${trackAddMode === 'url' ? ' active' : ''}`} onClick={() => handleSwitchMode('url')}>�Y"- From URL</button>
+                    <button type="button" className={`ap-mode-tab${trackAddMode === 'file' ? ' active' : ''}`} onClick={() => handleSwitchMode('file')}>ï¿½Y"ï¿½ From Device</button>
+                    <button type="button" className={`ap-mode-tab${trackAddMode === 'url' ? ' active' : ''}`} onClick={() => handleSwitchMode('url')}>ï¿½Y"- From URL</button>
                   </div>
 
                   <div className="ap-two-col" style={{ marginBottom: 14 }}>
@@ -1628,11 +1628,11 @@ export default function AdminPanel() {
                       <input id="music-file-input" type="file" accept="audio/*,.mp3,.ogg,.wav,.flac,.aac,.m4a" style={{ display: 'none' }} onChange={handleFileSelected} />
                       <label htmlFor="music-file-input" className={`ap-file-label${localFileObjectUrl ? ' has-file' : ''}`}>
                         {localFileObjectUrl
-                          ? `�o" ${newTrack.title || 'File selected'} �?" click to change`
-                          : '�YZ� Click to choose MP3, OGG, WAV, or FLAC from your device'}
+                          ? `ï¿½o" ${newTrack.title || 'File selected'} ï¿½?" click to change`
+                          : 'ï¿½YZï¿½ Click to choose MP3, OGG, WAV, or FLAC from your device'}
                       </label>
                       <p style={{ fontSize: '0.68rem', color: 'var(--ap-muted)', margin: '4px 0 0' }}>
-                        Plays via a temporary browser URL �?" won't survive a page refresh. Use the URL tab for permanent tracks.
+                        Plays via a temporary browser URL ï¿½?" won't survive a page refresh. Use the URL tab for permanent tracks.
                       </p>
                     </>
                   ) : (
@@ -1659,7 +1659,7 @@ export default function AdminPanel() {
                           className={`ap-track-row${i === musicState.currentIndex ? ' playing' : ''}`}
                           onClick={() => { arenaMusic.seekToTrack(i); arenaMusic.play(); }}
                         >
-                          <span className="ap-track-num">{i === musicState.currentIndex ? (musicState.playing ? '�-�' : '�-�') : String(i + 1).padStart(2, '0')}</span>
+                          <span className="ap-track-num">{i === musicState.currentIndex ? (musicState.playing ? 'ï¿½-ï¿½' : 'ï¿½-ï¿½') : String(i + 1).padStart(2, '0')}</span>
                           <div className="ap-track-meta">
                             <div className="ap-track-row-title">{track.title}</div>
                             <div className="ap-track-row-artist">{track.artist}</div>
@@ -1686,7 +1686,7 @@ export default function AdminPanel() {
                   <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', marginBottom: 14 }}>One announcement per line. They scroll across the public header in real time.</p>
                   <div className="ap-field">
                     <label className="ap-label">Marquee Lines</label>
-                    <textarea className="ap-textarea" rows={6} placeholder="One line per announcement�?�" value={siteMarqueeText} onChange={e => setSiteMarqueeText(e.target.value)} />
+                    <textarea className="ap-textarea" rows={6} placeholder="One line per announcementï¿½?ï¿½" value={siteMarqueeText} onChange={e => setSiteMarqueeText(e.target.value)} />
                   </div>
                   <button className="ap-btn" onClick={handleSiteMarqueeSave}>Save Marquee</button>
                 </div>
@@ -1795,7 +1795,7 @@ export default function AdminPanel() {
                   <p className="ap-card-title">Current Items ({marketplaceItems.length})</p>
                   {marketplaceItems.length ? marketplaceItems.map((item) => (
                     <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}><div><strong>{item.name}</strong><div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.id} · {item.category} · {item.purchaseCount || 0} purchases</div></div><strong style={{ color: 'var(--ap-accent)' }}>KES {Number(item.price || 0).toFixed(2)}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}><div><strong>{item.name}</strong><div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.id} Â· {item.category} Â· {item.purchaseCount || 0} purchases</div></div><strong style={{ color: 'var(--ap-accent)' }}>KES {Number(item.price || 0).toFixed(2)}</strong></div>
                       <div className="ap-btn-row" style={{ marginTop: 8 }}><span style={{ color: item.isActive ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.isActive ? 'Visible' : 'Hidden'}</span><button className="ap-btn ap-btn-sm" onClick={() => openMarketplaceEdit(item)}>Edit</button></div>
                     </div>
                   )) : <div className="ap-empty">No marketplace items found.</div>}
