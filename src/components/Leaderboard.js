@@ -111,8 +111,8 @@ const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
       {/* Rank */}
       <span className="col-rank">
         <span className={`trend-indicator trend-${player.trend}`} aria-label={player.trend}>
-          {player.trend === 'up'   && '↑'}
-          {player.trend === 'down' && '↓'}
+          {player.trend === 'up' && String.fromCharCode(8593)}
+          {player.trend === 'down' && String.fromCharCode(8595)}
           {player.trend === 'same' && '-'}
         </span>
         <strong className="rank-indicator">#{player.displayRank}</strong>
@@ -131,7 +131,7 @@ const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
 
       {/* Season Points */}
       <span className="col-elo">
-        <span className="elo-display-badge">★ {player.seasonPoints ?? 0}</span>
+        <span className="elo-display-badge">{String.fromCharCode(9733)} {player.seasonPoints ?? 0}</span>
       </span>
 
       {/* Average WPM */}
@@ -170,7 +170,7 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label={`${player.username} profile`}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        <button className="modal-close" onClick={onClose} aria-label="Close">Ã—</button>
 
         <div className={`modal-tier-banner tier-${getTierClass(player.tier)}`}>
           <span className="modal-tier-icon">{getTierIcon(player.tier)}</span>
@@ -185,7 +185,7 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
 
         <div className="modal-stats-grid">
           <div className="modal-stat">
-            <span className="modal-stat-value">★ {player.seasonPoints ?? 0}</span>
+            <span className="modal-stat-value">{String.fromCharCode(9733)} {player.seasonPoints ?? 0}</span>
             <span className="modal-stat-label">Season Points</span>
           </div>
           <div className="modal-stat">
@@ -222,7 +222,7 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
 
 const EmptyState = ({ query }) => (
   <div className="empty-leaderboard">
-    <span className="empty-icon">—</span>
+    <span className="empty-icon">-</span>
     <p>{query ? `No players matching "${query}"` : 'No players yet. Be the first!'}</p>
   </div>
 );
@@ -546,7 +546,7 @@ export default function Leaderboard({ currentUserUsername }) {
             <div className="leaderboard-table">{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}</div>
           ) : !pastError && pastSeasons.length === 0 ? (
             <div className="empty-leaderboard">
-              <span className="empty-icon">—</span>
+              <span className="empty-icon">â€”</span>
               <p>No past season archives yet. They appear here after each monthly reset.</p>
             </div>
           ) : !pastError && (
@@ -616,10 +616,10 @@ export default function Leaderboard({ currentUserUsername }) {
                     onClick={() => setSelected(p)}
                     aria-label={`${p.username}, rank ${displayPos}`}
                   >
-                    {displayPos === 1 && <div className="crown-icon">★</div>}
+                    {displayPos === 1 && <div className="crown-icon">â˜…</div>}
                     <span className="podium-badge">#{displayPos}</span>
                     <div className="podium-username">{p.username}</div>
-                    <div className="podium-stat">★ {p.seasonPoints ?? 0} pts</div>
+                    <div className="podium-stat">â˜… {p.seasonPoints ?? 0} pts</div>
                     <div className="podium-substat">{Number(p.wpm ?? 0).toFixed(0)} WPM</div>
                   </button>
                 );
