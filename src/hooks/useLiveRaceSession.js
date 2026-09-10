@@ -435,7 +435,7 @@ export function useLiveRaceSession({
       setLoadingLive(false);
       setLiveAction(null);
     }
-  }, [duration, liveRoom?.id, refreshFeed, showNotice, startQueuedRoom]);
+  }, [duration, liveRoom?.id, liveRoom?.status, refreshFeed, showNotice, startQueuedRoom]);
 
   const joinFriendBattle = useCallback(async () => {
     if (currentUser === undefined) return;
