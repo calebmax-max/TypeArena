@@ -4465,7 +4465,7 @@ def admin_analytics():
 
             cur.execute(
                 '''
-                SELECT username, wpm, wins
+                SELECT id, username, wpm, wins
                 FROM users
                 ORDER BY wpm DESC, wins DESC
                 LIMIT 5
