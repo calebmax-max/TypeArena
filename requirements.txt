@@ -7,3 +7,4 @@ python-dotenv
 flask-sock
 flask-socketio>=5.3,<6.0
 simple-websocket>=1.0,<2.0
+tzdata
