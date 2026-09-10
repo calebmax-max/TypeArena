@@ -1460,7 +1460,7 @@ def _ensure_user_equipped_columns(cur) -> None:
         cur.execute("ALTER TABLE users ADD COLUMN equipped_cursor VARCHAR(80) NULL AFTER equipped_frame")
 
 
-# â”€â”€ Season reset helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Season reset helpers ──────────────────────────────────────────────────────
 
 def _ensure_season_tables(cur) -> None:
     """Create season_snapshots table and add season tracking columns to users."""
@@ -1604,7 +1604,7 @@ def _ensure_season_reset(conn) -> None:
     Called on leaderboard load and profile load.
     If the calendar month has rolled over since the last recorded season on any
     user, snapshot the final standings and zero out all season counters.
-    This is idempotent â€” safe to call on every request.
+    This is idempotent — safe to call on every request.
     """
     current_season = _get_current_season_name()
     with conn.cursor() as cur:
@@ -1626,7 +1626,7 @@ def _ensure_season_reset(conn) -> None:
         if not needs_reset:
             return
 
-        # â”€â”€ Snapshot the ending season before reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Snapshot the ending season before reset ────────────────────────
         cur.execute(
             """
             SELECT id, username, season_name, season_points_stored, season_races, season_wins, season_earnings
@@ -1666,7 +1666,7 @@ def _ensure_season_reset(conn) -> None:
                 ),
             )
 
-        # â”€â”€ Reset all users to the new season â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Reset all users to the new season ─────────────────────────────
         cur.execute(
             """
             UPDATE users
@@ -2198,7 +2198,7 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     normalized_mode = str(mode or 'business').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
 
-    # Use /chat/completions â€” the standard OpenAI endpoint.
+    # Use /chat/completions — the standard OpenAI endpoint.
     # The previous /responses endpoint does not exist and caused every AI call
     # to silently time out after 20 s before falling back to local passages.
     response = _http_json(
@@ -2213,7 +2213,7 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
                     'role': 'system',
                     'content': (
                         'You create fresh anti-cheat typing passages for competitive live races. '
-                        'Always respond with valid JSON only â€” no markdown, no extra text. '
+                        'Always respond with valid JSON only — no markdown, no extra text. '
                         'JSON must have exactly these keys: title, passage, antiCheatHint.'
                     ),
                 },
@@ -3343,7 +3343,7 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
     ranked_player_ids = sorted(player_ids, key=_placement_sort_key)
     placements = {pid: idx + 1 for idx, pid in enumerate(ranked_player_ids)}
 
-    # Use the caller's connection if provided â€” avoids an extra TCP round-trip
+    # Use the caller's connection if provided — avoids an extra TCP round-trip
     _owns_conn = conn is None
     if _owns_conn:
         conn = get_connection()
@@ -3397,7 +3397,7 @@ def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
         _persist_completed_live_race(room, conn=conn)
         return
 
-    # Use the caller's connection if provided â€” avoids an extra TCP round-trip
+    # Use the caller's connection if provided — avoids an extra TCP round-trip
     _owns_conn = conn is None
     if _owns_conn:
         conn = get_connection()
@@ -3463,7 +3463,7 @@ def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
             'finishedAtTs': datetime.utcnow().timestamp(),
         }
 
-    # Setup standard metric winner references (Metrics onlyâ€”No money involved)
+    # Setup standard metric winner references (Metrics only—No money involved)
     try:
         player_ids = [p['userId'] for p in room.get('players', [])]
         def result_sort_key(p_id: int):
@@ -5645,7 +5645,7 @@ def payout_prize_to_winner():
             if not math.isfinite(amount_value) or amount_value <= 0:
                 return jsonify({'message': 'Amount must be greater than zero.'}), 400
 
-            # â”€â”€ Double-payout guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # ── Double-payout guard ──────────────────────────────────────────
             if tournament_id is not None:
                 cur.execute(
                     '''
@@ -5676,7 +5676,7 @@ def payout_prize_to_winner():
             )
             cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, user_id_int))
 
-            # â”€â”€ Write prize_paid so the winners list shows the correct amount â”€â”€
+            # ── Write prize_paid so the winners list shows the correct amount ──
             if tournament:
                 _ensure_tournament_prize_paid_column(cur)
                 cur.execute(
@@ -5932,7 +5932,7 @@ def queue_live_race():
                     )
 
             if not is_private:
-                # Filter in SQL â€” avoids deserializing up to 100 rooms in Python.
+                # Filter in SQL — avoids deserializing up to 100 rooms in Python.
                 # This first pass is a plain (non-locking) read used only to shortlist
                 # candidate room ids.
                 cur.execute(
@@ -6821,7 +6821,7 @@ def leaderboard():
 
 
 
-# â”€â”€ Chat & Presence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Chat & Presence ──────────────────────────────────────────────────────────
 
 def _ensure_chat_tables(cur) -> None:
     cur.execute(
@@ -7214,7 +7214,7 @@ def chat_get_messages(other_user_id: int):
         _return_connection(conn)
 
 
-# â”€â”€ Socket.IO chat state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Socket.IO chat state ─────────────────────────────────────────────
 # Socket.IO is the single real-time transport for chat. The old raw
 # /ws/chat WebSocket route, the long-poll (Condition-variable) fallback,
 # and the DB-table event relay used for cross-process fan-out have all

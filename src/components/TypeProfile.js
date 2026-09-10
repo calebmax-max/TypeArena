@@ -1,19 +1,19 @@
 /**
- * TypeProfile.js  â€” Advanced Profile UI
+ * TypeProfile.js  — Advanced Profile UI
  *
  * Key additions over the original:
- *  â”€ AvatarBadge  : the circular "TA" badge now accepts a custom uploaded image.
+ *  ─ AvatarBadge  : the circular "TA" badge now accepts a custom uploaded image.
  *                   Image is stored in localStorage as a base64 data-URL so it
  *                   persists across sessions without any backend change.
- *                   Click the badge â†’ hidden <input type="file"> fires â†’ FileReader
- *                   encodes to base64 â†’ saved to localStorage & state.
- *  â”€ Full-page dark glassmorphism layout replacing the plain card grid.
- *  â”€ Sidebar identity panel (avatar + stats + equipped items).
- *  â”€ Tabbed main panel: Wallet Â· Race History Â· Settings.
- *  â”€ Stat bars (WPM, accuracy, wins) with animated fill.
- *  â”€ Wallet split into clear Top-up / Withdraw accordion sections.
- *  â”€ Race history with mode/language chips, place medal colours, and earnings.
- *  â”€ All original logic (auth, M-Pesa polling, Stripe redirect, sign-out,
+ *                   Click the badge → hidden <input type="file"> fires → FileReader
+ *                   encodes to base64 → saved to localStorage & state.
+ *  ─ Full-page dark glassmorphism layout replacing the plain card grid.
+ *  ─ Sidebar identity panel (avatar + stats + equipped items).
+ *  ─ Tabbed main panel: Wallet · Race History · Settings.
+ *  ─ Stat bars (WPM, accuracy, wins) with animated fill.
+ *  ─ Wallet split into clear Top-up / Withdraw accordion sections.
+ *  ─ Race history with mode/language chips, place medal colours, and earnings.
+ *  ─ All original logic (auth, M-Pesa polling, Stripe redirect, sign-out,
  *    redirect-after-login) is preserved exactly.
  */
 
@@ -42,7 +42,7 @@ import {
 } from '../utils/typingApi';
 import '../styles/TypeProfile.css';
 
-// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Constants ────────────────────────────────────────────────────────────────
 const USER_CHANGE_EVENT                  = 'typearena-user-changed';
 const TOPUP_STATUS_POLL_INTERVAL_MS      = 4000;
 const TOPUP_STATUS_POLL_MAX_ATTEMPTS     = 20;
@@ -61,7 +61,7 @@ const EQUIPPED_LABELS = {
   frame:   'Profile Frame',
 };
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const loadBadgeImage = () => {
   try { return localStorage.getItem(BADGE_IMAGE_KEY) || null; }
   catch { return null; }
@@ -69,7 +69,7 @@ const loadBadgeImage = () => {
 
 const saveBadgeImage = (dataUrl) => {
   try { localStorage.setItem(BADGE_IMAGE_KEY, dataUrl); }
-  catch { /* storage full â€” silently skip */ }
+  catch { /* storage full — silently skip */ }
 };
 
 const removeBadgeImage = () => {
@@ -84,17 +84,17 @@ const medalColour = (place) => {
   return 'rgba(255,255,255,0.35)';
 };
 
-// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 /**
  * AvatarBadge
  * The circular badge that shows the user's initials (e.g. "TA").
  * Clicking it opens a file-picker; choosing an image replaces the initials
- * with the uploaded photo. A small "Ã—" button removes the custom image.
+ * with the uploaded photo. A small "×" button removes the custom image.
  *
  * Props:
- *   initials  {string}  â€“ fallback text (e.g. "JD")
- *   size      {number}  â€“ diameter in px (default 96)
+ *   initials  {string}  – fallback text (e.g. "JD")
+ *   size      {number}  – diameter in px (default 96)
  */
 function AvatarBadge({ initials = 'TA', size = 96, image = '', onImageChange }) {
   const [imgSrc, setImgSrc] = useState(() => image || loadBadgeImage());
@@ -185,7 +185,7 @@ function AvatarBadge({ initials = 'TA', size = 96, image = '', onImageChange }) 
         </span>
       </button>
 
-      {/* Remove button â€” only when image exists */}
+      {/* Remove button — only when image exists */}
       {imgSrc && (
         <button
           className="avatar-badge-remove"
@@ -193,14 +193,14 @@ function AvatarBadge({ initials = 'TA', size = 96, image = '', onImageChange }) 
           title="Remove custom image"
           aria-label="Remove custom badge image"
         >
-          Ã—
+          ×
         </button>
       )}
     </div>
   );
 }
 
-/** StatBar â€” animated horizontal fill bar */
+/** StatBar — animated horizontal fill bar */
 function StatBar({ value, max, color = 'var(--tp-accent)' }) {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   return (
@@ -233,14 +233,14 @@ function Notice({ message, type = 'info' }) {
   return (
     <div className={`tp-notice tp-notice--${type}`} role="status">
       <span className="tp-notice__icon">
-        {type === 'error' ? 'âš ' : type === 'success' ? 'âœ“' : 'â„¹'}
+        {type === 'error' ? '⚠' : type === 'success' ? '✓' : 'ℹ'}
       </span>
       <span>{message}</span>
     </div>
   );
 }
 
-// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function TypeProfile() {
   const navigate = useNavigate();
 
@@ -270,7 +270,7 @@ export default function TypeProfile() {
   const [withdrawLoading,  setWithdrawLoading]  = useState(false);
   const profileRequestRef = useRef(0);
 
-  // â”€â”€ Audio / experience settings (persisted in localStorage, read by Play) â”€â”€
+  // ── Audio / experience settings (persisted in localStorage, read by Play) ──
   const [soundEnabled,       setSoundEnabled]       = useState(() => localStorage.getItem('typearena_sound')       !== 'false');
   const [musicEnabled,       setMusicEnabled]       = useState(() => localStorage.getItem('typearena_music')       !== 'false');
   const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
@@ -402,7 +402,7 @@ export default function TypeProfile() {
     }
   }, [walletConfig]);
 
-  // â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     setProfileName(currentUser?.username || '');
   }, [currentUser?.id, currentUser?.username]);
@@ -460,7 +460,7 @@ export default function TypeProfile() {
   const pollCancelledRef = useRef(false);
   useEffect(() => () => { pollCancelledRef.current = true; }, []);
 
-  // â”€â”€ M-Pesa polling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── M-Pesa polling ────────────────────────────────────────────────────────
   const watchMpesaTopupStatus = useCallback(async (checkoutRequestId) => {
     for (let i = 0; i < TOPUP_STATUS_POLL_MAX_ATTEMPTS; i++) {
       await new Promise((r) => window.setTimeout(r, TOPUP_STATUS_POLL_INTERVAL_MS));
@@ -506,7 +506,7 @@ export default function TypeProfile() {
     return false;
   }, [applyFreshUserState, loadProfile]);
 
-  // â”€â”€ Wallet actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Wallet actions ────────────────────────────────────────────────────────
   const handleAddFunds = async (e) => {
     e.preventDefault();
     if (topUpLoading) return;
@@ -574,7 +574,7 @@ export default function TypeProfile() {
     setAuthNotice('');
   };
 
-  // â”€â”€ Derived values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Derived values ────────────────────────────────────────────────────────
   const initials = currentUser?.username
     ? currentUser.username.slice(0, 2).toUpperCase()
     : 'TA';
@@ -586,17 +586,17 @@ export default function TypeProfile() {
     [currentUser?.wins, currentUser?.totalRaces]
   );
 
-  // â”€â”€ Loading state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="tp-root tp-root--loading">
           <div className="tp-spinner" />
-          <p>Loading profileâ€¦</p>
+          <p>Loading profile…</p>
         </div>
     );
   }
 
-  // â”€â”€ Logged-out state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Logged-out state ──────────────────────────────────────────────────────
   if (!currentUser) {
     return (
       <div className="tp-root tp-root--auth">
@@ -637,7 +637,7 @@ export default function TypeProfile() {
                 <div className="tp-field">
                   <label className="tp-field__label">Password</label>
                   <div className="tp-input-row">
-                    <input className="tp-input" type={showPassword ? 'text' : 'password'} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" value={formData.password}
+                    <input className="tp-input" type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={formData.password}
                       onChange={(e) => setFormData((c) => ({ ...c, password: e.target.value }))} required />
                     <button type="button" className="tp-btn tp-btn--ghost tp-btn--sm" onClick={() => setShowPassword((s) => !s)}>
                       {showPassword ? 'Hide' : 'Show'}
@@ -648,7 +648,7 @@ export default function TypeProfile() {
                 {authMode === 'signup' && (
                   <div className="tp-field">
                     <label className="tp-field__label">Phone number</label>
-                    <input className="tp-input" type="tel" placeholder="+254 7â€¦" value={formData.phoneNumber}
+                    <input className="tp-input" type="tel" placeholder="+254 7…" value={formData.phoneNumber}
                       onChange={(e) => setFormData((c) => ({ ...c, phoneNumber: e.target.value }))} />
                   </div>
                 )}
@@ -671,11 +671,11 @@ export default function TypeProfile() {
     );
   }
 
-  // â”€â”€ Logged-in state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Logged-in state ───────────────────────────────────────────────────────
   return (
       <div className="tp-root">
 
-        {/* â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Sidebar ────────────────────────────────────────────────────── */}
         <aside className="tp-sidebar">
 
           {/* Identity */}
@@ -685,7 +685,7 @@ export default function TypeProfile() {
               <h1 className="tp-identity__name">{currentUser.username}</h1>
               <span className="tp-identity__tier">{currentUser.tier || 'Standard'} Tier</span>
               {currentUser.premium && (
-                <span className="tp-identity__premium">âš¡ Premium</span>
+                <span className="tp-identity__premium">⚡ Premium</span>
               )}
             </div>
           </div>
@@ -736,7 +736,7 @@ export default function TypeProfile() {
               <span className="tp-count__l">Wins</span>
             </div>
             <div className="tp-count">
-              <span className="tp-count__n">{currentUser.phoneNumber ? 'âœ“' : 'â€”'}</span>
+              <span className="tp-count__n">{currentUser.phoneNumber ? '✓' : '—'}</span>
               <span className="tp-count__l">Phone</span>
             </div>
           </div>
@@ -747,7 +747,7 @@ export default function TypeProfile() {
             {Object.entries(EQUIPPED_LABELS).map(([key, label]) => (
               <div key={key} className="tp-equipped__row">
                 <span className="tp-equipped__label">{label}</span>
-                <span className="tp-equipped__value">{currentUser.equippedItems?.[key] || 'â€”'}</span>
+                <span className="tp-equipped__value">{currentUser.equippedItems?.[key] || '—'}</span>
               </div>
             ))}
           </div>
@@ -758,22 +758,22 @@ export default function TypeProfile() {
           </button>
         </aside>
 
-        {/* â”€â”€ Main panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {/* ── Main panel ─────────────────────────────────────────────────── */}
         <main className="tp-main">
 
           {/* Tab bar */}
           <div className="tp-tabs" role="tablist">
-            <Tab id="wallet"  active={activeTab === 'wallet'}  onClick={setActiveTab}>ðŸ’³ Wallet</Tab>
-            <Tab id="history" active={activeTab === 'history'} onClick={setActiveTab}>ðŸ Race History</Tab>
-            <Tab id="account" active={activeTab === 'account'} onClick={setActiveTab}>âš™ Account</Tab>
+            <Tab id="wallet"  active={activeTab === 'wallet'}  onClick={setActiveTab}>💳 Wallet</Tab>
+            <Tab id="history" active={activeTab === 'history'} onClick={setActiveTab}>🏁 Race History</Tab>
+            <Tab id="account" active={activeTab === 'account'} onClick={setActiveTab}>⚙ Account</Tab>
           </div>
 
-          {/* â”€â”€ WALLET TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── WALLET TAB ─────────────────────────────────────────────── */}
           {activeTab === 'wallet' && (
             <div className="tp-panel">
               <p className="tp-panel__help">
                 {simulatedPaymentsEnabled
-                  ? 'Test payments enabled â€” sandbox top-up and withdraw available.'
+                  ? 'Test payments enabled — sandbox top-up and withdraw available.'
                   : 'Top up your account, withdraw winnings, and keep your tournament wallet ready.'}
               </p>
 
@@ -811,12 +811,12 @@ export default function TypeProfile() {
                       </label>
                       <input className="tp-input" type="text" value={topUpAccount}
                         onChange={(e) => setTopUpAccount(e.target.value)}
-                        placeholder={topUpMethod === 'mpesa' ? '07â€¦' : 'email@example.com'} required />
+                        placeholder={topUpMethod === 'mpesa' ? '07…' : 'email@example.com'} required />
                     </div>
                   </div>
                   {/* <button type="submit" className="tp-btn tp-btn--primary">Add Funds</button> */}
                   {/* <button type="submit" className="tp-btn tp-btn--primary" disabled={topUpLoading}>
-                    {topUpLoading ? 'Processingâ€¦' : 'Add Funds'}
+                    {topUpLoading ? 'Processing…' : 'Add Funds'}
                   </button> */}
                 </form>
               )}
@@ -843,12 +843,12 @@ export default function TypeProfile() {
                       </label>
                       <input className="tp-input" type="text" value={withdrawAccount}
                         onChange={(e) => setWithdrawAccount(e.target.value)}
-                        placeholder={withdrawMethod === 'mpesa' ? '07â€¦' : 'email@example.com'} required />
+                        placeholder={withdrawMethod === 'mpesa' ? '07…' : 'email@example.com'} required />
                     </div>
                   </div>
                   {/* <button type="submit" className="tp-btn tp-btn--outline">Withdraw</button> */}
                   {/* <button type="submit" className="tp-btn tp-btn--outline" disabled={withdrawLoading}>
-                    {withdrawLoading ? 'Processingâ€¦' : 'Withdraw'}
+                    {withdrawLoading ? 'Processing…' : 'Withdraw'}
                   </button> */}
                 </form>
               )}
@@ -877,7 +877,7 @@ export default function TypeProfile() {
             </div>
           )}
 
-          {/* â”€â”€ RACE HISTORY TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── RACE HISTORY TAB ───────────────────────────────────────── */}
           {activeTab === 'history' && (
             <div className="tp-panel">
               <div className="tp-section-head">
@@ -890,7 +890,7 @@ export default function TypeProfile() {
                   return (
                     <div key={race.raceCode || race.createdAt || i} className="tp-race-row">
                       <div className="tp-race-row__medal" style={{ color: medalColour(place) }}>
-                        #{place || 'â€”'}
+                        #{place || '—'}
                       </div>
                       <div className="tp-race-row__main">
                         <span className="tp-race-row__wpm">{Number(race.wpm || 0).toFixed(1)} WPM</span>
@@ -909,14 +909,14 @@ export default function TypeProfile() {
                   );
                 }) : (
                   <div className="tp-empty">
-                    <span>No races yet â€” hit the arena to build your history.</span>
+                    <span>No races yet — hit the arena to build your history.</span>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* â”€â”€ ACCOUNT TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* ── ACCOUNT TAB ───────────────────────────────────────────── */}
           {activeTab === 'account' && (
             <div className="tp-panel">
               <div className="tp-section-head"><h3>Account Details</h3></div>
@@ -948,13 +948,13 @@ export default function TypeProfile() {
                 </div>
                 <div className="tp-account-row">
                   <span className="tp-account-row__label">Premium</span>
-                  <span className="tp-account-row__value">{currentUser.premium ? 'âš¡ Active' : 'Not active'}</span>
+                  <span className="tp-account-row__value">{currentUser.premium ? '⚡ Active' : 'Not active'}</span>
                 </div>
               </div>
 
               <div className="tp-section-head" style={{ marginTop: '2rem' }}>
                 <h3>Badge Image</h3>
-                <span className="tp-section-head__sub">Your profile badge â€” visible in races and standings</span>
+                <span className="tp-section-head__sub">Your profile badge — visible in races and standings</span>
               </div>
               <div className="tp-badge-editor">
                 <AvatarBadge initials={initials} size={110} image={currentUser.profileImage} onImageChange={handleProfileImageChange} />
@@ -970,7 +970,7 @@ export default function TypeProfile() {
               <div className="tp-audio-settings">
                 <div className="tp-audio-row">
                   <div className="tp-audio-row__info">
-                    <span className="tp-audio-row__label">ðŸ”Š Typing Sounds</span>
+                    <span className="tp-audio-row__label">🔊 Typing Sounds</span>
                     <span className="tp-audio-row__desc">Key click and error sounds while you type</span>
                   </div>
                   <button
@@ -983,7 +983,7 @@ export default function TypeProfile() {
                 </div>
                 <div className="tp-audio-row">
                   <div className="tp-audio-row__info">
-                    <span className="tp-audio-row__label">ðŸŽµ Background Music</span>
+                    <span className="tp-audio-row__label">🎵 Background Music</span>
                     <span className="tp-audio-row__desc">Orchestral arena music during lobby and races</span>
                   </div>
                   <button
@@ -996,7 +996,7 @@ export default function TypeProfile() {
                 </div>
                 <div className="tp-audio-row">
                   <div className="tp-audio-row__info">
-                    <span className="tp-audio-row__label">ðŸ“£ Live Commentator</span>
+                    <span className="tp-audio-row__label">📣 Live Commentator</span>
                     <span className="tp-audio-row__desc">Spoken commentary on milestones, streaks and finish</span>
                   </div>
                   <button
@@ -1016,4 +1016,4 @@ export default function TypeProfile() {
   );
 }
 
-// â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Styles ───────────────────────────────────────────────────────────────────
