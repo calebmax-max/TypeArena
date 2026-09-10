@@ -86,7 +86,7 @@ const _writeContentStore = (store) => {
       localStorage.setItem(USED_CONTENT_IDS_KEY, JSON.stringify(store));
     }
   } catch {
-    // localStorage full or unavailable �?" silently continue
+    // localStorage full or unavailable ï¿½?" silently continue
   }
 };
 
@@ -114,7 +114,7 @@ const recordUsedContentId = (id, mode, language, totalAvailable = 0) => {
   const bucket = store[key] && typeof store[key] === 'object' ? store[key] : { ids: [], updatedAt: 0 };
   const current = Array.isArray(bucket.ids) ? bucket.ids : [];
 
-  // Already recorded �?" nothing to do
+  // Already recorded ï¿½?" nothing to do
   if (current.includes(normalizedId)) return;
 
   const updated = [...current, normalizedId];
@@ -134,7 +134,7 @@ const recordUsedContentId = (id, mode, language, totalAvailable = 0) => {
 };
 
 // ---------------------------------------------------------------------------
-// Personal Best helpers �?" stored in localStorage per mode+language+duration
+// Personal Best helpers ï¿½?" stored in localStorage per mode+language+duration
 // ---------------------------------------------------------------------------
 const PB_KEY = 'typearena_personal_bests';
 
@@ -145,14 +145,14 @@ const getPB = (mode, language, duration) => {
   } catch { return null; }
 };
 
-// �"?�"? NEW #E: also persists replayFrames alongside the PB �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+// ï¿½"?ï¿½"? NEW #E: also persists replayFrames alongside the PB ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
 const savePB = (mode, language, duration, wpm, accuracy, frames = []) => {
   try {
     const store = JSON.parse(localStorage.getItem(PB_KEY) || '{}');
     const key = `${mode}__${language}__${duration}`;
     // Bug E fix: storing full typedText strings in every frame could exceed the
-    // localStorage quota (300 frames �- ~2000 chars �?^ 600 KB per PB entry).
-    // Store only the typed character count per frame �?" enough to drive the ghost
+    // localStorage quota (300 frames ï¿½- ~2000 chars ï¿½?^ 600 KB per PB entry).
+    // Store only the typed character count per frame ï¿½?" enough to drive the ghost
     // cursor and replay scrubber, at a fraction of the size.
     const compactFrames = frames.map((f) => ({
       len: typeof f.typedText === 'string' ? f.typedText.length : (f.len || 0),
@@ -164,7 +164,7 @@ const savePB = (mode, language, duration, wpm, accuracy, frames = []) => {
 };
 
 // ---------------------------------------------------------------------------
-// Win streak helpers �?" persisted across sessions
+// Win streak helpers ï¿½?" persisted across sessions
 // ---------------------------------------------------------------------------
 const getWinStreak = () => {
   try { return JSON.parse(localStorage.getItem(WIN_STREAK_KEY) || '{"count":0,"lastDate":null}'); }
@@ -190,7 +190,7 @@ const updateWinStreak = (won) => {
 };
 
 // ---------------------------------------------------------------------------
-// Daily challenge helpers �?" one shared passage per calendar day
+// Daily challenge helpers ï¿½?" one shared passage per calendar day
 // ---------------------------------------------------------------------------
 const getDailyChallenge = () => {
   try {
@@ -208,7 +208,7 @@ const saveDailyChallenge = (entry) => {
 };
 
 // ---------------------------------------------------------------------------
-// Recent races helpers �?" last 5 solo results stored in localStorage
+// Recent races helpers ï¿½?" last 5 solo results stored in localStorage
 // ---------------------------------------------------------------------------
 const RECENT_KEY = 'typearena_recent_races';
 const MAX_RECENT = 5;
@@ -227,7 +227,7 @@ const saveRecentRace = (entry) => {
 };
 
 // ---------------------------------------------------------------------------
-// Shared AudioContext �?" single instance used by both sound effects and the
+// Shared AudioContext ï¿½?" single instance used by both sound effects and the
 // orchestra. Creating multiple AudioContexts on the same page wastes OS
 // resources and causes the two engines to fight over the destination node.
 // ---------------------------------------------------------------------------
@@ -283,15 +283,15 @@ const playSound = (type) => {
 };
 
 // ---------------------------------------------------------------------------
-// Arena Orchestra �?" procedural FIFA-style orchestral background music
+// Arena Orchestra ï¿½?" procedural FIFA-style orchestral background music
 // Built entirely with Web Audio API: no files, no external deps.
 //
 // Architecture:
-//   �?� _arenaOrchestraCtx  �?" shared AudioContext (same as sound effects)
-//   �?� masterGain          �?" top-level volume fader
-//   �?� Lobby layer         �?" slow strings + pad (calm, majestic)
-//   �?� Race layer          �?" driving brass ostinato + percussion (intense)
-//   �?� Each layer crossfades on phase change
+//   ï¿½?ï¿½ _arenaOrchestraCtx  ï¿½?" shared AudioContext (same as sound effects)
+//   ï¿½?ï¿½ masterGain          ï¿½?" top-level volume fader
+//   ï¿½?ï¿½ Lobby layer         ï¿½?" slow strings + pad (calm, majestic)
+//   ï¿½?ï¿½ Race layer          ï¿½?" driving brass ostinato + percussion (intense)
+//   ï¿½?ï¿½ Each layer crossfades on phase change
 // ---------------------------------------------------------------------------
 
 const _orchestra = (() => {
@@ -308,7 +308,7 @@ const _orchestra = (() => {
 
   const getCtx = () => {
     // Always reuse the shared AudioContext so the orchestra and sound effects
-    // share the same audio graph �?" avoids dual-context resource waste.
+    // share the same audio graph ï¿½?" avoids dual-context resource waste.
     ctx = _getAudioCtx();
     return ctx;
   };
@@ -341,7 +341,7 @@ const _orchestra = (() => {
       lfo.connect(lfoGain);
       lfoGain.connect(osc.frequency);
       lfo.start();
-      // Fix #10 (Issue 10): LFO node was previously orphaned �?" started but never
+      // Fix #10 (Issue 10): LFO node was previously orphaned ï¿½?" started but never
       // tracked, so it survived every stop() call and leaked in the AudioContext.
       // Return it alongside the main osc so callers can push it into the nodes array.
       return { osc, gain: g, lfo };
@@ -371,7 +371,7 @@ const _orchestra = (() => {
     return { source, gain: g, filter };
   };
 
-  // Slow rhythmic pulse �?" simulates a distant bass drum
+  // Slow rhythmic pulse ï¿½?" simulates a distant bass drum
   const makeRhythmicPulse = (gainNode, bpm = 72) => {
     const c = getCtx();
     if (!c) return null;
@@ -397,8 +397,8 @@ const _orchestra = (() => {
     return window.setInterval(tick, intervalMs);
   };
 
-  // �"?�"? LOBBY LAYER �?" calm, slow strings + deep pad �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-  // Chord: D minor (D2, F2, A2, C3) �?" majestic, slightly melancholic FIFA feel
+  // ï¿½"?ï¿½"? LOBBY LAYER ï¿½?" calm, slow strings + deep pad ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
+  // Chord: D minor (D2, F2, A2, C3) ï¿½?" majestic, slightly melancholic FIFA feel
   const LOBBY_CHORD = [73.4, 87.3, 110, 130.8]; // D2 F2 A2 C3
   const buildLobbyLayer = () => {
     const c = getCtx();
@@ -412,7 +412,7 @@ const _orchestra = (() => {
 
     const nodes = [];
 
-    // Pad strings �?" triangle waves (warm, string-like)
+    // Pad strings ï¿½?" triangle waves (warm, string-like)
     LOBBY_CHORD.forEach((freq, i) => {
       const n = makeOsc(freq, 'triangle', 0.06 + (i === 0 ? 0.04 : 0), 5.2 + i * 0.3, 1.2);
       if (!n) return;
@@ -431,7 +431,7 @@ const _orchestra = (() => {
     const noise = makeFilteredNoise(0.018, 320);
     if (noise) { noise.gain.connect(lobbyGain); noise.source.start(); nodes.push(noise.source); }
 
-    // Slow shimmer on top (high triangle �?" like a glockenspiel ghost note)
+    // Slow shimmer on top (high triangle ï¿½?" like a glockenspiel ghost note)
     const shimmer = makeOsc(523.25, 'triangle', 0.012, 0.2, 4); // C5
     if (shimmer) {
       shimmer.gain.connect(lobbyGain);
@@ -444,8 +444,8 @@ const _orchestra = (() => {
     lobbyNodes = nodes;
   };
 
-  // �"?�"? RACE LAYER �?" driving brass ostinato + percussion �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-  // Chord: D minor �?" same root, but brighter (sawtooth brass feel)
+  // ï¿½"?ï¿½"? RACE LAYER ï¿½?" driving brass ostinato + percussion ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
+  // Chord: D minor ï¿½?" same root, but brighter (sawtooth brass feel)
   const RACE_CHORD = [146.8, 174.6, 220, 261.6]; // D3 F3 A3 C4
   let raceRhythmId = null;
   const buildRaceLayer = () => {
@@ -470,7 +470,7 @@ const _orchestra = (() => {
 
     const nodes = [];
 
-    // Driving brass ostinato �?" sawtooth, slightly detuned pairs
+    // Driving brass ostinato ï¿½?" sawtooth, slightly detuned pairs
     RACE_CHORD.forEach((freq, i) => {
       const n1 = makeOsc(freq, 'sawtooth', 0.045, 0, 0);
       const n2 = makeOsc(freq * 1.008, 'sawtooth', 0.038, 0, 0); // detune for thickness
@@ -486,13 +486,13 @@ const _orchestra = (() => {
     const tension = makeFilteredNoise(0.028, 1800);
     if (tension) { tension.gain.connect(raceGain); tension.source.start(); nodes.push(tension.source); }
 
-    // Rhythmic pulse (bass drum feel) at 96bpm �?" stadium stomp
+    // Rhythmic pulse (bass drum feel) at 96bpm ï¿½?" stadium stomp
     raceRhythmId = makeRhythmicPulse(raceGain, 96);
 
     raceNodes = nodes;
   };
 
-  // �"?�"? Public API �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Public API ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const start = () => {
     const c = getCtx();
     if (!c || running || !enabled) return;
@@ -557,7 +557,7 @@ const _orchestra = (() => {
   };
 
   const setVolume = (vol) => {
-    // vol: 0.0 �?" 1.0
+    // vol: 0.0 ï¿½?" 1.0
     if (masterGain) ramp(masterGain, Math.max(0, Math.min(1, vol)) * (currentPhase === 'race' ? 0.52 : 0.38), 0.5);
   };
 
@@ -565,7 +565,7 @@ const _orchestra = (() => {
 })();
 
 // ---------------------------------------------------------------------------
-// Commentator engine �?" eFootball-style live match announcer via Web Speech API
+// Commentator engine ï¿½?" eFootball-style live match announcer via Web Speech API
 // Speaks in short punchy chains like a real match commentator:
 //   "Oh!  What a move!  Incredible!  The crowd is on its feet!"
 // ---------------------------------------------------------------------------
@@ -574,26 +574,26 @@ const _orchestra = (() => {
 const _pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // ---------------------------------------------------------------------------
-// speakSequence �?" chains an array of short sentences with natural gaps,
+// speakSequence ï¿½?" chains an array of short sentences with natural gaps,
 // exactly like the eFootball / FIFA commentator delivery style.
-//   sentences : string[]  �?" each item is one short punchy line
-//   opts.rate  : number   �?" speech rate (default 1.08 �?" authoritative but urgent)
-//   opts.pitch : number   �?" voice pitch (default 0.92 �?" deep, commanding)
-//   opts.gap   : number   �?" ms between sentences (default 220)
-//   opts.force : boolean  �?" skip cooldown check
+//   sentences : string[]  ï¿½?" each item is one short punchy line
+//   opts.rate  : number   ï¿½?" speech rate (default 1.08 ï¿½?" authoritative but urgent)
+//   opts.pitch : number   ï¿½?" voice pitch (default 0.92 ï¿½?" deep, commanding)
+//   opts.gap   : number   ï¿½?" ms between sentences (default 220)
+//   opts.force : boolean  ï¿½?" skip cooldown check
 // ---------------------------------------------------------------------------
 let _commentatorBusy = false;
 let _commentatorCancelFlag = false;
 let _commentatorLastSpokenAt = 0;
 let _commentatorConfig = { rate: 1.08, pitch: 0.92, gap: 220, volume: 1.0, cooldown: 3500 };
-// Hard-disable flag �?" set when the user turns off the commentator.
+// Hard-disable flag ï¿½?" set when the user turns off the commentator.
 // Unlike _commentatorCancelFlag (which is reset by each new speakSequence call),
 // this one is only ever changed by the enable/disable toggle.
 let _commentatorDisabled = false;
 
 const _getCommentatorVoice = () => {
   const voices = window.speechSynthesis.getVoices();
-  // Priority list �?" deep authoritative English voices (eFootball / FIFA style)
+  // Priority list ï¿½?" deep authoritative English voices (eFootball / FIFA style)
   const priority = [
     'google uk english male',
     'microsoft george',
@@ -629,7 +629,7 @@ export const setCommentatorConfig = (config = {}) => {
 
 const speakSequence = (sentences, opts = {}) => {
   if (!window.speechSynthesis) return;
-  if (_commentatorDisabled) return;  // hard-disabled by user setting �?" bail immediately
+  if (_commentatorDisabled) return;  // hard-disabled by user setting ï¿½?" bail immediately
   const { force = false } = opts;
   const rate = _commentatorConfig.rate;
   const pitch = _commentatorConfig.pitch;
@@ -670,11 +670,11 @@ const speakSequence = (sentences, opts = {}) => {
 };
 
 // ---------------------------------------------------------------------------
-// Commentator script library �?" arrays of SHORT punchy sentences per moment
+// Commentator script library ï¿½?" arrays of SHORT punchy sentences per moment
 // Each entry in the outer array is one possible "take" (array of sentences).
 // ---------------------------------------------------------------------------
 const SCRIPT = {
-  // Welcome sequence �?" personalised, then feature tour
+  // Welcome sequence ï¿½?" personalised, then feature tour
   welcome: (name) => [
     `${name}!`,
     `Welcome to TypeArena!`,
@@ -683,9 +683,9 @@ const SCRIPT = {
   ],
   featureTour: () => [
     `Here's what's waiting for you.`,
-    `Jump into a live one-versus-one battle �?" real opponent, real prize money!`,
+    `Jump into a live one-versus-one battle ï¿½?" real opponent, real prize money!`,
     `Create a private match and challenge your friends directly.`,
-    `Compete in tournaments �?" multiple rounds, one champion.`,
+    `Compete in tournaments ï¿½?" multiple rounds, one champion.`,
     `Or sharpen your skills in solo practice mode, any time you want.`,
     `The arena is yours.`,
     `Now let's race!`,
@@ -711,7 +711,7 @@ const SCRIPT = {
   ],
 
   milestone75: [
-    [`Seventy-five percent!`, `In the HOME STRETCH now!`, `Don't let up �?" the finish is RIGHT THERE!`],
+    [`Seventy-five percent!`, `In the HOME STRETCH now!`, `Don't let up ï¿½?" the finish is RIGHT THERE!`],
     [`Three quarters done!`, `The crowd is DEAFENING!`, `One final push!`],
     [`Almost there!`, `This is where LEGENDS separate from the rest!`, `COME ON!`],
   ],
@@ -727,15 +727,15 @@ const SCRIPT = {
   ],
 
   error: [
-    [`Ohhh!`, `A slip!`, `Shake it off �?" champions recover!`],
+    [`Ohhh!`, `A slip!`, `Shake it off ï¿½?" champions recover!`],
     [`Mistake!`, `But there's still time!`, `Dig in and push through!`],
-    [`Oh no!`, `A rare error!`, `Back on track �?" NOW!`],
+    [`Oh no!`, `A rare error!`, `Back on track ï¿½?" NOW!`],
   ],
 
   finish: [
     [`AND IT'S OVER!`, `What a performance!`, `The crowd is absolutely ELECTRIC!`],
     [`THE RACE IS COMPLETE!`, `An outstanding display of speed and accuracy!`, `Give it up for this racer!`],
-    [`DONE!`, `Breathtaking!`, `Ladies and gentlemen �?" that was TypeArena at its finest!`],
+    [`DONE!`, `Breathtaking!`, `Ladies and gentlemen ï¿½?" that was TypeArena at its finest!`],
   ],
 
   waiting: [
@@ -962,7 +962,7 @@ export default function Play({ practicePage = false }){
   });
   const [tournamentId, setTournamentId] = useState('');
   const [initialRoomId, setInitialRoomId] = useState('');
-  // �"?�"? new feature state �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? new feature state ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('typearena_sound') !== 'false');
   // Keep the module-level flag in sync so playSound always knows the current setting
   useEffect(() => { setSoundEnabledGlobal(soundEnabled); }, [soundEnabled]);
@@ -1032,46 +1032,46 @@ export default function Play({ practicePage = false }){
   const [streak, setStreak] = useState(0);
   const [wpmHistory, setWpmHistory] = useState([]);       // [{t, wpm}] for sparkline
   const [isNewPB, setIsNewPB] = useState(false);
-  const [mistakeMap, setMistakeMap] = useState({});       // char �?' count
+  const [mistakeMap, setMistakeMap] = useState({});       // char ï¿½?' count
   const [recentRaces, setRecentRaces] = useState(() => getRecentRaces());
   const [waitingElapsed, setWaitingElapsed] = useState(0);
-  // �"?�"? Feature #1: WPM sparkline is already collected in wpmHistory �?" rendered below �"?�"?
-  // �"?�"? Feature #2: AFK/forfeit detection state �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #1: WPM sparkline is already collected in wpmHistory ï¿½?" rendered below ï¿½"?ï¿½"?
+  // ï¿½"?ï¿½"? Feature #2: AFK/forfeit detection state ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [afkWarning, setAfkWarning] = useState(false);
   const lastHeartbeatRef = useRef(Date.now());
-  // �"?�"? Feature #3: Spectator mode state �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-  // �"?�"? Feature #4: Daily challenge state �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #3: Spectator mode state ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
+  // ï¿½"?ï¿½"? Feature #4: Daily challenge state ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [dailyChallenge, setDailyChallenge] = useState(() => getDailyChallenge());
   const [showDailyChallenge, setShowDailyChallenge] = useState(false);
-  // �"?�"? Feature #5: Custom text / paste-your-own �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #5: Custom text / paste-your-own ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [customText, setCustomText] = useState('');
   const [useCustomText, setUseCustomText] = useState(false);
   const [showCustomTextPanel, setShowCustomTextPanel] = useState(false);
-  // �"?�"? Feature #6: WPM skill-based matchmaking �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #6: WPM skill-based matchmaking ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [wpmFilter, setWpmFilter] = useState({ min: 0, max: 300 });
   const [showWpmFilter, setShowWpmFilter] = useState(false);
-  // �"?�"? Feature #7: Share card (PNG via canvas) �?" exportScoreCard handles this �"?
-  // �"?�"? Feature #8: Keyboard heatmap on results �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #7: Share card (PNG via canvas) ï¿½?" exportScoreCard handles this ï¿½"?
+  // ï¿½"?ï¿½"? Feature #8: Keyboard heatmap on results ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [showHeatmap, setShowHeatmap] = useState(false);
-  // �"?�"? NEW #A: Penalty Mode �?" backspace disabled �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? NEW #A: Penalty Mode ï¿½?" backspace disabled ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [penaltyMode, setPenaltyMode] = useState(false);
-  // �"?�"? NEW #B: Keyboard shortcut overlay �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? NEW #B: Keyboard shortcut overlay ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [aiCoaching, setAiCoaching] = useState(null);
   const [aiCoachingError, setAiCoachingError] = useState(false);
-  // �"?�"? NEW #D: Post-race AI coaching �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
-  // �"?�"? NEW #E: Ghost race �?" replay personal best �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? NEW #D: Post-race AI coaching ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
+  // ï¿½"?ï¿½"? NEW #E: Ghost race ï¿½?" replay personal best ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [ghostFrames, setGhostFrames] = useState([]);      // pb replay frames for this session
   const [ghostIndex, setGhostIndex] = useState(0);         // which frame the ghost is on
   const ghostIntervalRef = useRef(null);
   const backToLobbyRef = useRef(() => {});
-  // �"?�"? Feature #10: Win streak �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #10: Win streak ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const [winStreak, setWinStreak] = useState(() => getWinStreak());
 
-  // Fix #13: unique SVG gradient ID per component instance �?" prevents collisions
+  // Fix #13: unique SVG gradient ID per component instance ï¿½?" prevents collisions
   // when React strict-mode mounts the component twice or when two instances coexist.
   const sparkGradId = useRef(`sparkGrad-${Math.random().toString(36).slice(2)}`);
-  // �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
 
   const inputRef = useRef(null);
   const typingStageRef = useRef(null);
@@ -1081,7 +1081,7 @@ export default function Play({ practicePage = false }){
   const contentLoadingRef = useRef(false);
   const loadedForRef = useRef('');
 
-  // Typed notice helper �?" keeps callsites clean
+  // Typed notice helper ï¿½?" keeps callsites clean
   const showNotice = useCallback((message, type = 'info') => {
     setNotice(message ? { message, type } : null);
   }, []);
@@ -1131,7 +1131,7 @@ export default function Play({ practicePage = false }){
       window.removeEventListener('storage', syncUser);
     };
   }, []);
-  // Start background music on first interaction �?" autoplay policy safe because
+  // Start background music on first interaction ï¿½?" autoplay policy safe because
   // the AudioContext is created inside a user-gesture handler
   useEffect(() => {
     if (!musicEnabled) return;
@@ -1161,15 +1161,15 @@ export default function Play({ practicePage = false }){
     // Fire as soon as we have a name; fall back to "Champion" for guests
     const name = currentUser?.username || currentUser?.name || null;
     // Fix #7 (Issue 7): `currentUser === null` means guest (resolved, not signed in).
-    // `currentUser === undefined` means still loading �?" that's when we should wait.
+    // `currentUser === undefined` means still loading ï¿½?" that's when we should wait.
     // The original guard had these backwards, so guests never triggered the welcome.
-    if (currentUser === undefined) return; // still loading �?" wait
+    if (currentUser === undefined) return; // still loading ï¿½?" wait
     _welcomeFiredRef.current = true;
     const displayName = name || 'Champion';
     const timer = window.setTimeout(() => {
-      // Part 1 �?" personalised welcome (force so it cuts through anything)
+      // Part 1 ï¿½?" personalised welcome (force so it cuts through anything)
       speakSequence(commentatorScriptRef.current.welcome(displayName), { force: true, rate: 1.05, pitch: 0.88, gap: 180 });
-      // Part 2 �?" feature tour starts after the welcome finishes (~4 s)
+      // Part 2 ï¿½?" feature tour starts after the welcome finishes (~4 s)
       window.setTimeout(() => {
         if (!_commentatorCancelFlag) {
           speakSequence(commentatorScriptRef.current.featureTour(), { force: true, rate: 1.0, pitch: 0.9, gap: 260 });
@@ -1263,7 +1263,7 @@ export default function Play({ practicePage = false }){
           // exhaust the rotation pool.
         }
       } catch (err) {
-        // Bug B fix: previously no catch �?" a network error left generatedContent null
+        // Bug B fix: previously no catch ï¿½?" a network error left generatedContent null
         // silently and allowed the user to start a race against the 43-char placeholder.
         if (!cancelled) {
           console.error('Failed to load race content:', err);
@@ -1430,7 +1430,7 @@ export default function Play({ practicePage = false }){
             setIsNewPB(true);
         }
 
-        // #10 win streak �?" solo race: only count as a win when the player actually typed
+        // #10 win streak ï¿½?" solo race: only count as a win when the player actually typed
         // something. A 0-WPM submission (e.g. timer expired with no input) is not a win.
         // Fix #5 (Issue 5): previously always passed true, so forfeits inflated the streak.
         const updatedStreak = updateWinStreak(wpm > 0);
@@ -1470,7 +1470,7 @@ export default function Play({ practicePage = false }){
     } finally {
         isSubmittingRef.current = false;
     }
-// Fix #9: removed timeLeft, typingText, replayFrames from deps �?" read via refs above.
+// Fix #9: removed timeLeft, typingText, replayFrames from deps ï¿½?" read via refs above.
 }, [commentatorEnabled, currentUser?.name, currentUser?.username, customText, dailyChallenge, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, showDailyChallenge, submitFinalLiveResult, useCustomText]);
   const handleFinishRace = useCallback(() => {
     if (phase !== 'racing' || isSubmittingRef.current) {
@@ -1486,7 +1486,7 @@ export default function Play({ practicePage = false }){
   // Stop music when component unmounts (navigate away)
   useEffect(() => () => { _orchestra.stop(); }, []);
 
-  // �"?�"? Feature #2: AFK / rage-quit penalty detection �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #2: AFK / rage-quit penalty detection ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   // Every keystroke updates lastHeartbeatRef. If 15s pass with no activity
   // during a live race, auto-forfeit and show a warning banner.
   useEffect(() => {
@@ -1516,7 +1516,7 @@ export default function Play({ practicePage = false }){
     return () => window.clearInterval(afkCheck);
   }, [duration, language, liveRoom?.id, mode, phase, showNotice, submitFinalLiveResult]);
 
-  // �"?�"? Feature #4: Daily challenge loader �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? Feature #4: Daily challenge loader ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const loadDailyChallenge = useCallback(async () => {
     try {
       // The backend is authoritative: it uses Nairobi time and may have rotated the passage.
@@ -1582,7 +1582,7 @@ export default function Play({ practicePage = false }){
   }, [phase]);
 
   useEffect(() => {
-    // Run the race timer during active racing �?" for both live rooms and solo/practice races
+    // Run the race timer during active racing ï¿½?" for both live rooms and solo/practice races
     if (phase !== 'racing') {
       if (timerRef.current) window.clearInterval(timerRef.current);
       return;
@@ -1592,11 +1592,11 @@ export default function Play({ practicePage = false }){
     syncRoomClock(liveRoom);
 
     timerRef.current = window.setInterval(() => {
-      // Read the latest room from the ref �?" not the stale closure value
+      // Read the latest room from the ref ï¿½?" not the stale closure value
       const currentRoom = liveRoomRef.current;
 
       // For live races, bail if the room has disappeared or phase changed.
-      // For solo races currentRoom is null �?" that's fine, fall through to the local tick below.
+      // For solo races currentRoom is null ï¿½?" that's fine, fall through to the local tick below.
       if (currentRoom?.id && phase !== 'racing') {
         window.clearInterval(timerRef.current);
         return;
@@ -1633,7 +1633,7 @@ export default function Play({ practicePage = false }){
     }, liveRoom?.startedAt ? 250 : LOCAL_RACE_TICK_INTERVAL_MS);
 
     return () => window.clearInterval(timerRef.current);
-  // Bug 2 fix: liveRoom?.startedAt removed from deps �?" every heartbeat returned a new room
+  // Bug 2 fix: liveRoom?.startedAt removed from deps ï¿½?" every heartbeat returned a new room
   // object (same startedAt value) which caused the interval to be cleared and recreated,
   // dropping a tick and making the on-screen timer stutter or drift by up to 1s per heartbeat.
   // liveRoom?.id is kept so the timer resets when entering a new room. syncRoomClock at
@@ -1705,7 +1705,7 @@ export default function Play({ practicePage = false }){
     startPracticeRaceWithMode(mode);
   }, [startPracticeRaceWithMode, mode]);
 
-  // �"?�"? NEW #E: inject ghost cursor blink animation once �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? NEW #E: inject ghost cursor blink animation once ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   useEffect(() => {
     const id = 'typearena-ghost-style';
     if (document.getElementById(id)) return;
@@ -1715,7 +1715,7 @@ export default function Play({ practicePage = false }){
     document.head.appendChild(el);
   }, []);
 
-  // �"?�"? NEW #E: Ghost race playback �?" advance ghost cursor in real time �"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? NEW #E: Ghost race playback ï¿½?" advance ghost cursor in real time ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   // Distribute the ghost frames evenly over the race duration.
   // Each tick advances the ghost by one frame.
   useEffect(() => {
@@ -1748,23 +1748,23 @@ export default function Play({ practicePage = false }){
     const topMistakes = Object.entries(mistakeMap)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6)
-      .map(([ch, n]) => `'${ch === ' ' ? 'space' : ch}' (${n}�-)`)
+      .map(([ch, n]) => `'${ch === ' ' ? 'space' : ch}' (${n}ï¿½-)`)
       .join(', ') || 'none';
 
     const wpmTrend = wpmHistory.length >= 3
-      ? `${wpmHistory[0].wpm.toFixed(0)} �?' ${wpmHistory[Math.floor(wpmHistory.length / 2)].wpm.toFixed(0)} �?' ${wpmHistory[wpmHistory.length - 1].wpm.toFixed(0)} WPM`
+      ? `${wpmHistory[0].wpm.toFixed(0)} ï¿½?' ${wpmHistory[Math.floor(wpmHistory.length / 2)].wpm.toFixed(0)} ï¿½?' ${wpmHistory[wpmHistory.length - 1].wpm.toFixed(0)} WPM`
       : `${raceResult.wpm.toFixed(0)} WPM`;
 
     const prompt = `You are a concise typing coach. A player just finished a ${raceResult.duration}s ${raceResult.mode} race.
 
 Stats:
 - WPM: ${raceResult.wpm.toFixed(1)}, Net WPM: ${raceResult.netWPM?.toFixed(1) || 'N/A'}, Accuracy: ${raceResult.accuracy.toFixed(1)}%
-- WPM trend (start �?' mid �?' end): ${wpmTrend}
+- WPM trend (start ï¿½?' mid ï¿½?' end): ${wpmTrend}
 - Most-missed characters: ${topMistakes}
 
 Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name specific words or patterns to practise. Format as a short numbered list. No preamble, no sign-off. Plain text only, no markdown.`;
 
-    // SECURITY: never call the Anthropic API directly from the browser �?" the key
+    // SECURITY: never call the Anthropic API directly from the browser ï¿½?" the key
     // would be visible to every user. Route through your own backend proxy instead.
     fetch(buildApiUrl('/api/ai-coaching'), {
       method: 'POST',
@@ -1838,7 +1838,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
   const handleInputChange = useCallback((event) => {
     lastHeartbeatRef.current = Date.now(); // #2 AFK reset on every keystroke
-    // �"?�"? NEW #A: Penalty Mode �?" block backspace entirely �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+    // ï¿½"?ï¿½"? NEW #A: Penalty Mode ï¿½?" block backspace entirely ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
     // Fix #7: event.preventDefault() has no effect on React controlled inputs;
     // the early return alone is what prevents the value update.
     if (penaltyMode && event.target.value.length < typingText.length) {
@@ -1846,7 +1846,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
     const value = event.target.value;
     const src = liveRoom?.text || (useCustomText && customText ? customText : null) || generatedContent?.passage || '';
-    // Fix #12: cap input at source length �?" typing past the end silently inflated
+    // Fix #12: cap input at source length ï¿½?" typing past the end silently inflated
     // WPM because extra characters contributed to the character count but were
     // never visible or penalised in the accuracy calculation.
     if (src && value.length > src.length) return;
@@ -1904,7 +1904,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
         if (expectedChar) {
           setMistakeMap((m) => ({ ...m, [expectedChar]: (m[expectedChar] || 0) + 1 }));
         }
-        // Commentator: occasional error reaction (not every error �?" 1-in-6 chance)
+        // Commentator: occasional error reaction (not every error ï¿½?" 1-in-6 chance)
         if (commentatorEnabled && Math.random() < 0.17) {
           speakSequence(_pick(commentatorScriptRef.current.error), { rate: 1.1, pitch: 0.91, gap: 150 });
         }
@@ -1927,7 +1927,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       }
     }
 
-    // WPM history for sparkline �?" record a point every ~2 seconds of elapsed time
+    // WPM history for sparkline ï¿½?" record a point every ~2 seconds of elapsed time
     // Fix #6 (Issue 6): `timeLeft` was a stale closure value here; read the ref instead.
     const elapsed = Math.max(1, duration - timeLeftRef.current);
     setWpmHistory((prev) => {
@@ -1986,7 +1986,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       handleFinishRace();
     }
   }, [handleFinishRace, phase, raceOver, sourceText, typingText.length]);
-  // �"?�"? NEW #E: ghost position �?" character the ghost has reached �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+  // ï¿½"?ï¿½"? NEW #E: ghost position ï¿½?" character the ghost has reached ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?ï¿½"?
   const updateMobileTypingSettings = useCallback((patch) => {
     setMobileTypingSettings((current) => {
       const next = { ...current, ...patch };
@@ -2084,7 +2084,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     const accentColor = themePreset.style?.['--arena-accent'] || '#22c55e';
     const goldColor = themePreset.style?.['--arena-gold'] || '#facc15';
 
-    // #7 �?" generate a proper PNG via Canvas (renders on WhatsApp previews)
+    // #7 ï¿½?" generate a proper PNG via Canvas (renders on WhatsApp previews)
     const canvas = document.createElement('canvas');
     canvas.width = 1080;
     canvas.height = 1080;
@@ -2108,7 +2108,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     for (let y = 0; y < 1080; y += 60) { ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(1080, y); ctx2d.stroke(); }
 
     // Glow circle
-    // Fix #6: the previous string-replace approach to convert hsl/rgb �?' hsla/rgba
+    // Fix #6: the previous string-replace approach to convert hsl/rgb ï¿½?' hsla/rgba
     // was fragile and broke for hex colors and CSS variables. Resolve the actual
     // computed accent color at runtime so the canvas gradient is always valid.
     const resolvedAccent = (() => {
@@ -2118,7 +2118,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
         document.body.appendChild(tmp);
         const computed = window.getComputedStyle(tmp).color; // always returns rgb(...)
         document.body.removeChild(tmp);
-        // computed is "rgb(r, g, b)" �?" convert to rgba
+        // computed is "rgb(r, g, b)" ï¿½?" convert to rgba
         return computed.replace('rgb(', 'rgba(').replace(')', ', 0.08)');
       } catch {
         return 'rgba(34,197,94,0.08)';
@@ -2148,7 +2148,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     ctx2d.fillStyle = '#f5f5f5';
     ctx2d.fillText('Race Complete', 80, 230);
 
-    // WPM �?" big number
+    // WPM ï¿½?" big number
     ctx2d.font = 'bold 220px monospace';
     ctx2d.fillStyle = accentColor;
     ctx2d.fillText(Math.round(raceResult.wpm), 80, 490);
@@ -2180,7 +2180,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       ctx2d.globalAlpha = 1;
       ctx2d.font = 'bold 30px sans-serif';
       ctx2d.fillStyle = accentColor;
-      ctx2d.fillText('�Y�? New Personal Best!', 100, 883);
+      ctx2d.fillText('ï¿½Yï¿½? New Personal Best!', 100, 883);
     }
 
     // Footer
@@ -2192,7 +2192,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       // Fix #9 (Issue 9): blob is null if the canvas is tainted or the encoder fails.
       // createObjectURL(null) throws a TypeError, so guard before proceeding.
       if (!blob) {
-        console.error('exportScoreCard: canvas.toBlob returned null �?" cannot create PNG');
+        console.error('exportScoreCard: canvas.toBlob returned null ï¿½?" cannot create PNG');
         return;
       }
       const url = URL.createObjectURL(blob);
@@ -2275,30 +2275,30 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </div>
             {practicePage ? (
               <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined || (!useCustomText && !dailyChallenge && !generatedContent?.passage)}>
-                {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading�?�" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content�?�" /> : 'Start This Practice'}
+                {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : 'Start This Practice'}
               </button>
             ) : (
               <button className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive || currentUser === undefined}>
-                {(loadingLive || currentUser === undefined) ? <span className="arena-spinner" aria-label="Loading�?�" /> : 'Join Live 1v1'}
+                {(loadingLive || currentUser === undefined) ? <span className="arena-spinner" aria-label="Loading" /> : 'Join Live 1v1'}
               </button>
             )}
           </div>
 
           <p className="results-challenge arena-shortcut-hint">
             {contentLoading
-              ? '⏳ Generating race content�?�'
-              : `Current mode: ${MODE_CONFIG.find((item) => item.id === mode)?.label || 'Standard'} · ${duration}s · Press Enter to start · Press ? for shortcuts`}
+              ? 'Generating race content...'
+              : `Current mode: ${MODE_CONFIG.find((item) => item.id === mode)?.label || 'Standard'} - ${duration}s - Press Enter to start - Press ? for shortcuts`}
           </p>
 
-          {/* �"?�"? NEW #B: Keyboard shortcut overlay �"?�"? */}
+          {/* ï¿½"?ï¿½"? NEW #B: Keyboard shortcut overlay ï¿½"?ï¿½"? */}
           {showShortcuts && (
             <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.72)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}
               onClick={() => setShowShortcuts(false)}>
               <div style={{ background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg,12px)', maxWidth:'480px', width:'100%', padding:'1.5rem', position:'relative' }}
                 onClick={(e) => e.stopPropagation()}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
-                  <h2 style={{ margin:0, fontSize:'1.05rem', color:'var(--arena-text)' }}>�O�️ Keyboard Shortcuts</h2>
-                  <button className="btn btn-sm btn-outline-light" onClick={() => setShowShortcuts(false)}>�o.</button>
+                  <h2 style={{ margin:0, fontSize:'1.05rem', color:'var(--arena-text)' }}>Keyboard Shortcuts</h2>
+                  <button className="btn btn-sm btn-outline-light" onClick={() => setShowShortcuts(false)}>Close</button>
                 </div>
                 <div style={{ display:'grid', gap:'0.5rem' }}>
                   {[
@@ -2306,7 +2306,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                     ['Esc', 'Close this overlay / cancel action'],
                     ['?', 'Toggle this shortcut cheat sheet'],
                     ['Tab', 'Switch between race modes (in lobby)'],
-                    ['30 / 60 / 120', 'Duration buttons �?" click or Tab to focus'],
+                    ['30 / 60 / 120', 'Duration buttons - click or Tab to focus'],
                     ['Backspace', 'Correct a mistake (disabled in Penalty Mode)'],
                     ['Click text', 'Re-focus the typing area during a race'],
                   ].map(([key, desc]) => (
@@ -2321,21 +2321,21 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </div>
           )}
 
-          {/* �"?�"? Feature #10: Win streak banner �"?�"? */}
+          {/* ï¿½"?ï¿½"? Feature #10: Win streak banner ï¿½"?ï¿½"? */}
           {winStreak.count >= 2 && (
             <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.6rem 1rem', background:'var(--arena-accent-soft)', border:'1px solid var(--arena-accent)', borderRadius:'10px', marginBottom:'0.75rem' }}>
-              <span style={{ fontSize:'1.4rem' }}>�Y"�</span>
+              <span style={{ fontSize:'1.4rem' }}>Hot</span>
               <div>
                 <strong style={{ color:'var(--arena-accent)', fontSize:'0.95rem' }}>{winStreak.count}-Race Win Streak!</strong>
-                <p style={{ margin:0, fontSize:'0.78rem', color:'var(--arena-muted)' }}>Keep it going �?" one more race.</p>
+                <p style={{ margin:0, fontSize:'0.78rem', color:'var(--arena-muted)' }}>Keep it going - one more race.</p>
               </div>
             </div>
           )}
 
-          {/* �"?�"? Feature #4: Daily challenge �"?�"? */}
+          {/* ï¿½"?ï¿½"? Feature #4: Daily challenge ï¿½"?ï¿½"? */}
           <div style={{ marginBottom:'0.75rem' }}>
             <button className="btn btn-outline-primary" onClick={loadDailyChallenge} style={{ marginRight:'0.5rem' }}>
-              �Y". Daily Challenge
+              Daily Challenge
             </button>
             {showDailyChallenge && dailyChallenge && (
               <button className="btn btn-sm btn-outline-light" onClick={() => setShowDailyChallenge(false)}>Dismiss</button>
@@ -2344,29 +2344,29 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           {showDailyChallenge && dailyChallenge && (
             <div style={{ background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg)', padding:'1rem 1.25rem', marginBottom:'1rem' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
-                <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', textTransform:'uppercase', letterSpacing:'0.12em', color:'var(--arena-accent)' }}>�Y". Today's Challenge</span>
+                <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', textTransform:'uppercase', letterSpacing:'0.12em', color:'var(--arena-accent)' }}>Today's Challenge</span>
                 <span style={{ fontSize:'0.75rem', color:'var(--arena-muted)' }}>{dailyChallenge.isScheduled ? 'Nairobi daily passage' : 'Daily fallback'}</span>
               </div>
-              <p style={{ fontFamily:'var(--font-mono)', fontSize:'0.88rem', color:'var(--arena-text)', lineHeight:'1.7', margin:'0 0 0.75rem' }}>"{dailyChallenge.passage?.slice(0, 140)}�?�"</p>
+              <p style={{ fontFamily:'var(--font-mono)', fontSize:'0.88rem', color:'var(--arena-text)', lineHeight:'1.7', margin:'0 0 0.75rem' }}>"{dailyChallenge.passage?.slice(0, 140)}..."</p>
               <button className="btn btn-primary btn-sm" onClick={() => { setUseCustomText(false); setShowDailyChallenge(true); startPracticeRace(); }}>
                 Race This Passage
               </button>
             </div>
           )}
 
-          {/* �"?�"? Feature #5: Custom text panel �"?�"? */}
+          {/* ï¿½"?ï¿½"? Feature #5: Custom text panel ï¿½"?ï¿½"? */}
           <div style={{ marginBottom:'0.75rem' }}>
             <button className="btn btn-outline-primary" onClick={() => setShowCustomTextPanel((v) => !v)}>
-              �o�️ Paste Custom Text
+              Paste Custom Text
             </button>
           </div>
           {showCustomTextPanel && (
             <div style={{ background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg)', padding:'1rem 1.25rem', marginBottom:'1rem' }}>
-              <p style={{ fontSize:'0.8rem', color:'var(--arena-muted)', marginBottom:'0.5rem' }}>Paste any text below �?" then start a practice race to type it.</p>
+              <p style={{ fontSize:'0.8rem', color:'var(--arena-muted)', marginBottom:'0.5rem' }}>Paste any text below, then start a practice race to type it.</p>
               <textarea
                 value={customText}
                 onChange={(e) => setCustomText(e.target.value.slice(0, 2000))}
-                placeholder="Paste your custom passage here (max 2000 chars)�?�"
+                placeholder="Paste your custom passage here (max 2000 chars)..."
                 rows={4}
                 style={{ width:'100%', background:'hsl(240 15% 6%)', border:'1px solid var(--arena-panel-border)', borderRadius:'8px', color:'var(--arena-text)', fontFamily:'var(--font-mono)', fontSize:'0.85rem', padding:'0.6rem 0.9rem', resize:'vertical', outline:'none' }}
               />
@@ -2376,34 +2376,34 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   onClick={() => setUseCustomText((v) => !v)}
                   disabled={!customText.trim()}
                 >
-                  {useCustomText ? '�o" Using custom text' : 'Use this text'}
+                  {useCustomText ? 'Using custom text' : 'Use this text'}
                 </button>
-                {useCustomText && <span style={{ fontSize:'0.75rem', color:'var(--arena-accent)' }}>Custom text active �?" press Start Practice</span>}
+                {useCustomText && <span style={{ fontSize:'0.75rem', color:'var(--arena-accent)' }}>Custom text active - press Start Practice</span>}
                 <span style={{ fontSize:'0.72rem', color:'var(--arena-muted)', marginLeft:'auto' }}>{customText.length}/2000</span>
               </div>
             </div>
           )}
 
-          {/* �"?�"? NEW #A: Penalty Mode toggle �"?�"? */}
+          {/* ï¿½"?ï¿½"? NEW #A: Penalty Mode toggle ï¿½"?ï¿½"? */}
           <div style={{ marginBottom:'0.75rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
             <button
               className={`btn ${penaltyMode ? 'btn-primary' : 'btn-outline-primary'}`}
               onClick={() => setPenaltyMode((v) => !v)}
             >
-              {penaltyMode ? '�Ys� Penalty Mode ON' : '�Ys� Penalty Mode'}
+              {penaltyMode ? 'Penalty Mode: On' : 'Penalty Mode'}
             </button>
             {penaltyMode && (
               <span style={{ fontSize:'0.78rem', color:'var(--arena-accent)' }}>
-                Backspace disabled �?" type through your mistakes!
+                Backspace disabled - type through your mistakes!
               </span>
             )}
           </div>
 
-          {/* �"?�"? Feature #6: WPM matchmaking filter �"?�"? */}
+          {/* ï¿½"?ï¿½"? Feature #6: WPM matchmaking filter ï¿½"?ï¿½"? */}
           {!practicePage && (
             <div style={{ marginBottom:'0.75rem' }}>
               <button className="btn btn-outline-primary" onClick={() => setShowWpmFilter((v) => !v)}>
-                �YZ� Skill Filter {wpmFilter.min > 0 || wpmFilter.max < 300 ? `(${wpmFilter.min}�?"${wpmFilter.max} WPM)` : ''}
+                Skill Filter {wpmFilter.min > 0 || wpmFilter.max < 300 ? `(${wpmFilter.min}-${wpmFilter.max} WPM)` : ''}
               </button>
             </div>
           )}
@@ -2452,8 +2452,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
           {notice && (
             <div className={`arena-notice arena-notice--${notice.type || 'info'}`} role="status">
-              {notice.type === 'error' && <span className="arena-notice__icon">�s�</span>}
-              {notice.type === 'success' && <span className="arena-notice__icon">�o"</span>}
+              {notice.type === 'error' && <span className="arena-notice__icon">ï¿½sï¿½</span>}
+              {notice.type === 'success' && <span className="arena-notice__icon">ï¿½o"</span>}
               {notice.type === 'warning' && <span className="arena-notice__icon">!</span>}
               <span>{notice.message}</span>
             </div>
@@ -2471,9 +2471,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   const isPB = pb && Math.abs(pb.wpm - r.wpm) < 0.01;
                   return (
                     <div key={i} className="result-card">
-                      <span className="result-label">{r.mode} · {r.language} · {r.duration}s {isPB ? '�Y�? PB' : ''}</span>
+                      <span className="result-label">{r.mode} Â· {r.language} Â· {r.duration}s {isPB ? 'ï¿½Yï¿½? PB' : ''}</span>
                       <span className="result-value">{Number(r.wpm).toFixed(1)} WPM</span>
-                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', opacity: 0.7 }}>{Number(r.accuracy).toFixed(1)}% accuracy · {new Date(r.date).toLocaleDateString()}</p>
+                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', opacity: 0.7 }}>{Number(r.accuracy).toFixed(1)}% accuracy Â· {new Date(r.date).toLocaleDateString()}</p>
                     </div>
                   );
                 })}
@@ -2508,7 +2508,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                       style={{ marginTop:'0.4rem', fontSize:'0.75rem' }}
                       onClick={() => watchRoom(room.id)}
                     >
-                      �Y'� Watch Live
+                      ï¿½Y'ï¿½ Watch Live
                     </button>
                   )}
                 </div>
@@ -2519,14 +2519,14 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
         </div>
       )}
 
-      {/* �"?�"? Feature #3: Inline Spectator Modal �"?�"? */}
+      {/* ï¿½"?ï¿½"? Feature #3: Inline Spectator Modal ï¿½"?ï¿½"? */}
       {spectateRoom && spectateData && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.82)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
           <div style={{ background:'var(--arena-bg, #0f111a)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg)', maxWidth:'680px', width:'100%', padding:'1.5rem', position:'relative' }}>
-            <button className="btn btn-sm btn-outline-light" style={{ position:'absolute', top:'1rem', right:'1rem' }} onClick={stopWatching}>�o. Stop watching</button>
+            <button className="btn btn-sm btn-outline-light" style={{ position:'absolute', top:'1rem', right:'1rem' }} onClick={stopWatching}>ï¿½o. Stop watching</button>
             <div style={{ marginBottom:'0.5rem', fontFamily:'var(--font-mono)', fontSize:'0.7rem', textTransform:'uppercase', letterSpacing:'0.12em', color:'var(--arena-accent)' }}>
-              �Y'� Spectating �?" {spectateData.mode || 'live'} race
-              {spectateData.status === 'completed' && <span style={{ marginLeft:'0.5rem', color:'var(--arena-gold)' }}>· Race Over</span>}
+              ï¿½Y'ï¿½ Spectating ï¿½?" {spectateData.mode || 'live'} race
+              {spectateData.status === 'completed' && <span style={{ marginLeft:'0.5rem', color:'var(--arena-gold)' }}>Â· Race Over</span>}
             </div>
             <div style={{ display:'flex', gap:'1rem', marginBottom:'1rem', flexWrap:'wrap' }}>
               {(spectateData.players || []).map((player) => (
@@ -2538,14 +2538,14 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   <div style={{ display:'flex', gap:'0.75rem', fontSize:'0.78rem', color:'var(--arena-muted)' }}>
                     <span><strong style={{ color:'var(--arena-text)' }}>{player.currentWpm || 0}</strong> WPM</span>
                     <span><strong style={{ color:'var(--arena-text)' }}>{player.progress || 0}</strong>%</span>
-                    {player.result && <span style={{ color:'var(--arena-accent)' }}>�o" Finished</span>}
+                    {player.result && <span style={{ color:'var(--arena-accent)' }}>ï¿½o" Finished</span>}
                   </div>
                 </div>
               ))}
             </div>
             {spectateData.text && (
               <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.82rem', color:'var(--arena-muted)', lineHeight:'1.6', background:'hsl(240 14% 6%)', borderRadius:'8px', padding:'0.75rem 1rem', maxHeight:'120px', overflow:'hidden' }}>
-                {spectateData.text.slice(0, 200)}�?�
+                {spectateData.text.slice(0, 200)}ï¿½?ï¿½
               </div>
             )}
             <p style={{ marginTop:'0.5rem', fontSize:'0.72rem', color:'var(--arena-muted)', opacity:0.6 }}>Refreshes every 3 seconds. You cannot interact with the race.</p>
@@ -2561,7 +2561,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               <div className="countdown-display" style={{ fontSize: '5rem', fontWeight: 700, color: 'var(--arena-accent, #22c55e)', margin: '1rem 0' }}>
                 {countdownRemaining > 0 ? countdownRemaining : 'GO!'}
               </div>
-              <p className="results-challenge">Get ready �?" race begins in {Math.max(0, countdownRemaining)} seconds</p>
+              <p className="results-challenge">Get ready ï¿½?" race begins in {Math.max(0, countdownRemaining)} seconds</p>
             </>
           ) : (
             <>
@@ -2575,7 +2575,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 <p className="arena-queue-elapsed">
                   Waiting {queueElapsed}s
                   {queueElapsed >= 30 && !liveRoom?.isPrivate && (
-                    <span className="arena-queue-timeout-hint"> �?" taking longer than usual. You can go back to the lobby and try again.</span>
+                    <span className="arena-queue-timeout-hint"> ï¿½?" taking longer than usual. You can go back to the lobby and try again.</span>
                   )}
                 </p>
               )}
@@ -2626,7 +2626,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             )}
             {liveRoom?.isPrivate ? (
               <button className="btn btn-outline-danger" onClick={cancelPrivateRoom} disabled={loadingLive}>
-                {loadingLive ? 'Canceling Room�?�' : 'Cancel Room'}
+                {loadingLive ? 'Canceling Roomï¿½?ï¿½' : 'Cancel Room'}
               </button>
             ) : (
               // Bug fix: this used to call backToLobby directly, which only reset
@@ -2639,7 +2639,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 onClick={liveRoom?.id ? leaveLiveRoom : backToLobby}
                 disabled={loadingLive}
               >
-                {loadingLive ? 'Leaving Queue�?�' : 'Leave Queue'}
+                {loadingLive ? 'Leaving Queueï¿½?ï¿½' : 'Leave Queue'}
               </button>
             )}
             <button className="btn btn-secondary" onClick={backToLobby}>
@@ -2675,11 +2675,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   <div key={player.userId} className="result-card">
                     <span className="result-label">{isMe ? 'You' : (player.username || 'Opponent')}</span>
                     <span className="result-value" style={{ color: hasSubmitted ? 'var(--arena-accent, #22c55e)' : 'var(--arena-muted, #aaa)' }}>
-                      {hasSubmitted ? '�o" Done' : '⏳ Racing...'}
+                      {hasSubmitted ? 'ï¿½o" Done' : 'â³ Racing...'}
                     </span>
                     {hasSubmitted && player.result?.wpm != null && (
                       <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem' }}>
-                        {Number(player.result.wpm).toFixed(1)} WPM · {Number(player.result.accuracy).toFixed(1)}%
+                        {Number(player.result.wpm).toFixed(1)} WPM Â· {Number(player.result.accuracy).toFixed(1)}%
                       </p>
                     )}
                   </div>
@@ -2703,10 +2703,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
       {phase === 'racing' && (
         <div className={`race-arena ${frameClassName} ${effectClassName}`} style={arenaStyle}>
-          {/* �"?�"? Feature #2: AFK warning �"?�"? */}
+          {/* ï¿½"?ï¿½"? Feature #2: AFK warning ï¿½"?ï¿½"? */}
           {afkWarning && (
             <div style={{ background:'hsl(0 60% 14%)', border:'1px solid hsl(0 55% 28%)', borderRadius:'8px', padding:'0.65rem 1rem', marginBottom:'0.75rem', color:'hsl(0 70% 72%)', fontSize:'0.85rem', fontWeight:600 }}>
-              �s� You were inactive for too long. Race forfeited to protect prize integrity.
+              ï¿½sï¿½ You were inactive for too long. Race forfeited to protect prize integrity.
             </div>
           )}
           <div className="arena-effect-layer" aria-hidden="true">
@@ -2751,7 +2751,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               <span style={{ fontSize:'0.7rem', color:'var(--arena-muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>Streak</span>
               <strong style={{ fontSize:'1.3rem', color: streak >= 10 ? 'var(--arena-gold)' : 'var(--arena-accent)' }}>{streak}</strong>
             </div>
-            {/* �"?�"? Feature #1: Full WPM sparkline with filled area �"?�"? */}
+            {/* ï¿½"?ï¿½"? Feature #1: Full WPM sparkline with filled area ï¿½"?ï¿½"? */}
             {wpmHistory.length >= 2 && (() => {
               const maxT = wpmHistory[wpmHistory.length - 1].t || 1;
               const maxW = Math.max(...wpmHistory.map((p) => p.wpm), 1);
@@ -2795,7 +2795,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 </div>
               );
             })()}
-            {/* �"?�"? NEW #E: ghost active indicator �"?�"? */}
+            {/* ï¿½"?ï¿½"? NEW #E: ghost active indicator ï¿½"?ï¿½"? */}
             {ghostFrames.length > 0 && (
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', minWidth:'60px' }}>
                 <span style={{ fontSize:'0.7rem', color:'hsl(200 70% 60%)', textTransform:'uppercase', letterSpacing:'0.05em' }}>Ghost</span>
@@ -2810,7 +2810,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             <div className="stats">
               <div className="stat">
                 <span className="stat-label">Mode</span>
-                <span className="stat-value live-mode">{mode}{penaltyMode ? ' �Ys�' : ''}</span>
+                <span className="stat-value live-mode">{mode}{penaltyMode ? ' ï¿½Ysï¿½' : ''}</span>
               </div>
               <div className="stat">
                 <span className="stat-label">Language</span>
@@ -2831,7 +2831,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                     <div key={player.userId} className="result-card">
                       <span className="result-label">#{index + 1} {String(player.userId) === String(currentUser?.id) ? 'You' : player.username}</span>
                       <span className="result-value">{Number(player.progress || 0)}%</span>
-                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem' }}>{Number(player.currentWpm || 0).toFixed(0)} WPM �?" {Number(player.currentAccuracy || 0).toFixed(0)}%</p>
+                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem' }}>{Number(player.currentWpm || 0).toFixed(0)} WPM ï¿½?" {Number(player.currentAccuracy || 0).toFixed(0)}%</p>
                     </div>
                   ))}
                 </div>
@@ -2841,21 +2841,21 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               <div className="opponent-panel__item">
                 {currentUser?.profileImage && <img src={currentUser.profileImage} alt="Your profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>You</span>
                 <strong>{myPlayer?.progress || 0}%</strong>
-                {/* �"?�"? NEW #C: your live WPM �"?�"? */}
+                {/* ï¿½"?ï¿½"? NEW #C: your live WPM ï¿½"?ï¿½"? */}
                 <span style={{ fontSize:'0.72rem', color:'var(--arena-accent)', marginTop:'2px' }}>{wpmValue.toFixed(0)} WPM</span>
               </div>
               <div className="opponent-panel__item" style={{ position:'relative' }}>
                 {opponent?.profileImage && <img src={opponent.profileImage} alt="Opponent profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>{opponent?.username || 'Opponent'}</span>
                 <strong>{opponent?.progress || 0}%</strong>
-                {/* �"?�"? NEW #C: opponent live WPM bar �"?�"? */}
+                {/* ï¿½"?ï¿½"? NEW #C: opponent live WPM bar ï¿½"?ï¿½"? */}
                 {opponent?.currentWpm != null && (
                   <>
                     <span style={{ fontSize:'0.72rem', color: opponent.currentWpm > wpmValue ? 'hsl(0 75% 60%)' : 'var(--arena-muted)', marginTop:'2px', fontWeight:700 }}>
                       {Number(opponent.currentWpm).toFixed(0)} WPM
                       {opponent.currentWpm > wpmValue
-                        ? ' �-�'
+                        ? ' ï¿½-ï¿½'
                         : opponent.currentWpm < wpmValue
-                          ? ' �-�'
+                          ? ' ï¿½-ï¿½'
                           : ''}
                     </span>
                     <div style={{ width:'100%', height:'4px', background:'hsl(240 14% 18%)', borderRadius:'999px', overflow:'hidden', marginTop:'4px' }}>
@@ -2899,8 +2899,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             >
               {focusLost && !raceOver && (
                 <div className="focus-lost-overlay" style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.72)', borderRadius:'inherit', zIndex:10, gap:'0.5rem', cursor:'pointer' }} onClick={() => { setFocusLost(false); inputRef.current?.focus(); }}>
-                  <span style={{ fontSize:'2rem' }}>⏸</span>
-                  <span style={{ color:'var(--arena-text)', fontWeight:600 }}>Window lost focus �?" click to resume</span>
+                  <span style={{ fontSize:'2rem' }}>â¸</span>
+                  <span style={{ color:'var(--arena-text)', fontWeight:600 }}>Window lost focus ï¿½?" click to resume</span>
                   <span style={{ color:'var(--arena-muted)', fontSize:'0.85rem' }}>Timer is still running</span>
                 </div>
               )}
@@ -2990,7 +2990,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
           {isNewPB && (
             <div style={{ textAlign:'center', padding:'0.6rem 1.2rem', background:'var(--arena-accent-soft)', border:'1px solid var(--arena-accent)', borderRadius:'10px', marginBottom:'0.75rem', fontWeight:700, color:'var(--arena-accent)', fontSize:'1.1rem' }}>
-              �Y�? New Personal Best!
+              ï¿½Yï¿½? New Personal Best!
             </div>
           )}
 
@@ -3003,14 +3003,14 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </div>
           )}
 
-          {/* �"?�"? NEW #D: Post-race AI coaching (replaces static coachTip) �"?�"? */}
+          {/* ï¿½"?ï¿½"? NEW #D: Post-race AI coaching (replaces static coachTip) ï¿½"?ï¿½"? */}
           <div className="live-board" style={{ marginTop:'0.75rem' }}>
             <div className="live-board__header">
-              <h2>�Y�- Coaching</h2>
-              {aiCoaching === 'loading' && <span className="arena-spinner" aria-label="Generating coaching�?�" />}
+              <h2>ï¿½Yï¿½- Coaching</h2>
+              {aiCoaching === 'loading' && <span className="arena-spinner" aria-label="Generating coachingï¿½?ï¿½" />}
             </div>
             {aiCoaching === 'loading' && (
-              <p className="results-challenge" style={{ opacity:0.7 }}>Analysing your race�?�</p>
+              <p className="results-challenge" style={{ opacity:0.7 }}>Analysing your raceï¿½?ï¿½</p>
             )}
             {aiCoaching && aiCoaching !== 'loading' && (
               <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.85rem', color:'var(--arena-text)', lineHeight:'1.75', whiteSpace:'pre-wrap', padding:'0.25rem 0' }}>
@@ -3037,15 +3037,15 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   .slice(0, 12)
                   .map(([char, count]) => (
                     <div key={char} style={{ display:'flex', flexDirection:'column', alignItems:'center', background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'8px', padding:'0.4rem 0.7rem', minWidth:'44px' }}>
-                      <span style={{ fontFamily:'monospace', fontSize:'1.1rem', fontWeight:700, color:'var(--arena-accent)' }}>{char === ' ' ? '␣' : char}</span>
-                      <span style={{ fontSize:'0.75rem', color:'var(--arena-muted)' }}>{count}�-</span>
+                      <span style={{ fontFamily:'monospace', fontSize:'1.1rem', fontWeight:700, color:'var(--arena-accent)' }}>{char === ' ' ? 'â£' : char}</span>
+                      <span style={{ fontSize:'0.75rem', color:'var(--arena-muted)' }}>{count}ï¿½-</span>
                     </div>
                   ))}
               </div>
             </div>
           )}
 
-          {/* �"?�"? Feature #8: Keyboard heatmap �"?�"? */}
+          {/* ï¿½"?ï¿½"? Feature #8: Keyboard heatmap ï¿½"?ï¿½"? */}
           {showHeatmap && Object.keys(mistakeMap).length > 0 && (() => {
             const maxMistakes = Math.max(...Object.values(mistakeMap), 1);
             const getHeatColor = (key) => {
@@ -3059,7 +3059,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             return (
               <div className="live-board" style={{ marginTop:'1rem' }}>
                 <div className="live-board__header">
-                  <h2>�Y"� Mistake Heatmap</h2>
+                  <h2>ï¿½Y"ï¿½ Mistake Heatmap</h2>
                   <span className="results-challenge">Red = most errors</span>
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:'4px', alignItems:'center', padding:'0.75rem 0' }}>
@@ -3110,7 +3110,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                     </span>
                     <span className="result-value">{entry.username}</span>
                     <p className="results-standing-meta">
-                      {entry.isCurrentUser ? 'You' : 'Opponent'} �?� {entry.wpm.toFixed(1)} WPM �?� {entry.accuracy.toFixed(1)}% accuracy
+                      {entry.isCurrentUser ? 'You' : 'Opponent'} ï¿½?ï¿½ {entry.wpm.toFixed(1)} WPM ï¿½?ï¿½ {entry.accuracy.toFixed(1)}% accuracy
                     </p>
                   </div>
                 ))}
@@ -3138,9 +3138,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             <button className="btn btn-outline-primary" onClick={() => navigate(`/results/${raceResult.id}`)}>
               Open Result Page
             </button>
-            {/* �"?�"? Feature #8: keyboard heatmap toggle �"?�"? */}
+            {/* ï¿½"?ï¿½"? Feature #8: keyboard heatmap toggle ï¿½"?ï¿½"? */}
             <button className="btn btn-outline-primary" onClick={() => setShowHeatmap((v) => !v)}>
-              {showHeatmap ? 'Hide' : '�Y"� Show'} Mistake Heatmap
+              {showHeatmap ? 'Hide' : 'ï¿½Y"ï¿½ Show'} Mistake Heatmap
             </button>
             <button className="btn btn-primary" onClick={backToLobby}>
               Back to Lobby
