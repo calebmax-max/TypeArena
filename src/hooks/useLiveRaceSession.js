@@ -202,7 +202,7 @@ export function useLiveRaceSession({
     // on EVERY call, including the local 250ms interpolation ticks that pass in
     // the same already-seen room object (no new network data). Since room.serverNow
     // is frozen at fetch time but Date.now() keeps moving, that made the offset
-    // drift further off with each tick and only snap back correct on the next poll â€”
+    // drift further off with each tick and only snap back correct on the next poll �?"
     // a sawtooth that differs per-client, so the two players' countdowns visibly
     // disagreed. Now we only re-derive the offset when a genuinely new serverNow
     // shows up (i.e. this room object came from a fresh server response).
@@ -328,7 +328,7 @@ export function useLiveRaceSession({
           totalContentCount: response.totalContentCount || 0,
         },
         {
-          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another playerâ€¦',
+          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player�?�',
           type: response.matched ? 'success' : 'info',
         }
       );
@@ -468,7 +468,7 @@ export function useLiveRaceSession({
         {
           message: response.message || (
             response.matched
-              ? 'Joined successfully. Opponent connected â€” race is starting.'
+              ? 'Joined successfully. Opponent connected �?" race is starting.'
               : 'Joined successfully. Waiting for the host to start.'
           ),
           type: response.matched ? 'success' : 'info',
@@ -699,7 +699,7 @@ export function useLiveRaceSession({
 
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown') {
-      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} secondsâ€¦`, 'info');
+      showNotice(`Race starts in ${Math.max(0, countdownRemaining)} seconds�?�`, 'info');
       if (countdownRemaining <= 0) {
         setPhase('racing');
         window.setTimeout(() => inputRef.current?.focus(), 150);

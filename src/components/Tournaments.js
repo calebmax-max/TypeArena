@@ -65,7 +65,7 @@ function CountdownStrip({ startTime, isFull }) {
 
   return (
     <div className="countdown-strip">
-      <span className="countdown-icon">â–¶</span>
+      <span className="countdown-icon">�-�</span>
       {isFull ? `Starting in ${mm}:${ss}` : `Starts at ${new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
     </div>
   );
@@ -111,8 +111,8 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
   else if (!isLoggedIn) btnLabel = 'Sign in to join';
   else if (isProcessing) btnLabel = 'Joining...';
   else if (isFull) btnLabel = 'Lobby full';
-  else if (savings > 0) btnLabel = `Join â€” KES ${cost.toLocaleString()} (net)`;
-  else btnLabel = `Join â€” KES ${cost.toLocaleString()}`;
+  else if (savings > 0) btnLabel = `Join �?" KES ${cost.toLocaleString()} (net)`;
+  else btnLabel = `Join �?" KES ${cost.toLocaleString()}`;
 
   const btnDisabled = isProcessing || isFull || isCompleted || joinClosed;
 
@@ -128,7 +128,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
 
       {isCompleted && winner ? (
         <div className="prize-block prize-block--winner">
-          <p className="prize-label">ðŸ† Winner</p>
+          <p className="prize-label">�Y�? Winner</p>
           <p className="prize-amount prize-amount--winner">
             {winner.username || winner.name || 'Unknown'}
           </p>
@@ -157,7 +157,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
 
       {savings > 0 && isLoggedIn && (
         <span className="cashback-badge">
-          â†© KES {savings.toLocaleString()} cashback after entry
+          �?� KES {savings.toLocaleString()} cashback after entry
         </span>
       )}
 
@@ -171,7 +171,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
       )}
 
       {joinClosed && !isCompleted && (
-        <div className="cutoff-closed">Joining closed â€” match in progress</div>
+        <div className="cutoff-closed">Joining closed �?" match in progress</div>
       )}
 
       <LobbyBar joined={joinedPlayers} max={requiredPlayers} />
@@ -233,7 +233,7 @@ export default function Tournaments() {
         setTournaments(nextTournaments);
         writeTournamentCache(nextTournaments);
       } catch (_) {
-        // silent refresh failures â€” don't disrupt the user
+        // silent refresh failures �?" don't disrupt the user
       } finally {
         if (isInitial && !cancelled) setLoading(false);
       }
@@ -244,7 +244,7 @@ export default function Tournaments() {
     // Re-fetch every 45 seconds to keep lobby counts and statuses current
     const pollId = setInterval(() => load(false), 45000);
 
-    // Also tick client-side status every 30 seconds for instant upcomingâ†’active flips
+    // Also tick client-side status every 30 seconds for instant upcoming�?'active flips
     const tickId = setInterval(() => {
       setTournaments((prev) => withLiveStatus(prev));
     }, 30000);
@@ -328,7 +328,7 @@ export default function Tournaments() {
         <div className="loading-state">Loading tournaments...</div>
       ) : filtered.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-icon">â¬¡</span>
+          <span className="empty-icon">⬡</span>
           <p>No {filter !== 'all' ? filter : ''} tournaments right now.</p>
           <p>Check back soon.</p>
         </div>
@@ -352,7 +352,7 @@ export default function Tournaments() {
             className="past-toggle"
             onClick={() => setShowPast((p) => !p)}
           >
-            <span>{showPast ? 'â–²' : 'â–¼'}</span>
+            <span>{showPast ? '�-�' : '�-�'}</span>
             Past Tournaments ({completedTournaments.length})
           </button>
           {showPast && (
