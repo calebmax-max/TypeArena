@@ -9,31 +9,31 @@ import React, {
 import { fetchLeaderboard } from '../utils/api';
 import '../styles/Leaderboard.css';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 const SORTS = [
-  { id: 'seasonPoints', label: '🏆 Top Points' },
-  { id: 'wpm',         label: '⚡ Top WPM'    },
-  { id: 'wins',        label: '🥇 Most Wins'  },
-  { id: 'winRate',     label: '📈 Win Rate'   },
-  { id: 'accuracy',    label: '🎯 Accuracy'   },
+  { id: 'seasonPoints', label: 'Top Points' },
+  { id: 'wpm',         label: 'Top WPM'    },
+  { id: 'wins',        label: 'Most Wins'  },
+  { id: 'winRate',     label: 'Win Rate'   },
+  { id: 'accuracy',    label: 'Accuracy'   },
 ];
 
 const TIERS = ['All', 'Grandmaster', 'Diamond', 'Gold', 'Silver', 'Bronze'];
 
 const TIER_META = {
-  grandmaster: { icon: '🔴', gradient: 'linear-gradient(135deg,#ff4e50,#f9d423)' },
-  diamond:     { icon: '💎', gradient: 'linear-gradient(135deg,#a8edea,#fed6e3)' },
-  gold:        { icon: '🥇', gradient: 'linear-gradient(135deg,#f7971e,#ffd200)' },
-  silver:      { icon: '🥈', gradient: 'linear-gradient(135deg,#bdc3c7,#2c3e50)' },
-  bronze:      { icon: '🥉', gradient: 'linear-gradient(135deg,#d4935a,#6b3a2a)' },
+  grandmaster: { icon: '\u{1F534}', gradient: 'linear-gradient(135deg,#ff4e50,#f9d423)' },
+  diamond: { icon: '\u{1F48E}', gradient: 'linear-gradient(135deg,#a8edea,#fed6e3)' },
+  gold: { icon: '\u{1F947}', gradient: 'linear-gradient(135deg,#f7971e,#ffd200)' },
+  silver: { icon: '\u{1F948}', gradient: 'linear-gradient(135deg,#bdc3c7,#2c3e50)' },
+  bronze: { icon: '\u{1F949}', gradient: 'linear-gradient(135deg,#d4935a,#6b3a2a)' },
 };
 
 const POLL_INTERVAL     = 30_000;
 const ITEMS_PER_PAGE    = 20;
 const SEARCH_DEBOUNCE_MS = 180;
 
-// ─── localStorage cache key — serves data instantly on revisit ────────────────
+// --- localStorage cache key - serves data instantly on revisit ----------------
 const LS_CACHE_KEY = 'typearena_lb_cache';
 
 const readCache = () => {
@@ -63,7 +63,7 @@ export const primeLeaderboardCache = async () => {
   }
 };
 
-// ─── Tier helpers ─────────────────────────────────────────────────────────────
+// --- Tier helpers -------------------------------------------------------------
 
 const normTier = (tier = '') => tier.toLowerCase();
 
@@ -73,16 +73,17 @@ const getTierClass = (tier = '') => {
   if (t === 'diamond')     return 'diamond';
   if (t === 'gold')        return 'gold';
   if (t === 'silver')      return 'silver';
+  if (t === 'unranked') return 'unranked';
   return 'bronze';
 };
 
 // FIX (minor): guard against non-tier values like 'All' returning the wrong fallback
 const getTierIcon = (tier = '') => {
   const key = normTier(tier);
-  return TIER_META[key]?.icon ?? '🥉';
+  return TIER_META[key]?.icon ?? '-';
 };
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
+// --- Skeleton -----------------------------------------------------------------
 
 const SkeletonRow = () => (
   <div className="table-row skeleton-row" aria-hidden="true">
@@ -95,7 +96,7 @@ const SkeletonRow = () => (
   </div>
 );
 
-// ─── PlayerRow (memoised) ─────────────────────────────────────────────────────
+// --- PlayerRow (memoised) -----------------------------------------------------
 
 const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
   return (
@@ -110,9 +111,9 @@ const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
       {/* Rank */}
       <span className="col-rank">
         <span className={`trend-indicator trend-${player.trend}`} aria-label={player.trend}>
-          {player.trend === 'up'   && '▲'}
-          {player.trend === 'down' && '▼'}
-          {player.trend === 'same' && '•'}
+          {player.trend === 'up'   && '↑'}
+          {player.trend === 'down' && '↓'}
+          {player.trend === 'same' && '-'}
         </span>
         <strong className="rank-indicator">#{player.displayRank}</strong>
       </span>
@@ -130,7 +131,7 @@ const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
 
       {/* Season Points */}
       <span className="col-elo">
-        <span className="elo-display-badge">⭐ {player.seasonPoints ?? 0}</span>
+        <span className="elo-display-badge">★ {player.seasonPoints ?? 0}</span>
       </span>
 
       {/* Average WPM */}
@@ -141,7 +142,7 @@ const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
       {/* Tier */}
       <span className="col-tier">
         <span className={`tier-badge tier-${getTierClass(player.tier)}`}>
-          {getTierIcon(player.tier)} {player.tier || 'Bronze'}
+          {getTierIcon(player.tier)} {player.tier || 'Unranked'}
         </span>
       </span>
 
@@ -153,7 +154,7 @@ const PlayerRow = memo(function PlayerRow({ player, isMe, onClick }) {
   );
 });
 
-// ─── PlayerModal ──────────────────────────────────────────────────────────────
+// --- PlayerModal --------------------------------------------------------------
 
 const PlayerModal = memo(function PlayerModal({ player, onClose }) {
   const winRate = player.wins && player.gamesPlayed
@@ -169,11 +170,11 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label={`${player.username} profile`}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
 
         <div className={`modal-tier-banner tier-${getTierClass(player.tier)}`}>
           <span className="modal-tier-icon">{getTierIcon(player.tier)}</span>
-          <span className="modal-tier-label">{player.tier || 'Bronze'}</span>
+          <span className="modal-tier-label">{player.tier || 'Unranked'}</span>
         </div>
 
         <h2 className="modal-username">
@@ -184,7 +185,7 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
 
         <div className="modal-stats-grid">
           <div className="modal-stat">
-            <span className="modal-stat-value">⭐ {player.seasonPoints ?? 0}</span>
+            <span className="modal-stat-value">★ {player.seasonPoints ?? 0}</span>
             <span className="modal-stat-label">Season Points</span>
           </div>
           <div className="modal-stat">
@@ -196,7 +197,7 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
             <span className="modal-stat-label">Wins</span>
           </div>
           <div className="modal-stat">
-            <span className="modal-stat-value">{player.gamesPlayed ?? '—'}</span>
+            <span className="modal-stat-value">{player.gamesPlayed ?? '-'}</span>
             <span className="modal-stat-label">Games Played</span>
           </div>
           {winRate !== null && (
@@ -217,32 +218,32 @@ const PlayerModal = memo(function PlayerModal({ player, onClose }) {
   );
 });
 
-// ─── EmptyState ───────────────────────────────────────────────────────────────
+// --- EmptyState ---------------------------------------------------------------
 
 const EmptyState = ({ query }) => (
   <div className="empty-leaderboard">
-    <span className="empty-icon">🔍</span>
+    <span className="empty-icon">—</span>
     <p>{query ? `No players matching "${query}"` : 'No players yet. Be the first!'}</p>
   </div>
 );
 
-// ─── ErrorState ───────────────────────────────────────────────────────────────
+// --- ErrorState ---------------------------------------------------------------
 
 const ErrorState = ({ onRetry }) => (
   <div className="error-leaderboard">
-    <span className="error-icon">⚠️</span>
+    <span className="error-icon">!</span>
     <p>Failed to load leaderboard.</p>
     <button className="retry-btn" onClick={onRetry}>Retry</button>
   </div>
 );
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// --- Main Component -----------------------------------------------------------
 
 export default function Leaderboard({ currentUserUsername }) {
-  // ── State ──────────────────────────────────────────────────────────────────
+  // -- State ------------------------------------------------------------------
 
   // PERF: seed from localStorage cache so the table renders immediately on
-  // revisit without waiting for the network — the fetch then refreshes silently.
+  // revisit without waiting for the network - the fetch then refreshes silently.
   const [players,     setPlayers]     = useState(() => readCache() ?? []);
   const [loading,     setLoading]     = useState(() => readCache() === null);
   const [error,       setError]       = useState(false);
@@ -262,7 +263,7 @@ export default function Leaderboard({ currentUserUsername }) {
     return now.toLocaleString('default', { month: 'long' }) + ' ' + now.getFullYear();
   });
 
-  // ── Refs ───────────────────────────────────────────────────────────────────
+  // -- Refs -------------------------------------------------------------------
   // FIX: previousRanksRef is updated in a useEffect, never inside useMemo,
   // so trend arrows are computed from a stable snapshot and never flicker.
   const previousRanksRef   = useRef({});
@@ -270,7 +271,7 @@ export default function Leaderboard({ currentUserUsername }) {
   const selfRowRef         = useRef(null);
   const debounceRef        = useRef(null);
 
-  // ── Data fetching ──────────────────────────────────────────────────────────
+  // -- Data fetching ----------------------------------------------------------
   const loadLeaderboardData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     setError(false);
@@ -351,9 +352,9 @@ export default function Leaderboard({ currentUserUsername }) {
   // Reset page when sort/filter changes
   useEffect(() => { setPage(1); }, [sortBy, tierFilter]);
 
-  // ── Processed list ─────────────────────────────────────────────────────────
+  // -- Processed list ---------------------------------------------------------
 
-  // PERF + FIX: pure sort+rank — no side effects inside useMemo.
+  // PERF + FIX: pure sort+rank - no side effects inside useMemo.
   // Trend arrows are computed separately in the effect below.
   const rankedPlayers = useMemo(() => {
     const copy = [...players];
@@ -414,7 +415,7 @@ export default function Leaderboard({ currentUserUsername }) {
   }, [fullyProcessedPlayers, searchQuery, tierFilter]);
 
   // FIX: split podium vs table by position within filteredPlayers (index),
-  // not by displayRank — so the split is always correct when filters are active.
+  // not by displayRank - so the split is always correct when filters are active.
   const podiumPlayers      = useMemo(() => filteredPlayers.slice(0, 3),  [filteredPlayers]);
   const regularListPlayers = useMemo(() => filteredPlayers.slice(3),     [filteredPlayers]);
 
@@ -431,11 +432,11 @@ export default function Leaderboard({ currentUserUsername }) {
     }
   }, [players]);
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // -- Handlers ---------------------------------------------------------------
   const handleRowClick   = useCallback((player) => setSelected(player), []);
   const handleModalClose = useCallback(() => setSelected(null), []);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // -- Render -----------------------------------------------------------------
   return (
     <div className="leaderboard-container">
       {/* Header */}
@@ -447,7 +448,7 @@ export default function Leaderboard({ currentUserUsername }) {
             LIVE
           </span>
           <span className="season-badge" style={{ marginLeft: '0.75rem', fontSize: '0.78rem', padding: '0.25rem 0.75rem', borderRadius: '999px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)', fontWeight: 500, letterSpacing: '0.02em' }}>
-            📅 {seasonName} Season
+            ?? {seasonName} Season
           </span>
         </div>
         <p>Real-time typing ladder. Season resets at end of month.</p>
@@ -477,14 +478,14 @@ export default function Leaderboard({ currentUserUsername }) {
           >
             {TIERS.map((t) => (
               // FIX (minor): only call getTierIcon for actual tier values, not 'All'
-              <option key={t} value={t}>{t === 'All' ? '🌐 All Tiers' : `${getTierIcon(t)} ${t}`}</option>
+              <option key={t} value={t}>{t === 'All' ? 'All Tiers' : `${getTierIcon(t)} ${t}`}</option>
             ))}
           </select>
 
           <div className="search-wrapper">
             <input
               type="text"
-              placeholder="Search player…"
+              placeholder="Search player-"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="leaderboard-search-input"
@@ -495,7 +496,7 @@ export default function Leaderboard({ currentUserUsername }) {
                 className="search-clear-btn"
                 onClick={() => setSearchInput('')}
                 aria-label="Clear search"
-              >✕</button>
+              >?</button>
             )}
           </div>
         </div>
@@ -508,13 +509,13 @@ export default function Leaderboard({ currentUserUsername }) {
           onClick={() => setActiveTab('live')}
           role="tab"
           aria-selected={activeTab === 'live'}
-        >🏆 Live Standings</button>
+        >Live Standings</button>
         <button
           className={`sort-btn ${activeTab === 'past' ? 'active' : ''}`}
           onClick={() => setActiveTab('past')}
           role="tab"
           aria-selected={activeTab === 'past'}
-        >📜 Past Seasons</button>
+        >Past Seasons</button>
       </div>
 
       {/* Past Seasons Panel */}
@@ -535,7 +536,7 @@ export default function Leaderboard({ currentUserUsername }) {
           {/* FIX: show error state when past seasons fetch fails */}
           {pastError && !pastLoading && (
             <div className="error-leaderboard">
-              <span className="error-icon">⚠️</span>
+              <span className="error-icon">!</span>
               <p>Failed to load past seasons.</p>
               <button className="retry-btn" onClick={loadPastSeasons}>Retry</button>
             </div>
@@ -545,7 +546,7 @@ export default function Leaderboard({ currentUserUsername }) {
             <div className="leaderboard-table">{Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}</div>
           ) : !pastError && pastSeasons.length === 0 ? (
             <div className="empty-leaderboard">
-              <span className="empty-icon">📜</span>
+              <span className="empty-icon">—</span>
               <p>No past season archives yet. They appear here after each monthly reset.</p>
             </div>
           ) : !pastError && (
@@ -557,7 +558,7 @@ export default function Leaderboard({ currentUserUsername }) {
                   const rows = pastSeasons.filter(r => r.seasonName === sName);
                   return (
                     <div key={sName} className="past-season-block" style={{ marginBottom: '1.5rem' }}>
-                      <h3 className="past-season-title" style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem', opacity: 0.85 }}>📅 {sName}</h3>
+                      <h3 className="past-season-title" style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.5rem', opacity: 0.85 }}>?? {sName}</h3>
                       <div className="leaderboard-table" role="table">
                         <div className="table-header" role="row">
                           <span className="col-rank"   role="columnheader">Rank</span>
@@ -572,7 +573,7 @@ export default function Leaderboard({ currentUserUsername }) {
                               <span className="player-name">{r.username}</span>
                             </div>
                             <span className="col-elo">
-                              <span className="elo-display-badge">⭐ {r.seasonPoints}</span>
+                              <span className="elo-display-badge">? {r.seasonPoints}</span>
                             </span>
                             <span className="col-tier">
                               <span className={`tier-badge tier-${getTierClass(r.tier)}`}>
@@ -596,7 +597,7 @@ export default function Leaderboard({ currentUserUsername }) {
         <ErrorState onRetry={() => loadLeaderboardData(false)} />
       ) : activeTab === 'live' && (
         <>
-          {/* Podium — only when no filter/search active */}
+          {/* Podium - only when no filter/search active */}
           {/* FIX: podiumPlayers is now sliced by filtered position so rank is always correct */}
           {!loading && !isFiltered && podiumPlayers.length > 0 && (
             <div className="podium-section" aria-label="Top 3 players">
@@ -615,10 +616,10 @@ export default function Leaderboard({ currentUserUsername }) {
                     onClick={() => setSelected(p)}
                     aria-label={`${p.username}, rank ${displayPos}`}
                   >
-                    {displayPos === 1 && <div className="crown-icon">👑</div>}
+                    {displayPos === 1 && <div className="crown-icon">★</div>}
                     <span className="podium-badge">#{displayPos}</span>
                     <div className="podium-username">{p.username}</div>
-                    <div className="podium-stat">⭐ {p.seasonPoints ?? 0} pts</div>
+                    <div className="podium-stat">★ {p.seasonPoints ?? 0} pts</div>
                     <div className="podium-substat">{Number(p.wpm ?? 0).toFixed(0)} WPM</div>
                   </button>
                 );
@@ -665,18 +666,18 @@ export default function Leaderboard({ currentUserUsername }) {
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
                 aria-label="Previous page"
-              >‹</button>
+              >-</button>
 
               {Array.from({ length: totalPages }, (_, i) => i + 1)
                 .filter((n) => n === 1 || n === totalPages || Math.abs(n - page) <= 2)
                 .reduce((acc, n, idx, arr) => {
-                  if (idx > 0 && n - arr[idx - 1] > 1) acc.push('…');
+                  if (idx > 0 && n - arr[idx - 1] > 1) acc.push('-');
                   acc.push(n);
                   return acc;
                 }, [])
                 .map((item, idx) =>
-                  item === '…' ? (
-                    <span key={`ellipsis-${idx}`} className="page-ellipsis">…</span>
+                  item === '-' ? (
+                    <span key={`ellipsis-${idx}`} className="page-ellipsis">-</span>
                   ) : (
                     <button
                       key={item}
@@ -693,7 +694,7 @@ export default function Leaderboard({ currentUserUsername }) {
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
                 aria-label="Next page"
-              >›</button>
+              >-</button>
             </div>
           )}
         </>
