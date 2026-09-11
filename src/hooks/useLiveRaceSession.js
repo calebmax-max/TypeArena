@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   calculateAccuracy,
-  calculateWPM,
+  calculateOfficialWPM,
   generateRaceId,
 } from '../utils/typingEngine';
 import {
@@ -143,7 +143,11 @@ export function useLiveRaceSession({
     const currentTypingText = typingTextRef.current;
     const currentTimeLeft = timeLeftRef.current;
     const currentReplayFrames = replayFramesRef.current;
-    const fallbackWpm = calculateWPM(currentTypingText, Math.max(1, duration - currentTimeLeft));
+    const fallbackWpm = calculateOfficialWPM(
+      room?.text || generatedContentPassage || getModeDescription(mode),
+      currentTypingText,
+      Math.max(1, duration - currentTimeLeft)
+    );
     const fallbackAccuracy = calculateAccuracy(
       room?.text || generatedContentPassage || getModeDescription(mode),
       currentTypingText
@@ -242,6 +246,8 @@ export function useLiveRaceSession({
     return true;
   }, [buildRoomResultPayload, persistLatestRaceResult, setPhase, setRaceResult]);
 
+  const sentBlurEventCountRef = useRef(0);
+
   const flushLiveHeartbeat = useCallback(async () => {
     if (!liveRoomRef.current?.id || heartbeatInFlightRef.current || !heartbeatPayloadRef.current) {
       return;
@@ -250,6 +256,18 @@ export function useLiveRaceSession({
     heartbeatInFlightRef.current = true;
     const payload = heartbeatPayloadRef.current;
     heartbeatPayloadRef.current = null;
+
+    // Play.js hands us the full accumulated blur-event log every call (it may
+    // get coalesced away by the debounce below before ever reaching here), so
+    // only slice off - and advance past - whatever hasn't actually been sent
+    // yet. The backend heartbeat handler only extends its own log with what
+    // arrives in each request, so sending the same events twice would inflate
+    // (and can falsely trip) the window-blur anti-cheat flag.
+    if (Array.isArray(payload.blurEvents)) {
+      const unsent = payload.blurEvents.slice(sentBlurEventCountRef.current);
+      sentBlurEventCountRef.current = payload.blurEvents.length;
+      payload.blurEvents = unsent;
+    }
 
     try {
       const room = await updateLiveRaceHeartbeat(liveRoomRef.current.id, payload);
@@ -273,6 +291,7 @@ export function useLiveRaceSession({
 
   const startQueuedRoom = useCallback((room, nextNotice, nextMode = mode, nextLanguage = language) => {
     setLiveRoom(room);
+    sentBlurEventCountRef.current = 0;
     recordUsedContentId(
       room?.contentId,
       room?.mode || nextMode,
@@ -516,12 +535,12 @@ export function useLiveRaceSession({
   ]);
 
 
-  const submitHeartbeat = useCallback(({ progress, currentWpm, currentAccuracy }) => {
+  const submitHeartbeat = useCallback(({ progress, currentWpm, currentAccuracy, blurEvents, pasteAttempted }) => {
     if (!liveRoomRef.current?.id) {
       return;
     }
 
-    heartbeatPayloadRef.current = { progress, currentWpm, currentAccuracy };
+    heartbeatPayloadRef.current = { progress, currentWpm, currentAccuracy, blurEvents, pasteAttempted };
     if (!heartbeatTimerRef.current) {
       heartbeatTimerRef.current = window.setTimeout(() => {
         heartbeatTimerRef.current = null;
@@ -536,7 +555,20 @@ export function useLiveRaceSession({
     }
 
     try {
-      const updatedRoom = await submitLiveRaceResult(liveRoomRef.current.id, { wpm, accuracy });
+      // Send the same anti-cheat evidence the solo path sends to
+      // /api/races/submit. Once typedText is present the backend replays it
+      // against the room's own text/startedAt and recomputes wpm/accuracy
+      // itself (see typingApi.js's submitLiveRaceResult docstring and
+      // app_backend.py's submit_live_race) - wpm/accuracy here are only a
+      // fallback for an unupgraded backend.
+      const updatedRoom = await submitLiveRaceResult(liveRoomRef.current.id, {
+        wpm,
+        accuracy,
+        typedText: finalData?.typedText,
+        keystrokeLog: finalData?.keystrokeLog,
+        blurEvents: finalData?.blurEvents,
+        pasteAttempted: finalData?.pasteAttempted,
+      });
       if (isLeavingRef.current) {
         return true;
       }
@@ -639,6 +671,7 @@ export function useLiveRaceSession({
     setCountdownRemaining(LIVE_RACE_COUNTDOWN_FALLBACK);
     setQueueElapsed(0);
     queuedAtRef.current = null;
+    sentBlurEventCountRef.current = 0;
   }, [clearLiveTimers]);
 
   useEffect(() => {
@@ -783,4 +816,3 @@ export function useLiveRaceSession({
     opponent,
   };
 }
-

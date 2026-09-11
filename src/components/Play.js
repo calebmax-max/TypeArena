@@ -2,9 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   calculateAccuracy,
-  calculateWPM,
+  calculateOfficialWPM,
   formatTime,
   generateRaceId,
+  createKeystrokeLogger,
+  createBlurTracker,
+  diffAppendedChars,
+  handlePasteAttempt,
 } from '../utils/typingEngine';
 import {
   fetchCurrentUser,
@@ -13,6 +17,7 @@ import {
   fetchLiveRaces,
   fetchMediaSettings,
   getStoredUserSnapshot,
+  startRace,
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
@@ -1081,6 +1086,18 @@ export default function Play({ practicePage = false }){
   const contentLoadingRef = useRef(false);
   const loadedForRef = useRef('');
 
+  // Anti-cheat instrumentation (typingEngine.js) for the race currently in
+  // progress. (Re)created whenever a race starts, fed from handleInputChange
+  // and the paste/blur handlers below, and read at submit time so the
+  // backend's server-authoritative scoring has something to verify against.
+  // See typingEngine.js / typingApi.js / app_backend.py's evaluate_race_submission.
+  const keystrokeLoggerRef = useRef(null);
+  const blurTrackerRef = useRef(null);
+  const pasteAttemptedRef = useRef(false);
+  // Signed receipt from POST /api/races/start - pins the passage hash and
+  // server start time so submitRaceResult isn't scored as legacy/unverified.
+  const raceTokenRef = useRef(null);
+
   // Typed notice helper Ã¯Â¿Â½?" keeps callsites clean
   const showNotice = useCallback((message, type = 'info') => {
     setNotice(message ? { message, type } : null);
@@ -1387,8 +1404,18 @@ export default function Play({ practicePage = false }){
             || generatedContent?.passage
             || MODE_CONFIG.find((item) => item.id === mode)?.description
             || '';
-        const wpm = calculateWPM(currentTypingText, elapsed);
+        // Client-side numbers via the same formula the backend replays
+        // (calculateOfficialWPM/typingEngine.js), used for the instant UI
+        // while the submission round-trips. These are never the final word -
+        // see the reconciliation below once the server responds.
+        const wpm = calculateOfficialWPM(sourceText, currentTypingText, elapsed);
         const accuracy = calculateAccuracy(sourceText, currentTypingText);
+
+        // Anti-cheat evidence gathered since the race started (typingEngine.js).
+        const keystrokeLog = keystrokeLoggerRef.current?.log || [];
+        const blurEvents = blurTrackerRef.current?.events || [];
+        const pasteAttempted = pasteAttemptedRef.current;
+        blurTrackerRef.current?.detach();
 
         const finalData = {
             id: generateRaceId(),
@@ -1397,6 +1424,11 @@ export default function Play({ practicePage = false }){
             duration,
             mode,
             language,
+            targetText: sourceText,
+            typedText: currentTypingText,
+            keystrokeLog,
+            blurEvents,
+            pasteAttempted,
         };
 
         if (liveRoom?.id) {
@@ -1409,10 +1441,36 @@ export default function Play({ practicePage = false }){
         // Solo / practice path: submit to the server fire-and-forget so a network
         // error never blocks setPhase('results'). Previously this was awaited before
         // the results logic, so any API failure (401, 500, offline) caused the screen
-        // to silently hang on 'racing' with no results shown.
-        submitRaceResult(finalData).catch((err) => {
+        // to silently hang on 'racing' with no results shown. Include the signed
+        // raceToken from startRace() so the backend scores this as verified instead
+        // of "legacy_client_unverified".
+        submitRaceResult({ ...finalData, raceToken: raceTokenRef.current })
+          .then((serverResult) => {
+            // The backend independently replays typedText against targetText and
+            // is the source of truth for WPM/accuracy - once its response lands,
+            // patch the displayed result to match it (typingEngine.js's "always
+            // let the server's response be the number you display" guidance).
+            if (!serverResult) return;
+            const officialWpm = typeof serverResult.wpm === 'number' ? serverResult.wpm : undefined;
+            const officialAccuracy = typeof serverResult.accuracy === 'number' ? serverResult.accuracy : undefined;
+            if (officialWpm === undefined && officialAccuracy === undefined) return;
+            setRaceResult((prev) => {
+              if (!prev) return prev;
+              const nextWpm = officialWpm ?? prev.wpm;
+              const nextAccuracy = officialAccuracy ?? prev.accuracy;
+              return {
+                ...prev,
+                wpm: nextWpm,
+                accuracy: nextAccuracy,
+                netWPM: Math.max(0, Math.round((nextWpm * (nextAccuracy / 100)) * 10) / 10),
+                shareText: `I typed ${Math.round(nextWpm)} WPM on TypeArena.`,
+                antiCheatFlags: serverResult.flags || prev.antiCheatFlags,
+              };
+            });
+          })
+          .catch((err) => {
             console.warn('submitRaceResult failed (non-fatal):', err);
-        });
+          });
 
         // Ensure this passage is recorded as used so the next solo race won't repeat it
         recordUsedContentId(
@@ -1485,6 +1543,7 @@ export default function Play({ practicePage = false }){
   finishRaceRef.current = finishRace;
   // Stop music when component unmounts (navigate away)
   useEffect(() => () => { _orchestra.stop(); }, []);
+  useEffect(() => () => { blurTrackerRef.current?.detach(); }, []);
 
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #2: AFK / rage-quit penalty detection Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   // Every keystroke updates lastHeartbeatRef. If 15s pass with no activity
@@ -1696,9 +1755,34 @@ export default function Play({ practicePage = false }){
         : _pick(commentatorScriptRef.current.raceStart);
       speakSequence(_raceScript, { force: true, rate: 1.15, pitch: 0.90, gap: 160 });
     }
+
+    // Reset anti-cheat instrumentation for the new race (typingEngine.js).
+    keystrokeLoggerRef.current = createKeystrokeLogger();
+    pasteAttemptedRef.current = false;
+    blurTrackerRef.current?.detach();
+    blurTrackerRef.current = createBlurTracker();
+    blurTrackerRef.current.attach();
+
+    // Mint a signed race token so submitRaceResult is scored as verified
+    // rather than "legacy_client_unverified" (see typingApi.js/startRace).
+    // Fire-and-forget: the token only needs to land before finishRace runs
+    // seconds/minutes later, so it must never block the race from starting.
+    raceTokenRef.current = null;
+    const practicePassageText = (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
+      || (useCustomText && customText ? customText : null)
+      || generatedContent?.passage
+      || MODE_CONFIG.find((item) => item.id === resolvedMode)?.description
+      || '';
+    startRace(practicePassageText, { mode: resolvedMode, durationLimit: duration })
+      .then((receipt) => { raceTokenRef.current = receipt?.token || null; })
+      .catch((err) => {
+        console.warn('startRace failed; submission will be scored as legacy/unverified:', err);
+        raceTokenRef.current = null;
+      });
+
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser, duration, generatedContent?.contentId, generatedContent?.id, generatedContent?.totalContentCount, isLeavingRef, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showNotice]);
+  }, [commentatorEnabled, currentUser, customText, dailyChallenge, duration, generatedContent, isLeavingRef, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showDailyChallenge, showNotice, useCustomText]);
 
   // startPracticeRace is a convenience wrapper that starts in the current mode.
   const startPracticeRace = useCallback(() => {
@@ -1794,6 +1878,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    blurTrackerRef.current?.detach();
 
     sessionStorage.removeItem(LATEST_RACE_RESULT_KEY);
     resetLiveSession();
@@ -1845,6 +1930,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       return;
     }
     const value = event.target.value;
+    // Feed the bot-detection guard (typingEngine.js) - logs the character(s)
+    // appended since the last change, so a normal keypress logs 1 char and a
+    // paste/autofill logs a multi-char chunk the backend flags as paste-like.
+    keystrokeLoggerRef.current?.record(diffAppendedChars(typingText, value));
     const src = liveRoom?.text || (useCustomText && customText ? customText : null) || generatedContent?.passage || '';
     // Fix #12: cap input at source length Ã¯Â¿Â½?" typing past the end silently inflated
     // WPM because extra characters contributed to the character count but were
@@ -1865,11 +1954,13 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       replayFrameAtRef.current = Date.now();
       setReplayFrames(replayFramesRef.current);
       if (liveRoom?.id) {
-        const currentWpm = calculateWPM(value, Math.max(1, duration - timeLeftRef.current));
+        const currentWpm = calculateOfficialWPM(src, value, Math.max(1, duration - timeLeftRef.current));
         submitHeartbeat({
           progress: 100,
           currentWpm,
           currentAccuracy: calculateAccuracy(src, value),
+          blurEvents: blurTrackerRef.current?.events,
+          pasteAttempted: pasteAttemptedRef.current,
         });
       }
       window.clearInterval(timerRef.current);
@@ -1934,7 +2025,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       const lastT = prev.length ? prev[prev.length - 1].t : 0;
       if (elapsed - lastT >= 2) {
         // Cap at 60 entries so marathon races don't grow the array indefinitely
-        return [...prev.slice(-59), { t: elapsed, wpm: calculateWPM(value, elapsed) }];
+        return [...prev.slice(-59), { t: elapsed, wpm: calculateOfficialWPM(src, value, elapsed) }];
       }
       return prev;
     });
@@ -1953,10 +2044,18 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     if (liveRoom?.id) {
       const sourceTextLength = Math.max(1, (liveRoom.text || '').length);
       const progress = Math.min(100, Math.round((value.length / sourceTextLength) * 100));
-      const currentWpm = calculateWPM(value, Math.max(1, duration - timeLeft));
       const liveSourceText = liveRoom?.text || generatedContent?.passage || 'Type fast, type clean, and own the round.';
+      const currentWpm = calculateOfficialWPM(liveSourceText, value, Math.max(1, duration - timeLeft));
       const currentAccuracy = calculateAccuracy(liveSourceText, value);
-      submitHeartbeat({ progress, currentWpm, currentAccuracy });
+      submitHeartbeat({
+        progress,
+        currentWpm,
+        currentAccuracy,
+        // Accumulated server-side across the race (see typingApi.js's
+        // updateLiveRaceHeartbeat docstring / app_backend.py heartbeat handler).
+        blurEvents: blurTrackerRef.current?.events,
+        pasteAttempted: pasteAttemptedRef.current,
+      });
     }
   // Fix #8 (Issue 8): memoised with useCallback. timeLeftRef.current is read for the
   // sparkline (fix #6). timeLeft is kept for the live-room heartbeat WPM calculation.
@@ -2058,7 +2157,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   }, [wpmHistory]);
 
   const accuracyValue = calculateAccuracy(sourceText, typingText);
-  const wpmValue = calculateWPM(typingText, Math.max(1, duration - timeLeft));
+  const wpmValue = calculateOfficialWPM(sourceText, typingText, Math.max(1, duration - timeLeft));
   const completionRate = Math.min(100, Math.round((typingText.length / Math.max(sourceText.length, 1)) * 100));
   const winnerName =
     liveRoom?.winnerUsername ||
@@ -2918,6 +3017,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 className="typing-input typing-input--overlay"
                 value={typingText}
                 onChange={handleInputChange}
+                onPaste={handlePasteAttempt(() => { pasteAttemptedRef.current = true; })}
                 aria-label="Typing input"
                 spellCheck="false"
                 autoCapitalize="off"
@@ -3151,4 +3251,3 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     </div>
   );
 }
-

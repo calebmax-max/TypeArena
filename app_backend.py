@@ -3480,6 +3480,8 @@ def _apply_user_performance_update(
     race_category: str = 'versus',
     placement: int = 1,
     total_players: int = 2,
+    verification_method: str = 'legacy',
+    anti_cheat_flags: Optional[list] = None,
 ) -> Dict[str, Any]:
     now_dt = datetime.utcnow()
 
@@ -3499,11 +3501,12 @@ def _apply_user_performance_update(
         owned_items=owned_items,
     )
 
+    flags_json = json.dumps(anti_cheat_flags or [])
     cur.execute(
         '''
         INSERT INTO race_history
-        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta, verification_method, anti_cheat_flags)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             username = VALUES(username),
             wpm = VALUES(wpm),
@@ -3513,11 +3516,14 @@ def _apply_user_performance_update(
             earnings = VALUES(earnings),
             race_timestamp = VALUES(race_timestamp),
             race_category = VALUES(race_category),
-            points_delta = VALUES(points_delta)
+            points_delta = VALUES(points_delta),
+            verification_method = VALUES(verification_method),
+            anti_cheat_flags = VALUES(anti_cheat_flags)
         ''',
         (
             race_code, user_id, username, round(wpm, 1), round(accuracy, 1), duration,
             1 if did_win else 2, earnings, now_dt, race_category, points_delta,
+            verification_method, flags_json,
         ),
     )
     cur.execute(
@@ -3560,6 +3566,244 @@ def _apply_user_performance_update(
         race_category=race_category,
     )
     return updated_user
+
+
+# ---------------------------------------------------------------------------
+# Server-authoritative WPM + anti-cheat engine
+#
+# TypeArena pays real money on race results (see earnings math in
+# submit_race / _persist_completed_live_race), so from this point on the
+# server derives WPM, accuracy, and timing itself instead of trusting
+# whatever numbers the client reports. Three primitives:
+#   1. issue_race_token / _verify_race_token  - pins the target passage and
+#      a server-clock start time the instant a solo race begins, so a
+#      tampered client can't claim a different passage or a longer/shorter
+#      duration than what actually elapsed.
+#   2. _score_typed_text                      - replays the player's final
+#      typed string against the passage the server issued, character by
+#      character, to derive total characters and uncorrected errors. The
+#      client's own tally is never used.
+#   3. _compute_official_wpm                   - the one formula both the
+#      solo and live-race paths use: WPM = ((chars / 5) - uncorrected
+#      errors) / minutes elapsed, with elapsed minutes coming from the
+#      server clock, never the client.
+# Anti-cheat checks (_keystroke_anti_cheat_flags / _human_capability_flags /
+# _context_switch_flags) layer on top and produce human-readable flags;
+# callers decide whether a flag should hard-reject the submission or just
+# mark it for admin review, since a false positive on a real player is
+# costly too.
+# ---------------------------------------------------------------------------
+
+RACE_TOKEN_TTL_SECONDS = 60 * 30  # hard ceiling; a race's own duration limit (if any) is checked separately
+HUMAN_WPM_HARD_CAP = 250.0
+HUMAN_WPM_SOFT_CAP_SHORT_TEXT = 175.0  # short passages give noisy WPM readings, so short races get a lower ceiling
+SHORT_TEXT_CHAR_THRESHOLD = 60
+KEYSTROKE_SD_MIN_MS = 18.0        # inter-keystroke stdev below this looks scripted, not human
+KEYSTROKE_SD_MIN_SAMPLES = 12     # need enough intervals for the stdev check to be meaningful
+PASTE_LIKE_CHUNK_CHARS = 6        # a single logged keystroke event this long looks like a paste, not a keypress
+MAX_BLUR_EVENTS_BEFORE_FLAG = 1   # more than one tab-switch/blur during a competitive race gets flagged
+
+
+def _race_token_secret() -> bytes:
+    secret = ADMIN_TOKEN_SECRET or ADMIN_PASSWORD or 'typearena-fallback-race-token-secret'
+    return secret.encode('utf-8') if isinstance(secret, str) else secret
+
+
+def issue_race_token(*, user_id: int, target_text: str, mode: str = 'practice', duration_limit_s: Optional[int] = None) -> Dict[str, Any]:
+    """Mint a signed receipt the instant a race starts.
+
+    Called by POST /api/races/start. The receipt commits the server to a
+    start timestamp and a hash of the exact passage shown, so submit_race
+    can later recompute elapsed time and re-verify the passage instead of
+    accepting whatever the client claims either one was.
+    """
+    server_start_ts = datetime.utcnow().timestamp()
+    text_hash = hashlib.sha256((target_text or '').encode('utf-8')).hexdigest()
+    body = {
+        'uid': int(user_id),
+        'th': text_hash,
+        'ts': server_start_ts,
+        'mode': str(mode or 'practice'),
+        'dl': duration_limit_s,
+    }
+    encoded = base64.urlsafe_b64encode(json.dumps(body, separators=(',', ':')).encode('utf-8')).decode('ascii')
+    signature = hmac.new(_race_token_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest()
+    return {'token': f'{encoded}.{signature}', 'serverStartTs': server_start_ts, 'textHash': text_hash}
+
+
+def _verify_race_token(token: str, *, user_id: int, target_text: str) -> Dict[str, Any]:
+    """Validate signature, ownership, freshness, and passage integrity."""
+    try:
+        encoded, signature = str(token or '').split('.', 1)
+    except ValueError:
+        raise ValueError('Race token is malformed.')
+    expected_signature = hmac.new(_race_token_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_signature, signature):
+        raise ValueError('Race token failed signature verification.')
+    try:
+        body = json.loads(base64.urlsafe_b64decode(encoded.encode('ascii')).decode('utf-8'))
+    except (ValueError, binascii.Error, UnicodeDecodeError) as exc:
+        raise ValueError('Race token payload is unreadable.') from exc
+    if int(body.get('uid') or -1) != int(user_id):
+        raise ValueError('Race token does not belong to this account.')
+    server_start_ts = float(body.get('ts') or 0)
+    if server_start_ts <= 0 or datetime.utcnow().timestamp() - server_start_ts > RACE_TOKEN_TTL_SECONDS:
+        raise ValueError('Race token has expired. Start a new race.')
+    text_hash = hashlib.sha256((target_text or '').encode('utf-8')).hexdigest()
+    if not hmac.compare_digest(str(body.get('th') or ''), text_hash):
+        raise ValueError('Submitted passage does not match the one issued at race start.')
+    return body
+
+
+def _score_typed_text(target_text: str, typed_text: str) -> Dict[str, Any]:
+    """Replay what the player actually produced against the issued passage.
+
+    Position-by-position comparison, so the client's own character/error
+    counts are never trusted directly - only the final string matters here.
+    """
+    target_text = target_text or ''
+    typed_text = typed_text or ''
+    compare_len = min(len(target_text), len(typed_text))
+    uncorrected_errors = sum(1 for i in range(compare_len) if typed_text[i] != target_text[i])
+    # Characters typed past the end of the passage count against the
+    # player as errors rather than as free extra words.
+    uncorrected_errors += max(0, len(typed_text) - len(target_text))
+    total_characters = len(typed_text)
+    correct_characters = max(0, total_characters - uncorrected_errors)
+    accuracy = (correct_characters / total_characters * 100.0) if total_characters else 0.0
+    return {
+        'totalCharacters': total_characters,
+        'uncorrectedErrors': uncorrected_errors,
+        'correctCharacters': correct_characters,
+        'accuracy': round(max(0.0, min(100.0, accuracy)), 1),
+    }
+
+
+def _compute_official_wpm(total_characters: int, uncorrected_errors: int, time_spent_seconds: float) -> float:
+    """WPM = ((characters typed / 5) - uncorrected errors) / minutes elapsed."""
+    time_minutes = max(float(time_spent_seconds), 0.5) / 60.0
+    gross_words = total_characters / 5.0
+    wpm = (gross_words - uncorrected_errors) / time_minutes
+    return max(0.0, wpm)
+
+
+def _keystroke_intervals_ms(keystroke_log: Any) -> list:
+    """Pull sorted inter-keystroke delays (ms) out of a client event log.
+
+    Expected shape: a list of {"t": <ms since race start>, "ch": <char>}
+    dicts (bare numeric timestamps are also accepted). Only used for the
+    timing-distribution checks below - never to override the replayed
+    character/error counts from _score_typed_text.
+    """
+    if not isinstance(keystroke_log, list):
+        return []
+    timestamps = []
+    for entry in keystroke_log:
+        if isinstance(entry, dict) and 't' in entry:
+            try:
+                timestamps.append(float(entry['t']))
+            except (TypeError, ValueError):
+                continue
+        elif isinstance(entry, (int, float)):
+            timestamps.append(float(entry))
+    timestamps = sorted(t for t in timestamps if math.isfinite(t))
+    return [b - a for a, b in zip(timestamps, timestamps[1:]) if (b - a) >= 0]
+
+
+def _keystroke_anti_cheat_flags(keystroke_log: Any, *, total_characters: int) -> list:
+    """Bot-detection guard: near-zero variance between keypresses, or
+    logged 'keystrokes' that are really multi-character paste chunks."""
+    flags = []
+    intervals = _keystroke_intervals_ms(keystroke_log)
+    if len(intervals) >= KEYSTROKE_SD_MIN_SAMPLES:
+        mean_interval = sum(intervals) / len(intervals)
+        variance = sum((x - mean_interval) ** 2 for x in intervals) / len(intervals)
+        stdev = math.sqrt(variance)
+        if stdev < KEYSTROKE_SD_MIN_MS:
+            flags.append(f'keystroke_timing_too_uniform(sd_ms={stdev:.1f})')
+    elif isinstance(keystroke_log, list) and len(keystroke_log) == 0 and total_characters > 0:
+        # Real characters were typed but no keystroke telemetry arrived at
+        # all - the client skipped instrumentation, which is itself worth
+        # a flag rather than silently trusting the submitted text.
+        flags.append('missing_keystroke_log')
+    if isinstance(keystroke_log, list):
+        oversized_chunks = sum(
+            1 for entry in keystroke_log
+            if isinstance(entry, dict) and len(str(entry.get('ch', ''))) >= PASTE_LIKE_CHUNK_CHARS
+        )
+        if oversized_chunks:
+            flags.append(f'paste_like_chunk_in_log(count={oversized_chunks})')
+    return flags
+
+
+def _human_capability_flags(wpm: float, total_characters: int) -> list:
+    """Hard ceiling guard: sustained speeds beyond realistic human typing."""
+    effective_cap = HUMAN_WPM_HARD_CAP if total_characters >= SHORT_TEXT_CHAR_THRESHOLD else HUMAN_WPM_SOFT_CAP_SHORT_TEXT
+    if wpm > effective_cap:
+        return [f'wpm_exceeds_human_ceiling(wpm={wpm:.1f},cap={effective_cap:.1f})']
+    return []
+
+
+def _context_switch_flags(blur_events: Any) -> list:
+    """Window blur/focus guard: tab-switching during a competitive race."""
+    if isinstance(blur_events, list) and len(blur_events) > MAX_BLUR_EVENTS_BEFORE_FLAG:
+        return [f'window_blur_during_race(count={len(blur_events)})']
+    return []
+
+
+def evaluate_race_submission(
+    *,
+    target_text: str,
+    typed_text: str,
+    time_spent_seconds: float,
+    keystroke_log: Any = None,
+    blur_events: Any = None,
+    paste_attempted: bool = False,
+    duration_limit_s: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Shared scoring + anti-cheat pipeline used by both the solo-practice
+    and live-race submit paths, once each has independently established
+    `target_text` and `time_spent_seconds` from server-side state (a signed
+    race token for solo races, or the live room's `startedAt`/`text` for
+    multiplayer). Returns the official stats plus any anti-cheat flags;
+    callers decide hard-reject vs. soft-flag based on their own policy.
+    """
+    scored = _score_typed_text(target_text, typed_text)
+    wpm = _compute_official_wpm(scored['totalCharacters'], scored['uncorrectedErrors'], time_spent_seconds)
+
+    flags = []
+    flags += _human_capability_flags(wpm, scored['totalCharacters'])
+    flags += _keystroke_anti_cheat_flags(keystroke_log, total_characters=scored['totalCharacters'])
+    flags += _context_switch_flags(blur_events)
+    if paste_attempted:
+        flags.append('paste_event_reported_by_client')
+    if duration_limit_s and time_spent_seconds > float(duration_limit_s) + 5:
+        flags.append(f'exceeded_allotted_duration(elapsed_s={time_spent_seconds:.1f},limit_s={duration_limit_s})')
+
+    return {
+        'wpm': round(wpm, 1),
+        'accuracy': scored['accuracy'],
+        'totalCharacters': scored['totalCharacters'],
+        'uncorrectedErrors': scored['uncorrectedErrors'],
+        'timeSpentSeconds': round(float(time_spent_seconds), 2),
+        'flags': flags,
+        'isSuspicious': len(flags) > 0,
+    }
+
+
+def _ensure_anti_cheat_columns(cur) -> None:
+    """Adds audit columns for the new verification pipeline. Safe to run
+    repeatedly (checked before ALTER, like the other _ensure_* migrations)."""
+    cur.execute("SHOW COLUMNS FROM race_history LIKE 'verification_method'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE race_history ADD COLUMN verification_method VARCHAR(20) NOT NULL DEFAULT 'legacy' AFTER points_delta"
+        )
+    cur.execute("SHOW COLUMNS FROM race_history LIKE 'anti_cheat_flags'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE race_history ADD COLUMN anti_cheat_flags TEXT NULL AFTER verification_method"
+        )
 
 
 def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
@@ -3619,6 +3863,8 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
                     race_category=race_category,
                     placement=placements.get(user_id, total_players),
                     total_players=total_players,
+                    verification_method=str(result.get('verificationMethod') or 'legacy'),
+                    anti_cheat_flags=result.get('antiCheatFlags') or [],
                 )
         if _owns_conn:
             conn.commit()
@@ -6746,13 +6992,23 @@ def update_live_race_progress(room_id: str):
             or current_accuracy < 0 or current_accuracy > 100
         ):
             return jsonify({'message': 'Progress, WPM, and accuracy values are out of range.'}), 400
-        evidence = player.setdefault('_antiCheat', {'maxProgress': 0.0, 'samples': [], 'lastPersistAt': 0.0})
+        evidence = player.setdefault('_antiCheat', {'maxProgress': 0.0, 'samples': [], 'lastPersistAt': 0.0, 'blurEvents': [], 'pasteAttempted': False})
         evidence['maxProgress'] = max(float(evidence.get('maxProgress') or 0), progress)
         now_ts = datetime.utcnow().timestamp()
         samples = evidence.setdefault('samples', [])
         if not samples or now_ts - float(samples[-1].get('at') or 0) >= 0.75:
             samples.append({'at': now_ts, 'progress': progress})
             del samples[:-40]
+        # Window blur / tab-switch and paste reports stream in via
+        # heartbeats too, so they accumulate for the whole race rather than
+        # only whatever happened to be true at the final /submit call.
+        new_blur_events = payload.get('blurEvents')
+        if isinstance(new_blur_events, list) and new_blur_events:
+            blur_log = evidence.setdefault('blurEvents', [])
+            blur_log.extend(new_blur_events[-10:])
+            del blur_log[:-50]
+        if payload.get('pasteAttempted'):
+            evidence['pasteAttempted'] = True
         player['progress'] = round(progress, 2)
         player['currentWpm'] = round(current_wpm, 1)
         player['currentAccuracy'] = round(current_accuracy, 1)
@@ -6789,31 +7045,65 @@ def submit_live_race(room_id: str):
         player_ids = {int(player.get('userId')) for player in room.get('players', []) if player.get('userId') is not None}
         if int(user['id']) not in player_ids:
             return jsonify({'message': 'You are not a participant in this race room.'}), 403
-        try:
-            wpm = float(payload.get('wpm') or 0)
-            accuracy = float(payload.get('accuracy') or 0)
-        except (TypeError, ValueError):
-            return jsonify({'message': 'Invalid live race result.'}), 400
-
-        if not math.isfinite(wpm) or not math.isfinite(accuracy) or wpm < 0 or wpm > 300 or accuracy < 0 or accuracy > 100:
-            return jsonify({'message': 'WPM must be between 0 and 300 and accuracy between 0 and 100.'}), 400
 
         player = next((item for item in room.get('players', []) if item.get('userId') == user['id']), None)
         evidence = (player or {}).get('_antiCheat') or {}
-        max_progress = max(0.0, min(100.0, float(evidence.get('maxProgress') or 0)))
         started_at = _parse_iso_datetime(room.get('startedAt'))
+        # The room's own startedAt (set server-side when the countdown
+        # ends, see queue_live_race / start_live_race_room) is the time
+        # sync source of truth here - never anything the client reports.
         elapsed_seconds = max(1.0, datetime.utcnow().timestamp() - started_at.timestamp()) if started_at else 1.0
-        passage_length = max(1, len(str(room.get('text') or '')))
-        observed_chars = passage_length * (max_progress / 100.0)
-        evidence_wpm_cap = (observed_chars * 12 / elapsed_seconds) + 80 if observed_chars else 0
-        validated_wpm = min(wpm, evidence_wpm_cap)
+        target_text = str(room.get('text') or '')
+        typed_text = payload.get('typedText')
+        anti_cheat_flags: list = []
+
+        if isinstance(typed_text, str) and target_text:
+            # --- Authoritative path: replay against the room's passage ---
+            evaluation = evaluate_race_submission(
+                target_text=target_text,
+                typed_text=typed_text,
+                time_spent_seconds=elapsed_seconds,
+                keystroke_log=payload.get('keystrokeLog'),
+                blur_events=evidence.get('blurEvents'),
+                paste_attempted=bool(evidence.get('pasteAttempted') or payload.get('pasteAttempted')),
+                duration_limit_s=room.get('duration'),
+            )
+            wpm = evaluation['wpm']
+            accuracy = evaluation['accuracy']
+            anti_cheat_flags = evaluation['flags']
+            hard_reject_prefixes = ('keystroke_timing_too_uniform', 'wpm_exceeds_human_ceiling', 'missing_keystroke_log')
+            if any(flag.startswith(prefix) for flag in anti_cheat_flags for prefix in hard_reject_prefixes):
+                return jsonify({'message': 'This result could not be verified and was not recorded.', 'flags': anti_cheat_flags}), 422
+        else:
+            # --- Legacy path: unupdated client, no typedText supplied.
+            # Keep the old progress-based evidence cap so an older build
+            # doesn't just get a free pass, and flag every such result as
+            # unverified for admin visibility. ---
+            try:
+                wpm = float(payload.get('wpm') or 0)
+                accuracy = float(payload.get('accuracy') or 0)
+            except (TypeError, ValueError):
+                return jsonify({'message': 'Invalid live race result.'}), 400
+            if not math.isfinite(wpm) or not math.isfinite(accuracy) or wpm < 0 or wpm > 300 or accuracy < 0 or accuracy > 100:
+                return jsonify({'message': 'WPM must be between 0 and 300 and accuracy between 0 and 100.'}), 400
+            max_progress = max(0.0, min(100.0, float(evidence.get('maxProgress') or 0)))
+            passage_length = max(1, len(target_text))
+            observed_chars = passage_length * (max_progress / 100.0)
+            evidence_wpm_cap = (observed_chars * 12 / elapsed_seconds) + 80 if observed_chars else 0
+            wpm = min(wpm, evidence_wpm_cap)
+            anti_cheat_flags = ['legacy_client_unverified']
+            if isinstance(evidence.get('blurEvents'), list) and len(evidence['blurEvents']) > MAX_BLUR_EVENTS_BEFORE_FLAG:
+                anti_cheat_flags.append(f"window_blur_during_race(count={len(evidence['blurEvents'])})")
+
         room.setdefault('results', {})[user['id']] = {
             'userId': user['id'],
             'username': user['username'],
-            'wpm': round(validated_wpm, 1),
+            'wpm': round(wpm, 1),
             'accuracy': round(accuracy, 1),
             'finishedAt': _now_iso(),
             'finishedAtTs': datetime.utcnow().timestamp(),
+            'antiCheatFlags': anti_cheat_flags,
+            'verificationMethod': 'server_verified' if isinstance(typed_text, str) and target_text else 'legacy',
         }
         _complete_live_race_if_ready(room, conn=conn)
         with conn.cursor() as cur:
@@ -8060,19 +8350,44 @@ def chat_unread_counts():
         _return_connection(conn)
 
 
+@app.post('/api/races/start')
+def start_race():
+    """Issue a signed race token the moment a solo/practice race begins.
+
+    The client sends the exact passage it is about to display; the server
+    pins that text's hash plus its own clock reading into a signed token.
+    submit_race later re-verifies both against this token instead of
+    trusting the client's own duration/passage claims.
+    """
+    payload = request.get_json(silent=True) or {}
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+
+        target_text = str(payload.get('text') or '').strip()
+        if not target_text:
+            return jsonify({'message': 'A target passage is required to start a race.'}), 400
+
+        mode = str(payload.get('mode') or 'practice').strip().lower() or 'practice'
+        duration_limit = payload.get('durationLimit')
+        try:
+            duration_limit = int(duration_limit) if duration_limit is not None else None
+        except (TypeError, ValueError):
+            duration_limit = None
+
+        issued = issue_race_token(user_id=user['id'], target_text=target_text, mode=mode, duration_limit_s=duration_limit)
+        return jsonify(issued), 201
+    finally:
+        _return_connection(conn)
+
+
 @app.post('/api/races/submit')
 def submit_race():
     payload = request.get_json(silent=True) or {}
-    try:
-        wpm = float(payload.get('wpm', 0))
-        accuracy = float(payload.get('accuracy', 0))
-    except (TypeError, ValueError):
-        return jsonify({'message': 'Invalid race payload'}), 400
-
-    if not math.isfinite(wpm) or not math.isfinite(accuracy) or wpm < 0 or wpm > 300 or accuracy < 0 or accuracy > 100:
-        return jsonify({'message': 'WPM must be between 0 and 300 and accuracy between 0 and 100.'}), 400
-
     duration = payload.get('duration')
+    race_token = payload.get('raceToken')
 
     conn = get_connection()
     try:
@@ -8080,24 +8395,78 @@ def submit_race():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
 
-
         race_code = str(payload.get('id') or f"solo_{user['id']}_{int(datetime.utcnow().timestamp() * 1000)}").strip()
         with conn.cursor() as cur:
             cur.execute('SELECT id FROM race_history WHERE race_code=%s AND user_id=%s LIMIT 1', (race_code, user['id']))
             if cur.fetchone():
                 return jsonify({'message': 'This race result has already been submitted.'}), 409
 
-        # Solo practice has no opponent, so it is never a competitive "win" ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
+        anti_cheat_flags: list = []
+
+        if race_token:
+            # --- Authoritative path: server recomputes everything ---
+            target_text = str(payload.get('targetText') or '').strip()
+            typed_text = str(payload.get('typedText') or '')
+            if not target_text:
+                return jsonify({'message': 'targetText is required alongside a raceToken.'}), 400
+            try:
+                token_body = _verify_race_token(race_token, user_id=user['id'], target_text=target_text)
+            except ValueError as exc:
+                return jsonify({'message': str(exc)}), 400
+
+            time_spent_seconds = max(0.5, datetime.utcnow().timestamp() - float(token_body['ts']))
+            evaluation = evaluate_race_submission(
+                target_text=target_text,
+                typed_text=typed_text,
+                time_spent_seconds=time_spent_seconds,
+                keystroke_log=payload.get('keystrokeLog'),
+                blur_events=payload.get('blurEvents'),
+                paste_attempted=bool(payload.get('pasteAttempted')),
+                duration_limit_s=token_body.get('dl'),
+            )
+            wpm = evaluation['wpm']
+            accuracy = evaluation['accuracy']
+            anti_cheat_flags = evaluation['flags']
+            duration = round(evaluation['timeSpentSeconds'])
+            verification_method = 'server_verified'
+
+            # Hard reject rather than silently paying out on flags severe
+            # enough to indicate scripted/automated input or a tampered
+            # client - these are the ones a false positive is unlikely to
+            # hit a genuine player with. Softer flags (e.g. a brief window
+            # blur) are still recorded and paid, but surfaced to admins via
+            # race_history.anti_cheat_flags for review.
+            hard_reject_prefixes = ('keystroke_timing_too_uniform', 'wpm_exceeds_human_ceiling', 'missing_keystroke_log')
+            if any(flag.startswith(prefix) for flag in anti_cheat_flags for prefix in hard_reject_prefixes):
+                return jsonify({
+                    'message': 'This race could not be verified and was not recorded.',
+                    'flags': anti_cheat_flags,
+                }), 422
+        else:
+            # --- Legacy path: unupdated client, no token supplied. Kept so
+            # a backend deploy doesn't instantly break an older frontend
+            # build; every such race is marked 'legacy' in the audit trail
+            # so admins can see how much traffic still needs the client
+            # update that adds /api/races/start + keystroke telemetry. ---
+            try:
+                wpm = float(payload.get('wpm', 0))
+                accuracy = float(payload.get('accuracy', 0))
+            except (TypeError, ValueError):
+                return jsonify({'message': 'Invalid race payload'}), 400
+            if not math.isfinite(wpm) or not math.isfinite(accuracy) or wpm < 0 or wpm > 300 or accuracy < 0 or accuracy > 100:
+                return jsonify({'message': 'WPM must be between 0 and 300 and accuracy between 0 and 100.'}), 400
+            if wpm > HUMAN_WPM_HARD_CAP:
+                return jsonify({'message': 'WPM exceeds the maximum allowed for an unverified race.'}), 422
+            anti_cheat_flags = ['legacy_client_unverified']
+            verification_method = 'legacy'
+
+        # Solo practice has no opponent, so it is never a competitive "win" -
         # that's reserved for real multiplayer results (see
         # _persist_completed_live_race / did_win=user_id==winner_user_id).
         # We still track whether the player beat their own rolling average,
-        # purely as a "personal best this run" signal for the response/UI ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â
+        # purely as a "personal best this run" signal for the response/UI -
         # it does NOT feed into users.wins or race_history.place_position,
-        # which the live-race path also aggregates from. Previously this
-        # endpoint wrote its own place_position (1/2) into race_history and
-        # recomputed wpm/accuracy with a different formula than live races,
-        # so playing both modes corrupted the shared wins/wpm/accuracy stats
-        # that the leaderboard sorts and season points are built from.
+        # which the live-race path also aggregates from.
         beat_own_average = wpm >= float(user.get('wpm') or 0)
         earnings = int(max(50, round(wpm * 3)))
         now_dt = datetime.utcnow()
@@ -8114,6 +8483,8 @@ def submit_race():
                 earnings=earnings,
                 did_win=False,
                 race_category='practice',
+                verification_method=verification_method,
+                anti_cheat_flags=anti_cheat_flags,
             )
             # Solo earnings still credit the player's balance directly here;
             # _apply_user_performance_update intentionally doesn't touch
@@ -8132,12 +8503,14 @@ def submit_race():
                 'accuracy': round(accuracy, 1),
                 'duration': duration,
                 # Kept for backward compatibility with any client reading
-                # this field, but it's presentational only now ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â it no
+                # this field, but it's presentational only now - it no
                 # longer drives win-counting.
                 'place': 1 if beat_own_average else 2,
                 'personalBest': beat_own_average,
                 'earnings': earnings,
                 'timestamp': now_dt.isoformat() + 'Z',
+                'verificationMethod': verification_method,
+                'antiCheatFlags': anti_cheat_flags,
                 'coachTip': _coach_tip_for_user(
                     {
                         'wpm': updated_user.get('wpm', wpm),
@@ -8149,7 +8522,6 @@ def submit_race():
         ), 201
     finally:
         _return_connection(conn)
-
 
 @app.get('/api/users/<int:user_id>/races')
 def user_races(user_id: int):
@@ -8296,6 +8668,7 @@ def _bootstrap_db() -> None:
                 _ensure_user_equipped_columns(cur)
                 _ensure_season_tables(cur)
                 _ensure_race_history_audit_columns(cur)
+                _ensure_anti_cheat_columns(cur)
                 _backfill_legacy_race_history(cur)
             conn.commit()
         finally:

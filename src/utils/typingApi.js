@@ -275,6 +275,49 @@ export const fetchLeaderboard = async (limit = 100) => {
 
 // --- Race/Results APIs ---
 
+/**
+ * Call this the moment a solo/practice race begins, with the exact
+ * passage text the player is about to see. The backend signs a race
+ * token pinning that passage's hash and its own server-clock start time.
+ * Hang onto the returned `token` and pass it back in submitRaceResult as
+ * `raceToken` - the server uses it to recompute elapsed time and
+ * re-verify the passage instead of trusting the client's own numbers.
+ *
+ * @param {string} text - the passage the player is about to type.
+ * @param {{ mode?: string, durationLimit?: number }} [options]
+ * @returns {Promise<{ token: string, serverStartTs: number, textHash: string }>}
+ */
+export const startRace = async (text, options = {}) => {
+  const response = await apiFetch(buildApiUrl('/api/races/start'), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({
+      text,
+      mode: options.mode || 'practice',
+      durationLimit: options.durationLimit,
+    }),
+  });
+  return await parseResponse(response);
+};
+
+/**
+ * Submit a completed race. `raceData` should include, for a properly
+ * verified/authoritative submission:
+ *   - raceToken:    the token returned by startRace()
+ *   - targetText:   the exact passage that was raced (must match the hash
+ *                    pinned in raceToken)
+ *   - typedText:    the player's final typed string
+ *   - keystrokeLog: array from createKeystrokeLogger().log (typingEngine.js)
+ *   - blurEvents:   array from createBlurTracker().events (typingEngine.js)
+ *   - pasteAttempted: boolean, true if handlePasteAttempt fired
+ *   - id, duration: as before
+ *
+ * The backend recomputes wpm/accuracy itself from targetText+typedText and
+ * ignores any wpm/accuracy fields you send alongside a raceToken. Omitting
+ * raceToken/typedText still works against an unupgraded backend (or lets
+ * you migrate incrementally), but the result gets flagged as
+ * "legacy_client_unverified" server-side and capped at a lower WPM ceiling.
+ */
 export const submitRaceResult = async (raceData) => {
   try {
     const response = await apiFetch(buildApiUrl('/api/races/submit'), {
@@ -932,6 +975,14 @@ export const cancelLiveRaceRoom = async (roomId) => {
   return data;
 };
 
+/**
+ * Heartbeat payload can include, in addition to the existing progress/
+ * currentWpm/currentAccuracy fields:
+ *   - blurEvents: any new entries from createBlurTracker().events since
+ *                 the last heartbeat (typingEngine.js) - the backend
+ *                 accumulates these across the whole race.
+ *   - pasteAttempted: boolean, sticky once true.
+ */
 export const updateLiveRaceHeartbeat = async (roomId, payload) => {
   const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/heartbeat`), {
     method: 'POST',
@@ -941,6 +992,17 @@ export const updateLiveRaceHeartbeat = async (roomId, payload) => {
   return await parseResponse(response);
 };
 
+/**
+ * Submit payload can include, in addition to the legacy wpm/accuracy
+ * fields (still accepted as a fallback):
+ *   - typedText:    the player's final typed string - once present, the
+ *                   backend recomputes wpm/accuracy itself by replaying it
+ *                   against the room's target passage and ignores wpm/
+ *                   accuracy from the client entirely.
+ *   - keystrokeLog: array from createKeystrokeLogger().log
+ * Room timing (server startedAt) and the target passage are already
+ * known server-side, so nothing else needs to be sent for verification.
+ */
 export const submitLiveRaceResult = async (roomId, payload) => {
   const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}/submit`), {
     method: 'POST',
