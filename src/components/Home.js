@@ -144,6 +144,42 @@ function useLivePlayerCount() {
   return count;
 }
 
+function usePublicStats() {
+  const [stats, setStats] = useState({ registeredUsers: null, topWpm: null });
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        const response = await fetch(buildApiUrl('/api/public-stats'));
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        if (active) {
+          setStats({
+            registeredUsers: typeof data.registeredUsers === 'number' ? data.registeredUsers : null,
+            topWpm: typeof data.topWpm === 'number' ? data.topWpm : null,
+          });
+        }
+      } catch {
+        // Keep the previous snapshot if the network blips.
+      }
+    };
+
+    load();
+    const interval = window.setInterval(load, 15000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  return stats;
+}
+
 function useOnlinePresence(currentUser) {
   const [onlineUsers, setOnlineUsers] = useState([]);
 
@@ -187,6 +223,7 @@ function useOnlinePresence(currentUser) {
 export default function Home({ currentUser }) {
   const heroRef = useRef(null);
   const liveCount = useLivePlayerCount();
+  const publicStats = usePublicStats();
   const onlineUsers = useOnlinePresence(currentUser);
   const visibleOnlineUsers = onlineUsers.filter((user) => !user.isMe);
   const onlineCount = visibleOnlineUsers.length;
@@ -276,22 +313,16 @@ export default function Home({ currentUser }) {
       {/* ── STATS STRIP ── */}
       <section className="stats-strip reveal">
         <div className="stat-item">
-          <span className="stat-number">100+</span>
+          <span className="stat-number">
+            {publicStats.registeredUsers === null ? '—' : publicStats.registeredUsers}
+          </span>
           <span className="stat-desc">Registered typists</span>
         </div>
         <div className="stat-divider" />
         <div className="stat-item">
-          <span className="stat-number">KES 20,000</span>
-          <span className="stat-desc">Total prizes paid out</span>
-        </div>
-        <div className="stat-divider" />
-        <div className="stat-item">
-          <span className="stat-number">98ms</span>
-          <span className="stat-desc">Avg. sync latency</span>
-        </div>
-        <div className="stat-divider" />
-        <div className="stat-item">
-          <span className="stat-number">187 WPM</span>
+          <span className="stat-number">
+            {publicStats.topWpm === null ? '—' : `${publicStats.topWpm} WPM`}
+          </span>
           <span className="stat-desc">Current speed record</span>
         </div>
       </section>

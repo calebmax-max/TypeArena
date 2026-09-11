@@ -30,14 +30,63 @@ const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Wallet top-up, tournaments, and marketplace are active.',
 ];
 
-const Play = lazy(() => import('./components/Play'));
-const Tournaments = lazy(() => import('./components/Tournaments'));
-const Leaderboard = lazy(() => import('./components/Leaderboard'));
-const Profile = lazy(() => import('./components/TypeProfile'));
+const Play = lazy(() => import(/* webpackPrefetch: true */ './components/Play'));
+const Tournaments = lazy(() => import(/* webpackPrefetch: true */ './components/Tournaments'));
+const Leaderboard = lazy(() => import(/* webpackPrefetch: true */ './components/Leaderboard'));
+const Profile = lazy(() => import(/* webpackPrefetch: true */ './components/TypeProfile'));
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
-const Marketplace = lazy(() => import('./components/Marketplace'));
-const Results = lazy(() => import('./components/Results'));
-const Spectate = lazy(() => import('./components/Spectate'));
+const Marketplace = lazy(() => import(/* webpackPrefetch: true */ './components/Marketplace'));
+const Results = lazy(() => import(/* webpackPrefetch: true */ './components/Results'));
+const Spectate = lazy(() => import(/* webpackPrefetch: true */ './components/Spectate'));
+
+// Warms the browser's module cache for every lazy route once the main
+// thread is idle, so a cold click on a nav link (or a fast mobile tap
+// where hover/touchstart preload never gets a head start) doesn't have
+// to wait on a fresh chunk download. Admin panel is intentionally
+// excluded - most visitors never need it, so there's no point spending
+// bandwidth warming it for everyone.
+//
+// Note: this duplicates what the `webpackPrefetch: true` magic comments
+// above already ask the browser to do via <link rel="prefetch"> tags
+// emitted into the HTML. The two are complementary right now (webpack's
+// hint fires as soon as the initial bundle parses; this fires on true
+// browser idle time and works identically across bundlers), but once
+// you've confirmed the webpackPrefetch hints are reliably firing across
+// your target browsers, this manual scheduler can likely be removed to
+// avoid doing the work twice.
+const ROUTE_CHUNK_IMPORTERS = [
+  () => import('./components/Play'),
+  () => import('./components/Tournaments'),
+  () => import('./components/Leaderboard'),
+  () => import('./components/TypeProfile'),
+  () => import('./components/Marketplace'),
+  () => import('./components/Results'),
+  () => import('./components/Spectate'),
+];
+
+const prefetchAllRouteChunks = () => {
+  ROUTE_CHUNK_IMPORTERS.forEach((importChunk) => {
+    importChunk().catch(() => {
+      // A failed background prefetch (offline, flaky network) isn't
+      // fatal - the normal lazy() import will just retry on navigation.
+    });
+  });
+};
+
+const scheduleRouteChunkPrefetch = () => {
+  if (typeof window === 'undefined') return () => {};
+
+  if ('requestIdleCallback' in window) {
+    const handle = window.requestIdleCallback(prefetchAllRouteChunks, { timeout: 4000 });
+    return () => window.cancelIdleCallback(handle);
+  }
+
+  // Safari and older browsers don't support requestIdleCallback - fall
+  // back to a short timeout so this still runs after the initial mount
+  // work (session refresh, marquee fetch, music settings) has kicked off.
+  const timeoutId = window.setTimeout(prefetchAllRouteChunks, 2000);
+  return () => window.clearTimeout(timeoutId);
+};
 
 function RouteLoader() {
   return (
@@ -140,6 +189,11 @@ function AppLayout() {
 
   useEffect(() => {
     void arenaMusic.loadRemoteSettings();
+  }, []);
+
+  useEffect(() => {
+    const cancelPrefetch = scheduleRouteChunkPrefetch();
+    return cancelPrefetch;
   }, []);
 
   useEffect(() => {

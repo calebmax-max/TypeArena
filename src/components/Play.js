@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   calculateAccuracy,
@@ -21,7 +21,10 @@ import {
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
-import PrivateRoomPanel from './PrivateRoomPanel';
+// Lazy-loaded: only needed for the private-room flow (!practicePage), so
+// it's split out of the main Play chunk rather than bundled for every
+// solo/practice race that never touches it.
+const PrivateRoomPanel = lazy(() => import('./PrivateRoomPanel'));
 import { useLiveFeed } from '../hooks/useLiveFeed';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { useSpectateRoom } from '../hooks/useSpectateRoom';
@@ -2178,129 +2181,20 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     badgePreset.label,
   ];
 
-  const exportScoreCard = () => {
+  // #7 - Share card (PNG via canvas). The actual canvas-drawing logic
+  // lives in utils/exportScoreCard.js and is dynamically imported here,
+  // so it's only downloaded the moment a user clicks "download/share" -
+  // it doesn't add weight to the main Play chunk for every race.
+  const exportScoreCard = async () => {
     if (!raceResult) return;
     const accentColor = themePreset.style?.['--arena-accent'] || '#22c55e';
     const goldColor = themePreset.style?.['--arena-gold'] || '#facc15';
-
-    // #7 Ã¯Â¿Â½?" generate a proper PNG via Canvas (renders on WhatsApp previews)
-    const canvas = document.createElement('canvas');
-    canvas.width = 1080;
-    canvas.height = 1080;
-    const ctx2d = canvas.getContext('2d');
-
-    // Background
-    const bg = ctx2d.createLinearGradient(0, 0, 1080, 1080);
-    bg.addColorStop(0, '#0c1018');
-    bg.addColorStop(1, '#111827');
-    ctx2d.fillStyle = bg;
-    ctx2d.fillRect(0, 0, 1080, 1080);
-
-    // Accent left bar
-    ctx2d.fillStyle = accentColor;
-    ctx2d.fillRect(0, 0, 8, 1080);
-
-    // Subtle grid lines
-    ctx2d.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx2d.lineWidth = 1;
-    for (let x = 0; x < 1080; x += 60) { ctx2d.beginPath(); ctx2d.moveTo(x, 0); ctx2d.lineTo(x, 1080); ctx2d.stroke(); }
-    for (let y = 0; y < 1080; y += 60) { ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(1080, y); ctx2d.stroke(); }
-
-    // Glow circle
-    // Fix #6: the previous string-replace approach to convert hsl/rgb Ã¯Â¿Â½?' hsla/rgba
-    // was fragile and broke for hex colors and CSS variables. Resolve the actual
-    // computed accent color at runtime so the canvas gradient is always valid.
-    const resolvedAccent = (() => {
-      try {
-        const tmp = document.createElement('div');
-        tmp.style.color = accentColor;
-        document.body.appendChild(tmp);
-        const computed = window.getComputedStyle(tmp).color; // always returns rgb(...)
-        document.body.removeChild(tmp);
-        // computed is "rgb(r, g, b)" Ã¯Â¿Â½?" convert to rgba
-        return computed.replace('rgb(', 'rgba(').replace(')', ', 0.08)');
-      } catch {
-        return 'rgba(34,197,94,0.08)';
-      }
-    })();
-    const glow = ctx2d.createRadialGradient(540, 400, 0, 540, 400, 500);
-    glow.addColorStop(0, resolvedAccent);
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx2d.fillStyle = glow;
-    ctx2d.fillRect(0, 0, 1080, 1080);
-
-    // Brand label
-    ctx2d.font = '500 28px monospace';
-    ctx2d.fillStyle = accentColor;
-    ctx2d.globalAlpha = 0.7;
-    ctx2d.fillText('TYPEARENA', 80, 110);
-    ctx2d.globalAlpha = 1;
-
-    // Separator line
-    ctx2d.fillStyle = accentColor;
-    ctx2d.globalAlpha = 0.3;
-    ctx2d.fillRect(80, 140, 920, 2);
-    ctx2d.globalAlpha = 1;
-
-    // "Race Complete" heading
-    ctx2d.font = 'bold 56px sans-serif';
-    ctx2d.fillStyle = '#f5f5f5';
-    ctx2d.fillText('Race Complete', 80, 230);
-
-    // WPM Ã¯Â¿Â½?" big number
-    ctx2d.font = 'bold 220px monospace';
-    ctx2d.fillStyle = accentColor;
-    ctx2d.fillText(Math.round(raceResult.wpm), 80, 490);
-
-    ctx2d.font = '500 40px sans-serif';
-    ctx2d.fillStyle = 'rgba(245,245,245,0.55)';
-    ctx2d.fillText('WPM', 80, 545);
-
-    // Stats row
-    ctx2d.font = 'bold 44px sans-serif';
-    ctx2d.fillStyle = '#f5f5f5';
-    ctx2d.fillText(`${Number(raceResult.accuracy).toFixed(1)}% accuracy`, 80, 640);
-    ctx2d.font = '500 36px sans-serif';
-    ctx2d.fillStyle = goldColor;
-    ctx2d.fillText(`Net WPM: ${Number(raceResult.netWPM).toFixed(1)}`, 80, 710);
-
-    // Share text
-    ctx2d.font = 'italic 32px sans-serif';
-    ctx2d.fillStyle = 'rgba(245,245,245,0.6)';
-    ctx2d.fillText(raceResult.shareText, 80, 800);
-
-    // PB badge
-    if (isNewPB) {
-      ctx2d.fillStyle = accentColor;
-      ctx2d.globalAlpha = 0.15;
-      ctx2d.beginPath();
-      ctx2d.roundRect(80, 840, 340, 70, 12);
-      ctx2d.fill();
-      ctx2d.globalAlpha = 1;
-      ctx2d.font = 'bold 30px sans-serif';
-      ctx2d.fillStyle = accentColor;
-      ctx2d.fillText('Ã¯Â¿Â½YÃ¯Â¿Â½? New Personal Best!', 100, 883);
+    try {
+      const { renderScoreCard } = await import('../utils/exportScoreCard');
+      renderScoreCard({ raceResult, accentColor, goldColor, isNewPB });
+    } catch (error) {
+      console.error('exportScoreCard: failed to load score card module', error);
     }
-
-    // Footer
-    ctx2d.font = '500 26px monospace';
-    ctx2d.fillStyle = 'rgba(245,245,245,0.25)';
-    ctx2d.fillText('typearena.io', 80, 1040);
-
-    canvas.toBlob((blob) => {
-      // Fix #9 (Issue 9): blob is null if the canvas is tainted or the encoder fails.
-      // createObjectURL(null) throws a TypeError, so guard before proceeding.
-      if (!blob) {
-        console.error('exportScoreCard: canvas.toBlob returned null Ã¯Â¿Â½?" cannot create PNG');
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `typearena-${Math.round(raceResult.wpm)}wpm-${Date.now()}.png`;
-      link.click();
-      URL.revokeObjectURL(url);
-    }, 'image/png');
   };
 
 
@@ -2535,18 +2429,20 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           )}
 
           {!practicePage && (
-            <PrivateRoomPanel
-              hasSignatureInvites={hasSignatureInvites}
-              friendBattle={friendBattle}
-              setFriendBattle={setFriendBattle}
-              createFriendBattle={createFriendBattle}
-              joinFriendBattle={joinFriendBattle}
-              copyInviteCode={copyInviteCode}
-              loadingLive={loadingLive}
+            <Suspense fallback={<p className="results-challenge" style={{ opacity: 0.7 }}>Loading room options...</p>}>
+              <PrivateRoomPanel
+                hasSignatureInvites={hasSignatureInvites}
+                friendBattle={friendBattle}
+                setFriendBattle={setFriendBattle}
+                createFriendBattle={createFriendBattle}
+                joinFriendBattle={joinFriendBattle}
+                copyInviteCode={copyInviteCode}
+                loadingLive={loadingLive}
                 liveAction={liveAction}
-              currentUser={currentUser}
-              liveRoom={liveRoom}
-            />
+                currentUser={currentUser}
+                liveRoom={liveRoom}
+              />
+            </Suspense>
           )}
 
           {notice && (
@@ -2681,7 +2577,19 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </>
           )}
           {(liveRoom?.inviteCode || friendBattle.inviteCode) && (
-            <p className="results-challenge">Invite code: {liveRoom?.inviteCode || friendBattle.inviteCode}</p>
+            <p className="results-challenge">
+              Invite code: <strong>{liveRoom?.inviteCode || friendBattle.inviteCode}</strong>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-light invite-copy-btn"
+                style={{ marginLeft: '0.5rem' }}
+                onClick={copyInviteCode}
+                aria-label="Copy invite code"
+                title="Copy invite code"
+              >
+                Copy
+              </button>
+            </p>
           )}
           {liveRoom?.isPrivate && liveRoom?.players?.length > 0 && (
             <div className="room-roster" aria-label="Players in this room">
@@ -3080,13 +2988,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               <span className="result-label">Accuracy</span>
               <span className="result-value">{Number(raceResult.accuracy).toFixed(1)}%</span>
             </div>
-            <div className="result-card">
-              <span className="result-label">Winner Prize</span>
-              <span className="result-value">
-                KES {Number(raceResult.winnerPrize || 0).toLocaleString()}
-              </span>
-            </div>
           </div>
+          {/* Live 1v1s and private rooms don't carry money (only tournaments
+              do, funded by their own entry-fee pool), so there's no prize
+              stat here anymore - see app_backend.py's queue_live_race /
+              _complete_live_race_if_ready for the corresponding backend fix. */}
 
           {isNewPB && (
             <div style={{ textAlign:'center', padding:'0.6rem 1.2rem', background:'var(--arena-accent-soft)', border:'1px solid var(--arena-accent)', borderRadius:'10px', marginBottom:'0.75rem', fontWeight:700, color:'var(--arena-accent)', fontSize:'1.1rem' }}>

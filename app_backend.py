@@ -111,6 +111,7 @@ STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
 LEADERBOARD_CACHE_TTL_MS = 15_000
+PUBLIC_STATS_CACHE_TTL_MS = 15_000
 SITE_SETTINGS_STORAGE_KEY = 'site_settings'
 _leaderboard_cache: Dict[str, Any] = {
     'key': None,
@@ -118,6 +119,11 @@ _leaderboard_cache: Dict[str, Any] = {
     'payload': None,
 }
 _leaderboard_cache_lock = _threading.Lock()
+_public_stats_cache: Dict[str, Any] = {
+    'expires_at': 0,
+    'payload': None,
+}
+_public_stats_cache_lock = _threading.Lock()
 ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
 ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
 ADMIN_TOKEN_TTL_SECONDS = 8 * 60 * 60
@@ -128,6 +134,14 @@ TOURNAMENT_START_DELAY_SECONDS = 30
 TOURNAMENT_PODIUM_SHARES = (0.50, 0.20, 0.10)
 TOURNAMENT_ADMIN_SHARE = 0.20
 WINNER_PRIZE_SHARE = TOURNAMENT_PODIUM_SHARES[0]
+# Payout split for staked private rooms (see queue_live_race / stakeAmount).
+# A heads-up room (exactly 2 players) has no podium to split, so the winner
+# simply takes a fixed cut of the pool and the rest goes to the platform,
+# same house-percentage idea as tournaments. A private room with 3+ players
+# behaves exactly like a tournament of that size and reuses
+# TOURNAMENT_PODIUM_SHARES / TOURNAMENT_ADMIN_SHARE instead of its own split.
+PRIVATE_ROOM_HEADS_UP_WINNER_SHARE = 0.85
+PRIVATE_ROOM_HEADS_UP_ADMIN_SHARE = round(1 - PRIVATE_ROOM_HEADS_UP_WINNER_SHARE, 2)
 WITHDRAWAL_FEE = 50.0
 LIVE_RACE_COUNTDOWN_SECONDS = 10
 LIVE_RACE_MIN_DURATION_SECONDS = 15
@@ -3906,6 +3920,82 @@ def _settle_tournament_podium(room: Dict[str, Any], ranked_player_ids: list[int]
     room['winnerPrize'] = podium[0]['prize'] if podium else 0
     room['tournamentSettled'] = True
 
+
+def _settle_private_room_stakes(room: Dict[str, Any], ranked_player_ids: list[int], conn) -> None:
+    """
+    Pay out the escrowed stake pool for a non-tournament private room once
+    it is complete. Public matchmaking rooms and free (stakeAmount=0)
+    private rooms always have an empty escrow (see queue_live_race), so
+    this is a no-op for them.
+
+    Payout structure:
+      - Heads-up (exactly 2 players): there is no podium to split, so the
+        winner takes PRIVATE_ROOM_HEADS_UP_WINNER_SHARE (85%) of the pool
+        and the remaining PRIVATE_ROOM_HEADS_UP_ADMIN_SHARE (15%) goes to
+        the platform - the same "house percentage" idea tournaments use.
+      - 3+ players: the room behaves exactly like a tournament bracket of
+        that size, so it reuses TOURNAMENT_PODIUM_SHARES (50/20/10 for
+        1st/2nd/3rd) and TOURNAMENT_ADMIN_SHARE (20%) rather than having
+        its own separate split to maintain.
+    """
+    if room.get('stakesSettled'):
+        return
+
+    total_pool = round(float(room.get('totalEscrow') or 0), 2)
+    if total_pool <= 0 or not ranked_player_ids:
+        room['stakesSettled'] = True
+        return
+
+    players_by_id = {p['userId']: p for p in room.get('players', [])}
+    podium: list[Dict[str, Any]] = []
+    admin_amount = 0.0
+
+    with conn.cursor() as cur:
+        if len(ranked_player_ids) <= 2:
+            winner_id = ranked_player_ids[0]
+            winner_amount = round(total_pool * PRIVATE_ROOM_HEADS_UP_WINNER_SHARE, 2)
+            admin_amount = round(total_pool - winner_amount, 2)
+            if winner_amount > 0:
+                cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (winner_amount, int(winner_id)))
+                podium.append({
+                    'place': 1,
+                    'userId': winner_id,
+                    'username': str(players_by_id.get(winner_id, {}).get('username') or 'Player'),
+                    'prize': winner_amount,
+                })
+        else:
+            admin_amount = round(total_pool * TOURNAMENT_ADMIN_SHARE, 2)
+            for place, user_id in enumerate(ranked_player_ids[:3], start=1):
+                amount = round(total_pool * TOURNAMENT_PODIUM_SHARES[place - 1], 2)
+                if amount <= 0:
+                    continue
+                cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount, int(user_id)))
+                podium.append({
+                    'place': place,
+                    'userId': user_id,
+                    'username': str(players_by_id.get(user_id, {}).get('username') or 'Player'),
+                    'prize': amount,
+                })
+
+        if admin_amount > 0:
+            admin_user = _get_admin_user(cur)
+            if admin_user:
+                cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (admin_amount, admin_user['id']))
+                _record_admin_wallet_transaction(
+                    cur,
+                    admin_user_id=int(admin_user['id']),
+                    transaction_type='private_room_profit',
+                    amount=admin_amount,
+                    direction='in',
+                    source='private_room_stake',
+                    note=f'Platform share of staked private room {room.get("id")}',
+                )
+
+    room['podium'] = podium
+    room['winnerPrize'] = podium[0]['prize'] if podium else 0
+    room['stakesSettled'] = True
+
+
 def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
     player_ids = [player['userId'] for player in room.get('players', [])]
     if len(player_ids) < 2:
@@ -3937,38 +4027,24 @@ def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
         _persist_completed_live_race(room, conn=conn)
         return
 
-    escrow_total = float(room.get('totalEscrow') or 0)
-    winner_prize = escrow_total if room.get('isPrivate') and escrow_total > 0 else float(room.get('winnerPrize') or 0)
-    if winner_prize <= 0:
-        _persist_completed_live_race(room, conn=conn)
-        return    # Use the caller's connection if provided ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â avoids an extra TCP round-trip
-    _owns_conn = conn is None
-    if _owns_conn:
-        conn = get_connection()
+    # Non-tournament live races (1v1 matchmaking and private rooms) only
+    # carry money when the room was created with a stakeAmount (see
+    # queue_live_race). Public matchmaking rooms and free private rooms
+    # always have an empty escrow, so _settle_private_room_stakes is a
+    # no-op for them and winnerPrize stays 0.
+    room['winnerPrize'] = 0
+    owns_conn = conn is None
+    settlement_conn = conn or get_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute('SELECT * FROM users WHERE id=%s', (winner_user_id,))
-            winner = cur.fetchone()
-            if not winner:
-                return
-            updated_winner = _record_prize_wallet_credit(
-                cur,
-                user_id=winner_user_id,
-                amount=winner_prize,
-                tournament_id=room.get('tournamentId'),
-                phone_number=str(winner.get('phone_number') or ''),
-                payout_code_prefix='livewin',
-            )
-        if _owns_conn:
-            conn.commit()
-        room['winner'] = _safe_user(updated_winner)
-        room['winnerPrize'] = winner_prize
+        _settle_private_room_stakes(room, ranked_player_ids, settlement_conn)
+        if owns_conn:
+            settlement_conn.commit()
     finally:
-        if _owns_conn:
-            _return_connection(conn)
-            conn = None  # don't pass a closed/returned conn to persist
-
+        if owns_conn:
+            _return_connection(settlement_conn)
     _persist_completed_live_race(room, conn=conn)
+
+
 def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
     if not room or str(room.get('status') or '').lower() == 'completed':
         return False
@@ -4007,18 +4083,37 @@ def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
             'finishedAtTs': datetime.utcnow().timestamp(),
         }
 
-    # Setup standard metric winner references (Metrics onlyÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂNo money involved)
+    # Resolve a winner from whatever WPM/accuracy each player had logged
+    # at the moment of expiry. Purely a stats/ranking result - live races
+    # never carry money (see _complete_live_race_if_ready / queue_live_race).
+    ranked_player_ids: list[int] = []
     try:
         player_ids = [p['userId'] for p in room.get('players', [])]
         def result_sort_key(p_id: int):
             res = room['results'].get(p_id, {})
             return (float(res.get('wpm') or 0), float(res.get('accuracy') or 0))
-        
+
         if player_ids:
             room['winnerUserId'] = max(player_ids, key=result_sort_key)
             room['winnerPrize'] = 0
+            ranked_player_ids = sorted(player_ids, key=result_sort_key, reverse=True)
     except Exception as e:
         print(f"Error resolving metrics winner: {e}")
+
+    # Pay out any staked pool the same way a normal completion would (see
+    # _complete_live_race_if_ready / _settle_private_room_stakes). Rooms
+    # with no stake (public matchmaking, free private rooms) have an empty
+    # escrow, so this is a no-op for them.
+    if ranked_player_ids:
+        try:
+            settlement_conn = get_connection()
+            try:
+                _settle_private_room_stakes(room, ranked_player_ids, settlement_conn)
+                settlement_conn.commit()
+            finally:
+                _return_connection(settlement_conn)
+        except Exception as settle_err:
+            print(f"Error settling private room stakes: {settle_err}")
 
     # Log stats directly to your historical logs safely
     try:
@@ -4344,6 +4439,49 @@ def _get_admin_user(cur) -> Optional[Dict[str, Any]]:
     admin_user_id = cur.lastrowid
     cur.execute('SELECT * FROM users WHERE id = %s', (admin_user_id,))
     return cur.fetchone()
+
+
+@app.get('/api/public-stats')
+def public_stats():
+    now_ms = int(time.time() * 1000)
+    with _public_stats_cache_lock:
+        cached = _public_stats_cache.get('payload')
+        if cached is not None and _public_stats_cache.get('expires_at', 0) > now_ms:
+            return jsonify(cached)
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT COUNT(*) AS total_users FROM users')
+            row = cur.fetchone() or {}
+            registered_users = int(row.get('total_users') or 0)
+
+            # Prefer the fastest *verified* race on record; fall back to the
+            # profile-level wpm field if race_history has nothing yet, so the
+            # card never regresses to zero on a fresh install.
+            cur.execute('SELECT MAX(wpm) AS top_wpm FROM race_history')
+            row = cur.fetchone() or {}
+            top_wpm = row.get('top_wpm')
+            if not top_wpm:
+                cur.execute('SELECT MAX(wpm) AS top_wpm FROM users')
+                row = cur.fetchone() or {}
+                top_wpm = row.get('top_wpm')
+            top_wpm = round(float(top_wpm), 1) if top_wpm else 0
+
+        payload = {
+            'registeredUsers': registered_users,
+            'topWpm': top_wpm,
+        }
+        with _public_stats_cache_lock:
+            _public_stats_cache.update(
+                {
+                    'expires_at': int(time.time() * 1000) + PUBLIC_STATS_CACHE_TTL_MS,
+                    'payload': payload,
+                }
+            )
+        return jsonify(payload)
+    finally:
+        _return_connection(conn)
 
 
 @app.get('/api/health')
@@ -6659,10 +6797,33 @@ def queue_live_race():
             max_players = max(2, min(10, requested_max_players)) if is_private else TOURNAMENT_MATCH_SIZE
             invite_code = str(payload.get('inviteCode') or '').strip().upper()
             room_password = str(payload.get('password') or '').strip()
-            winner_prize = float(payload.get('winnerPrize') or 0)
+            # Live 1v1 matchmaking and private rooms never carry real money -
+            # only tournaments do, and tournament payouts are funded by a
+            # validated entry-fee pool (see tournament_joins /
+            # _settle_tournament_podium), never by this field. winnerPrize
+            # used to be read straight from the request body here, which let
+            # a client hand itself an arbitrary payout just by queuing with
+            # {"winnerPrize": <any number>} and winning the race - it's
+            # hardcoded to 0 now regardless of what the client sends.
+            winner_prize = 0.0
             exclude_content_ids = payload.get('excludeContentIds') or []
+            # Only private rooms can carry a stake - public 1v1 matchmaking
+            # stays cash-free, same reasoning as winner_prize above (a
+            # client could otherwise queue into a random public match with
+            # a forged {"stakeAmount": ...}). The host who creates the room
+            # sets the stake for everyone in it; minimum is 0 (free play),
+            # there is no maximum - a joiner who does not want to pay it
+            # simply does not join that room. See _debit_user_balance calls
+            # below for where the host and each joiner are actually charged.
             stake_amount = 0.0
-            winner_takes_all = False
+            winner_takes_all = bool(payload.get('winnerTakesAll'))
+            if is_private:
+                try:
+                    stake_amount = round(float(payload.get('stakeAmount') or 0), 2)
+                except (TypeError, ValueError):
+                    return jsonify({'message': 'Stake amount must be a valid number.'}), 400
+                if not math.isfinite(stake_amount) or stake_amount < 0:
+                    return jsonify({'message': 'Stake amount cannot be negative.'}), 400
 
             # Only query store items when actually needed (custom invite code check)
             if is_private and invite_code:
@@ -6700,7 +6861,22 @@ def queue_live_race():
                 room_max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
                 if room and all(existing['userId'] != user['id'] for existing in room['players']) and len(room['players']) >= room_max_players:
                     return jsonify({'message': 'This private room is already full.'}), 400
-                if room and all(existing['userId'] != user['id'] for existing in room['players']):
+                is_new_joiner = bool(room) and all(existing['userId'] != user['id'] for existing in room['players'])
+                if room and is_new_joiner:
+                    # A joiner always pays the stake the host already locked
+                    # in at room creation - never a value the joiner sends
+                    # themselves - so every player in the pot has staked the
+                    # same amount.
+                    room_stake_amount = float(room.get('stakeAmount') or 0)
+                    if room.get('isPrivate') and room_stake_amount > 0:
+                        try:
+                            _debit_user_balance(cur, user_id=user['id'], amount=room_stake_amount)
+                        except ValueError as exc:
+                            return jsonify({'message': str(exc)}), 400
+                        room.setdefault('escrow', {})[str(user['id'])] = room_stake_amount
+                        room['totalEscrow'] = round(float(room.get('totalEscrow') or 0) + room_stake_amount, 2)
+                        cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                        user = cur.fetchone()
                     room['players'].append(player_snapshot)
                 if room:
                     room_max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
@@ -6768,17 +6944,20 @@ def queue_live_race():
                     conn.commit()
                     return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True})
 
+            # A host who sets a stake is charged their own stake up front,
+            # into the room's escrow, the same as any joiner - a room can
+            # only exist if its own creator has already backed their wager.
             if is_private and stake_amount > 0:
                 try:
                     _debit_user_balance(cur, user_id=user['id'], amount=stake_amount)
                 except ValueError as exc:
-                    conn.rollback()
                     return jsonify({'message': str(exc)}), 400
                 cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
                 user = cur.fetchone()
 
             room_id = f'room_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(3)}'
             generated_invite = invite_code or secrets.token_hex(3).upper()
+            initial_escrow = {str(user['id']): stake_amount} if (is_private and stake_amount > 0) else {}
             room = {
                 'id': room_id,
                 'status': 'waiting',
@@ -6794,8 +6973,8 @@ def queue_live_race():
                 'maxPlayers': max_players,
                 'winnerTakesAll': winner_takes_all,
                 'stakeAmount': stake_amount,
-                'escrow': {},
-                'totalEscrow': 0,
+                'escrow': initial_escrow,
+                'totalEscrow': round(stake_amount, 2) if initial_escrow else 0,
                 'players': [player_snapshot],
                 'results': {},
                 'winnerPrize': winner_prize,
@@ -6936,6 +7115,14 @@ def cancel_live_race(room_id: str):
                     'user': _safe_user(user, conn),
                 }
             )
+
+        # Private rooms may carry real staked money in escrow (see
+        # queue_live_race), so cancellation - which triggers a full refund
+        # to every staking player - is restricted to the host. Otherwise
+        # any invited player could unilaterally kill the room and force
+        # refunds without the host's consent, e.g. right before losing.
+        if str(room.get('hostUserId')) != str(user['id']):
+            return jsonify({'message': 'Only the room host can cancel this room.'}), 403
 
         refunded_users = []
         with conn.cursor() as cur:
