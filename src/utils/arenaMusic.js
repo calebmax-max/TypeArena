@@ -4,13 +4,19 @@
 // A singleton audio engine that persists across all pages/components.
 // Uses an <audio> element so real MP3/OGG files play (not synthesised tones).
 // The admin configures the playlist; settings are saved to localStorage so
-// they survive page refreshes and navigation.
+// they survive page refreshes and navigation, and are synced from the server
+// on load so every visitor hears the current admin-configured playlist.
 //
 // Usage from any component:
 //   import { arenaMusic } from '../utils/arenaMusic';
 //   arenaMusic.play();
 //   arenaMusic.setVolume(0.6);
 //   arenaMusic.next();
+//
+// Race integration (call from wherever a race actually starts/ends —
+// live match, tournament match, or private room):
+//   arenaMusic.enterRace();   // ducks music out when the race begins
+//   arenaMusic.exitRace();    // brings music back when the race ends/leaves
 // =============================================================================
 import { useState, useEffect } from 'react';
 import { buildApiUrl } from './api';
@@ -55,10 +61,22 @@ const createMusicEngine = () => {
   let audio = null;
   let tracks = [...DEFAULT_TRACKS];
   let currentIndex = 0;
-  let volume = 0.45;        // constant across all pages
+  let loadedTrackId = null;    // id of the track actually loaded into <audio>.src
+  let volume = 0.45;           // constant across all pages
   let playing = false;
   let muted = false;
-  let listeners = new Set(); // UI components that want state updates
+  let listeners = new Set();   // UI components that want state updates
+
+  // ── Race ducking state ─────────────────────────────────────────────────────
+  // Reference-counted so overlapping calls (e.g. a component re-mounts mid
+  // race) can't cause a premature resume.
+  let raceDepth = 0;
+  let wasPlayingBeforeRace = false;
+
+  // ── Autoplay-retry bookkeeping ──────────────────────────────────────────────
+  // Keeps track of the pending "resume on first gesture" listeners so we never
+  // stack up duplicates across repeated play() calls while blocked.
+  let pendingResume = null;
 
   // ── Persistence ────────────────────────────────────────────────────────────
   const loadSettings = () => {
@@ -132,13 +150,31 @@ const createMusicEngine = () => {
     if (!track?.url) return;
     a.src = track.url;
     a.load();
+    loadedTrackId = track.id;
     saveSettings();
+  };
+
+  // Find where a previously-current track ended up after the playlist array
+  // was mutated (tracks added/removed/replaced), so "now playing" doesn't
+  // silently jump to a different song. Falls back to a safe index if the
+  // track is gone.
+  const reindexAfterMutation = (previousTrackId, fallbackIndex = 0) => {
+    if (tracks.length === 0) {
+      currentIndex = 0;
+      return;
+    }
+    const found = previousTrackId != null ? tracks.findIndex((t) => t.id === previousTrackId) : -1;
+    currentIndex = found >= 0 ? found : Math.min(fallbackIndex, tracks.length - 1);
   };
 
   const play = () => {
     if (tracks.length === 0) return;
     const a = getAudio();
-    if (!a.src || a.src === window.location.href) {
+    const current = tracks[currentIndex];
+    // Reload whenever nothing is loaded yet OR the loaded track no longer
+    // matches the current track (e.g. tracks/currentIndex changed while
+    // paused) — not just when a.src happens to be empty.
+    if (!a.src || a.src === window.location.href || loadedTrackId !== current?.id) {
       loadTrack(currentIndex);
     }
     a.volume = muted ? 0 : volume;
@@ -146,12 +182,20 @@ const createMusicEngine = () => {
       playing = true;
       notify();
     }).catch(() => {
-      // Autoplay blocked — wait for user gesture
+      // Autoplay blocked — wait for a user gesture, replacing any previous
+      // pending listener so they don't pile up on repeated play() calls.
+      if (pendingResume) {
+        window.removeEventListener('click', pendingResume);
+        window.removeEventListener('keydown', pendingResume);
+        pendingResume = null;
+      }
       const resume = () => {
         a.play().then(() => { playing = true; notify(); }).catch(() => {});
         window.removeEventListener('click', resume);
         window.removeEventListener('keydown', resume);
+        if (pendingResume === resume) pendingResume = null;
       };
+      pendingResume = resume;
       window.addEventListener('click', resume, { once: true });
       window.addEventListener('keydown', resume, { once: true });
     });
@@ -202,11 +246,28 @@ const createMusicEngine = () => {
 
   const toggleMute = () => setMuted(!muted);
 
+  // ── Race ducking (pause during live/tournament/private matches) ────────────
+  const enterRace = () => {
+    raceDepth += 1;
+    if (raceDepth > 1) return; // already ducked for an outer race context
+    wasPlayingBeforeRace = playing;
+    if (playing) pause();
+  };
+
+  const exitRace = () => {
+    if (raceDepth === 0) return;
+    raceDepth -= 1;
+    if (raceDepth > 0) return; // still inside another race context
+    if (wasPlayingBeforeRace) play();
+    wasPlayingBeforeRace = false;
+  };
+
   // ── Playlist management (admin) ────────────────────────────────────────────
   const setTracks = (newTracks) => {
+    const previousId = tracks[currentIndex]?.id ?? null;
     tracks = newTracks.filter((t) => t?.url?.trim());
-    currentIndex = 0;
-    loadTrack(0);
+    reindexAfterMutation(previousId, 0);
+    loadTrack(currentIndex);
     if (playing) play();
     saveSettings();
     notify();
@@ -219,12 +280,17 @@ const createMusicEngine = () => {
   };
 
   const removeTrack = (id) => {
-    const idx = tracks.findIndex((t) => t.id === id);
+    const previousId = tracks[currentIndex]?.id ?? null;
+    const removingCurrent = id === previousId;
     tracks = tracks.filter((t) => t.id !== id);
-    if (currentIndex >= tracks.length) currentIndex = 0;
-    if (idx === currentIndex && playing) {
+    reindexAfterMutation(removingCurrent ? null : previousId, currentIndex);
+    if (removingCurrent && playing) {
       loadTrack(currentIndex);
       play();
+    } else {
+      // currentIndex may have shifted even though the loaded audio element
+      // is unaffected (its src doesn't change) — keep loadedTrackId in sync.
+      loadedTrackId = tracks[currentIndex]?.id ?? null;
     }
     saveSettings();
     notify();
@@ -234,6 +300,7 @@ const createMusicEngine = () => {
     tracks = [...DEFAULT_TRACKS];
     currentIndex = 0;
     loadTrack(0);
+    if (playing) play(); // keep playing through a reset instead of going silent
     saveSettings();
     notify();
   };
@@ -244,9 +311,20 @@ const createMusicEngine = () => {
       if (!response.ok) return null;
       const settings = await response.json();
       if (Array.isArray(settings.musicTracks) && settings.musicTracks.length > 0) {
+        const previousId = tracks[currentIndex]?.id ?? null;
         tracks = settings.musicTracks.filter((track) => track?.url?.trim());
-        currentIndex = Math.min(currentIndex, tracks.length - 1);
-        if (audio && playing) loadTrack(currentIndex);
+        reindexAfterMutation(previousId, currentIndex);
+        // Reload into the <audio> element whenever the loaded track no
+        // longer matches — regardless of playing state — so a subsequent
+        // play() (or the already-playing track) reflects the new playlist.
+        if (loadedTrackId !== tracks[currentIndex]?.id) {
+          if (audio) {
+            loadTrack(currentIndex);
+            if (playing) play();
+          } else {
+            loadedTrackId = null; // force play() to load fresh next time
+          }
+        }
         saveSettings();
         notify();
       }
@@ -264,6 +342,13 @@ const createMusicEngine = () => {
 
   // ── Init ───────────────────────────────────────────────────────────────────
   loadSettings();
+  if (typeof window !== 'undefined') {
+    // Sync with the admin-configured playlist as soon as the engine spins up
+    // on any page, then start playback immediately — play() already falls
+    // back to "resume on first click/keypress" if the browser blocks
+    // autoplay before the user has interacted with the page.
+    loadRemoteSettings().finally(() => play());
+  }
 
   return {
     play,
@@ -275,6 +360,8 @@ const createMusicEngine = () => {
     setVolume,
     setMuted,
     toggleMute,
+    enterRace,
+    exitRace,
     setTracks,
     addTrack,
     removeTrack,

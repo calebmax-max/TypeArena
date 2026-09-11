@@ -21,6 +21,7 @@ import {
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
+import { arenaMusic } from '../utils/arenaMusic';
 import { useLiveFeed } from '../hooks/useLiveFeed';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { useSpectateRoom } from '../hooks/useSpectateRoom';
@@ -1883,6 +1884,18 @@ export default function Play({ practicePage = false }){
 
   // Clean up ghost interval on unmount
   useEffect(() => () => window.clearInterval(ghostIntervalRef.current), []);
+
+  // Pause background music for the duration of a race and bring it back
+  // afterwards. setPhase('racing') is the single funnel point for every
+  // race type (practice, live, tournament, private room), so this one
+  // effect covers all of them. The cleanup fires whenever phase changes
+  // away from 'racing' (finish, forfeit, navigating away) AND on unmount
+  // (closing the tab mid-race), so music can never get stuck paused.
+  useEffect(() => {
+    if (phase !== 'racing') return undefined;
+    arenaMusic.enterRace();
+    return () => arenaMusic.exitRace();
+  }, [phase]);
   useEffect(() => {
     if (phase !== 'results' || !raceResult) return;
     setAiCoaching('loading');

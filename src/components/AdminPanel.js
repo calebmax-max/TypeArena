@@ -499,7 +499,7 @@ export default function AdminPanel() {
         const track = result?.track;
         if (!track?.url) throw new Error(result?.message || 'Upload did not return a track.');
         arenaMusic.addTrack(track);
-        void persistMediaSettings([...musicState.tracks, track]);
+        void persistMediaSettings(arenaMusic.getState().tracks);
         if (localFileObjectUrl) URL.revokeObjectURL(localFileObjectUrl);
         setLocalFileObjectUrl(null);
         setSelectedFile(null);
@@ -520,7 +520,7 @@ export default function AdminPanel() {
     if (!url) { setMusicNotice('Enter a URL.'); return; }
     const track = { id: 'track_' + Date.now(), title, artist, url };
     arenaMusic.addTrack(track);
-    void persistMediaSettings([...musicState.tracks, track]);
+    void persistMediaSettings(arenaMusic.getState().tracks);
     setNewTrack({ title: '', artist: '', url: '' });
     setMusicNotice(`"${title}" added.`);
     setTimeout(() => setMusicNotice(''), 3000);
@@ -530,7 +530,7 @@ export default function AdminPanel() {
   const handleRemoveTrack = (id, title) => {
     if (!window.confirm(`Remove "${title}"?`)) return;
     arenaMusic.removeTrack(id);
-    void persistMediaSettings(musicState.tracks.filter((track) => track.id !== id));
+    void persistMediaSettings(arenaMusic.getState().tracks);
     // Uploaded tracks (id like "music_<hex>") store their bytes in the DB —
     // free that storage too. Ignore failures; a stray orphaned blob isn't harmful.
     if (/^music_[0-9a-f]{16}$/.test(id)) {
