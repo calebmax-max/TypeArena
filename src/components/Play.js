@@ -21,10 +21,6 @@ import {
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
-// Lazy-loaded: only needed for the private-room flow (!practicePage), so
-// it's split out of the main Play chunk rather than bundled for every
-// solo/practice race that never touches it.
-const PrivateRoomPanel = lazy(() => import('./PrivateRoomPanel'));
 import { useLiveFeed } from '../hooks/useLiveFeed';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { useSpectateRoom } from '../hooks/useSpectateRoom';
@@ -32,6 +28,10 @@ import { getRaceContent } from '../utils/navigationPrefetch';
 import { KEYBOARD_LAYOUT } from '../utils/keyboardLayout';
 import '../styles/Play.css';
 
+// Lazy-loaded: only needed for the private-room flow (!practicePage), so
+// it's split out of the main Play chunk rather than bundled for every
+// solo/practice race that never touches it.
+const PrivateRoomPanel = lazy(() => import('./PrivateRoomPanel'));
 const LazyKeyboardDeck = React.lazy(() => import('./PlayKeyboardDeck'));
 const LazyPlayReplay = React.lazy(() => import('./PlayReplay'));
 
