@@ -65,9 +65,9 @@ const NAV_ITEMS = [
   { id: 'players', label: 'Top Players', icon: 'P' },
   { id: 'leaderboard', label: 'Leaderboard', icon: 'L' },
   { id: 'music', label: 'Music', icon: 'M' },
-    { id: 'content',     label: 'Content',       icon: 'Content' },
-    { id: 'marketplace', label: 'Marketplace',   icon: 'Store' },
-  { id: 'ai-settings', label: 'AI Settings', icon: 'AI' },
+  { id: 'content', label: 'Content', icon: 'C' },
+  { id: 'marketplace', label: 'Marketplace', icon: 'MK' },
+  { id: 'ai', label: 'AI Settings', icon: 'AI' },
 ];
 
 export default function AdminPanel() {
