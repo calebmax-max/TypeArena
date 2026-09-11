@@ -254,7 +254,7 @@ export default function TypeProfile() {
   const [currentUser,   setCurrentUser]   = useState(() => getStoredUserSnapshot());
   const [showAuthForm,  setShowAuthForm]   = useState(false);
   const [authMode,      setAuthMode]       = useState('login');
-  const [formData,      setFormData]       = useState({ email: '', password: '', username: '', otp: '', phoneNumber: '' });
+  const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '' });
   const [raceHistory,   setRaceHistory]    = useState([]);
   const [walletHistory, setWalletHistory]  = useState([]);
   const [walletConfig,  setWalletConfig]   = useState({ topUpMethods: [], withdrawMethods: [] });
@@ -268,7 +268,6 @@ export default function TypeProfile() {
   const [walletNotice,  setWalletNotice]   = useState('');
   const [authNotice,    setAuthNotice]     = useState('');
   const [authLoading,   setAuthLoading]   = useState(false);
-  const [adminOtpRequired, setAdminOtpRequired] = useState(false);
   const [showPassword,  setShowPassword]   = useState(false);
   const [profileName,   setProfileName]    = useState('');
   const [profileSaving, setProfileSaving]  = useState(false);
@@ -441,31 +440,24 @@ export default function TypeProfile() {
     setAuthNotice('');
     try {
       const user = authMode === 'login'
-        ? await loginUser(formData.email, formData.password, formData.otp)
+        ? await loginUser(formData.email, formData.password)
         : await signupUser(formData.username, formData.email, formData.password, formData.phoneNumber);
 
       applyFreshUserState(user);
 
       if (authMode === 'login' && user?.adminToken) {
-        setFormData({ email: '', password: '', otp: '', username: '', phoneNumber: '' });
-        setAdminOtpRequired(false);
+        setFormData({ email: '', password: '', username: '', phoneNumber: '' });
         navigate('/admin');
         return;
       }
 
       setShowAuthForm(false);
-      setFormData({ email: '', password: '', otp: '', username: '', phoneNumber: '' });
-      setAdminOtpRequired(false);
+      setFormData({ email: '', password: '', username: '', phoneNumber: '' });
       void loadProfile();
       const redirect = new URLSearchParams(window.location.search).get('redirect');
       if (redirect) navigate(redirect);
     } catch (err) {
-      if (authMode === 'login' && err?.body?.code === 'admin_2fa_required') {
-        setAdminOtpRequired(true);
-        setAuthNotice('Enter the 6-digit code from your authenticator app.');
-      } else {
-        setAuthNotice(err.message || 'Authentication failed.');
-      }
+      setAuthNotice(err.message || 'Authentication failed.');
     } finally {
       setAuthLoading(false);
     }
@@ -585,7 +577,6 @@ export default function TypeProfile() {
   const openAuthForm = (mode) => {
     setAuthMode(mode);
     setAuthNotice('');
-    setAdminOtpRequired(false);
     setShowAuthForm(true);
     setAuthNotice('');
   };
@@ -666,14 +657,6 @@ export default function TypeProfile() {
                     <label className="tp-field__label">Phone number</label>
                     <input className="tp-input" type="tel" placeholder="+254 7XX XXX XXX" value={formData.phoneNumber}
                       onChange={(e) => setFormData((c) => ({ ...c, phoneNumber: e.target.value }))} />
-                  </div>
-                )}
-
-                {authMode === 'login' && adminOtpRequired && (
-                  <div className="tp-field">
-                    <label className="tp-field__label">Authenticator code</label>
-                    <input className="tp-input" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} placeholder="123456" value={formData.otp || ''}
-                      onChange={(e) => setFormData((c) => ({ ...c, otp: e.target.value.replace(/\D/g, '').slice(0, 6) }))} required />
                   </div>
                 )}
 

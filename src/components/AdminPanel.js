@@ -231,7 +231,27 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not create tournament.'); }
   };
 
-  const handleSignOut = () => { adminLogout(); setToken(null); };
+  const handleSignOut = async () => {
+    // Invalidate the token server-side (not just locally) so a copied or
+    // leaked token can't keep working after "Sign Out" is clicked.
+    // NOTE: utils/typingApi.js should expose a dedicated adminLogoutRequest()
+    // that POSTs to /api/admin/logout with the X-Admin-Token header - this
+    // inline fetch is a stand-in since that file wasn't available to edit here.
+    const currentToken = getAdminToken();
+    if (currentToken) {
+      try {
+        await fetch('/api/admin/logout', {
+          method: 'POST',
+          headers: { 'X-Admin-Token': currentToken },
+        });
+      } catch (error) {
+        // Best-effort: still clear local state even if the request fails
+        // (e.g. offline), so the user isn't stuck.
+      }
+    }
+    adminLogout();
+    setToken(null);
+  };
 
   const handleImpersonatePlayer = async (player) => {
     if (!player?.id) return;

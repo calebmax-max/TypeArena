@@ -127,8 +127,10 @@ _public_stats_cache_lock = _threading.Lock()
 ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
 ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
 ADMIN_TOKEN_TTL_SECONDS = 8 * 60 * 60
+# Must be its own secret, independent of ADMIN_PASSWORD - see _admin_token_secret.
 ADMIN_TOKEN_SECRET = os.getenv('TYPEARENA_ADMIN_TOKEN_SECRET', '').strip()
-ADMIN_TOTP_SECRET = os.getenv('TYPEARENA_ADMIN_TOTP_SECRET', '').strip().replace(' ', '')
+ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS = 5
+ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
 TOURNAMENT_MATCH_SIZE = 3
 TOURNAMENT_START_DELAY_SECONDS = 30
 TOURNAMENT_PODIUM_SHARES = (0.50, 0.20, 0.10)
@@ -192,39 +194,62 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _admin_token_secret() -> bytes:
-    # Reuse the explicit admin password only as a compatibility fallback.
-    secret = ADMIN_TOKEN_SECRET or ADMIN_PASSWORD
-    return secret.encode('utf-8')
+def _admin_token_secret() -> Optional[bytes]:
+    # Deliberately NOT falling back to ADMIN_PASSWORD: that would make the
+    # login password double as the HMAC signing key, coupling two unrelated
+    # secrets and making it impossible to rotate one without the other.
+    if not ADMIN_TOKEN_SECRET:
+        return None
+    return ADMIN_TOKEN_SECRET.encode('utf-8')
 
 
-def _verify_admin_totp(code: str) -> bool:
-    if not ADMIN_TOTP_SECRET:
-        return True
-    normalized = str(code or '').strip().replace(' ', '')
-    if len(normalized) != 6 or not normalized.isdigit():
-        return False
-    try:
-        secret = base64.b32decode(ADMIN_TOTP_SECRET.upper() + ('=' * (-len(ADMIN_TOTP_SECRET) % 8)), casefold=True)
-    except (ValueError, binascii.Error):
-        return False
-    counter = int(time.time()) // 30
-    for offset in (-1, 0, 1):
-        digest = hmac.new(secret, (counter + offset).to_bytes(8, 'big'), hashlib.sha1).digest()
-        index = digest[-1] & 0x0F
-        value = ((digest[index] & 0x7F) << 24) | (digest[index + 1] << 16) | (digest[index + 2] << 8) | digest[index + 3]
-        expected = f'{value % 1000000:06d}'
-        if hmac.compare_digest(expected, normalized):
-            return True
-    return False
-def _issue_admin_token() -> str:
+# Tokens issued before this timestamp are treated as revoked. Bumped by
+# _invalidate_admin_tokens() on admin logout, so "Sign Out" actually kills
+# the token server-side instead of only forgetting it client-side.
+_admin_token_min_iat = 0
+_admin_token_min_iat_lock = _threading.Lock()
+
+
+def _invalidate_admin_tokens() -> None:
+    global _admin_token_min_iat
+    with _admin_token_min_iat_lock:
+        _admin_token_min_iat = int(time.time())
+
+
+# In-memory sliding-window rate limiter for admin login attempts, keyed by
+# client IP. Keeps brute-forcing the admin password impractical without
+# adding an external dependency (this container has no network egress for
+# pip installs).
+_admin_login_attempts: Dict[str, list[float]] = {}
+_admin_login_attempts_lock = _threading.Lock()
+
+
+def _admin_login_rate_limited(key: str) -> bool:
+    now = time.time()
+    window_start = now - ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    with _admin_login_attempts_lock:
+        attempts = [t for t in _admin_login_attempts.get(key, []) if t >= window_start]
+        attempts.append(now)
+        _admin_login_attempts[key] = attempts
+        return len(attempts) > ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS
+
+
+def _issue_admin_token(admin_user_id: int) -> Optional[str]:
+    secret = _admin_token_secret()
+    if secret is None:
+        return None
     issued_at = int(time.time())
     payload = json.dumps(
-        {'iat': issued_at, 'exp': issued_at + ADMIN_TOKEN_TTL_SECONDS, 'nonce': secrets.token_urlsafe(18)},
+        {
+            'sub': admin_user_id,
+            'iat': issued_at,
+            'exp': issued_at + ADMIN_TOKEN_TTL_SECONDS,
+            'nonce': secrets.token_urlsafe(18),
+        },
         separators=(',', ':'),
     ).encode('utf-8')
     encoded = base64.urlsafe_b64encode(payload).decode('ascii').rstrip('=')
-    signature = hmac.new(_admin_token_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest()
+    signature = hmac.new(secret, encoded.encode('ascii'), hashlib.sha256).hexdigest()
     return f'{encoded}.{signature}'
 
 def _build_live_mode_passages(parts: Dict[str, list[str]]) -> list[str]:
@@ -4394,16 +4419,23 @@ def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
 
 def _is_admin_request() -> bool:
     token = request.headers.get('X-Admin-Token', '').strip()
-    if not token or not _admin_token_secret():
+    secret = _admin_token_secret()
+    if not token or secret is None:
         return False
     try:
         encoded, signature = token.split('.', 1)
-        expected = hmac.new(_admin_token_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest()
+        expected = hmac.new(secret, encoded.encode('ascii'), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected):
             return False
         padding = '=' * (-len(encoded) % 4)
         payload = json.loads(base64.urlsafe_b64decode((encoded + padding).encode('ascii')))
-        return int(payload.get('exp', 0)) > int(time.time())
+        if int(payload.get('exp', 0)) <= int(time.time()):
+            return False
+        with _admin_token_min_iat_lock:
+            min_iat = _admin_token_min_iat
+        if int(payload.get('iat', 0)) < min_iat:
+            return False
+        return True
     except (ValueError, TypeError, json.JSONDecodeError, UnicodeError):
         return False
 
@@ -4496,32 +4528,14 @@ def health():
     )
 
 
-@app.post('/api/admin/login')
-def admin_login():
-    payload = request.get_json(silent=True) or {}
-    email = str(payload.get('email', '')).strip().lower()
-    password = str(payload.get('password', '')).strip()
-    otp = str(payload.get('otp', '')).strip()
-
-    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-        return jsonify({'message': 'Admin credentials are not configured on the server.'}), 500
-
-    if email != ADMIN_EMAIL.lower() or password != ADMIN_PASSWORD:
-        return jsonify({'message': 'Invalid admin credentials'}), 401
-
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _get_admin_user(cur)
-        conn.commit()
-    finally:
-        _return_connection(conn)
-
-    if ADMIN_TOTP_SECRET and not _verify_admin_totp(otp):
-        return jsonify({'message': 'Enter the 6-digit code from your authenticator app.', 'code': 'admin_2fa_required'}), 401
-
-    token = _issue_admin_token()
-    return jsonify({'token': token, 'adminEmail': ADMIN_EMAIL})
+@app.post('/api/admin/logout')
+def admin_logout_route():
+    # Requires a currently-valid token so a stranger can't invalidate the
+    # real admin's session, but doesn't otherwise need the token afterwards.
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    _invalidate_admin_tokens()
+    return jsonify({'message': 'Signed out.'})
 
 
 @app.post('/api/admin/tournaments')
@@ -5740,7 +5754,16 @@ def auth_login():
     payload = request.get_json(silent=True) or {}
     email = str(payload.get('email', '')).strip().lower()
     password = str(payload.get('password', '')).strip()
-    otp = str(payload.get('otp', '')).strip()
+
+    # Only the admin-account login path is rate-limited here: it's the one
+    # that unlocks the admin console, so it's the one worth protecting
+    # against brute-forcing. Checked before the DB lookup so repeated
+    # guesses against the admin email get throttled regardless of whether
+    # they happen to be right.
+    if _is_admin_email(email):
+        rate_limit_key = f'{request.remote_addr}:{email}'
+        if _admin_login_rate_limited(rate_limit_key):
+            return jsonify({'message': 'Too many login attempts. Try again in a minute.'}), 429
 
     conn = get_connection()
     try:
@@ -5758,7 +5781,7 @@ def auth_login():
                 valid = check_password_hash(stored_password, password)
             else:
                 # Backward compatibility for legacy plaintext passwords.
-                valid = stored_password == password
+                valid = hmac.compare_digest(stored_password.encode('utf-8'), password.encode('utf-8'))
                 if valid:
                     upgraded_hash = generate_password_hash(password)
                     cur.execute('UPDATE users SET password=%s WHERE id=%s', (upgraded_hash, user['id']))
@@ -5767,9 +5790,6 @@ def auth_login():
         if not valid:
             return jsonify({'message': 'Invalid email or password'}), 401
 
-        if _is_admin_email(email) and ADMIN_TOTP_SECRET and not _verify_admin_totp(otp):
-            return jsonify({'message': 'Enter the 6-digit code from your authenticator app.', 'code': 'admin_2fa_required'}), 401
-
         with conn.cursor() as cur:
             _ensure_auth_token_column(cur)
             token = _issue_user_token(cur, user['id'])
@@ -5777,8 +5797,12 @@ def auth_login():
         safe_user = _safe_user(user, conn)
         safe_user['token'] = token
         if safe_user.get('isAdmin'):
-            safe_user['adminEmail'] = ADMIN_EMAIL
-            safe_user['adminToken'] = _issue_admin_token()
+            admin_token = _issue_admin_token(user['id'])
+            if admin_token is None:
+                app.logger.error('TYPEARENA_ADMIN_TOKEN_SECRET is not configured; cannot issue admin session')
+            else:
+                safe_user['adminEmail'] = ADMIN_EMAIL
+                safe_user['adminToken'] = admin_token
         return jsonify(safe_user)
     finally:
         _return_connection(conn)
