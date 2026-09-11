@@ -32,6 +32,7 @@ import '../styles/Play.css';
 // it's split out of the main Play chunk rather than bundled for every
 // solo/practice race that never touches it.
 const PrivateRoomPanel = lazy(() => import('./PrivateRoomPanel'));
+const WalletTopUpModal = lazy(() => import('./WalletTopUpModal'));
 const LazyKeyboardDeck = React.lazy(() => import('./PlayKeyboardDeck'));
 const LazyPlayReplay = React.lazy(() => import('./PlayReplay'));
 
@@ -967,7 +968,35 @@ export default function Play({ practicePage = false }){
     password: '',
     customInviteCode: '',
     maxPlayers: 2,
+    stakeAmount: 0,
+    winnerTakesAll: false,
   });
+  // Wallet top-up modal, opened from PrivateRoomPanel when a player's
+  // balance can't cover the room's stake (see /api/wallet/* in app_backend.py).
+  const [walletTopUp, setWalletTopUp] = useState({ open: false, shortfall: 0 });
+  const openWalletTopUp = useCallback((shortfall = 0) => {
+    setWalletTopUp({ open: true, shortfall });
+  }, []);
+  const closeWalletTopUp = useCallback(() => {
+    setWalletTopUp((prev) => ({ ...prev, open: false }));
+  }, []);
+  // Best-effort bearer token lookup for the wallet endpoints, matching
+  // whatever utils/typingApi.js already uses to authenticate fetchCurrentUser /
+  // startRace / submitRaceResult. Wire this to that same helper if one exists.
+  const getAuthToken = useCallback(() => {
+    try {
+      return (
+        currentUser?.token ||
+        currentUser?.authToken ||
+        localStorage.getItem('typearena_token') ||
+        localStorage.getItem('authToken') ||
+        localStorage.getItem('token') ||
+        ''
+      );
+    } catch {
+      return '';
+    }
+  }, [currentUser]);
   const [tournamentId, setTournamentId] = useState('');
   const [initialRoomId, setInitialRoomId] = useState('');
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? new feature state Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
@@ -1253,6 +1282,34 @@ export default function Play({ practicePage = false }){
         : `Invite loaded. Sign in first, then join room ${inviteCode}.`,
       'info'
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
+  // Stripe redirects back to STRIPE_SUCCESS_URL with ?session_id=... after
+  // checkout. If we land here with one, confirm it against
+  // /api/wallet/topup/verify and refresh the wallet balance.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sessionId = params.get('session_id');
+    if (!sessionId || currentUser === undefined || !currentUser?.id) return;
+    const token = getAuthToken();
+    fetch(buildApiUrl(`/api/wallet/topup/verify?sessionId=${encodeURIComponent(sessionId)}`), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (ok && data.status === 'completed' && data.user) {
+          setCurrentUser(data.user);
+          showNotice('Wallet top-up confirmed.', 'success');
+        } else if (data?.status === 'pending') {
+          showNotice('Payment is still processing. Give it a moment and refresh.', 'info');
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        params.delete('session_id');
+        navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
@@ -2432,6 +2489,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             <Suspense fallback={<p className="results-challenge" style={{ opacity: 0.7 }}>Loading room options...</p>}>
               <PrivateRoomPanel
                 hasSignatureInvites={hasSignatureInvites}
+                onRequestTopUp={openWalletTopUp}
                 friendBattle={friendBattle}
                 setFriendBattle={setFriendBattle}
                 createFriendBattle={createFriendBattle}
@@ -2623,6 +2681,19 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {liveRoom?.isPrivate && Number(liveRoom?.stakeAmount) > 0 && (
+            <div className="room-stake-banner" aria-live="polite">
+              <strong>
+                Staked room · KES {Number(liveRoom.stakeAmount).toLocaleString()} per player · Pot so far: KES{' '}
+                {Number(liveRoom.totalEscrow || 0).toLocaleString()}
+              </strong>
+              <p className="results-challenge">
+                {liveRoom.players.length <= 2
+                  ? 'Winner takes 85% of the pot, 15% platform fee.'
+                  : 'Podium split: 1st 50% · 2nd 20% · 3rd 10%, 20% platform fee.'}
+              </p>
             </div>
           )}
           <div className="results-actions">
@@ -3154,6 +3225,21 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           </div>
         </div>
       )}
+
+      <Suspense fallback={null}>
+        <WalletTopUpModal
+          isOpen={walletTopUp.open}
+          onClose={closeWalletTopUp}
+          suggestedAmount={walletTopUp.shortfall}
+          currentUser={currentUser}
+          getAuthToken={getAuthToken}
+          onSuccess={(updatedUser) => {
+            if (updatedUser) setCurrentUser(updatedUser);
+            closeWalletTopUp();
+            showNotice('Wallet topped up.', 'success');
+          }}
+        />
+      </Suspense>
     </div>
   );
 }

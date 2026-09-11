@@ -396,6 +396,8 @@ export function useLiveRaceSession({
         inviteCode: friendBattle.customInviteCode.trim(),
         password: friendBattle.password,
         maxPlayers: friendBattle.maxPlayers,
+        stakeAmount: friendBattle.stakeAmount,
+        winnerTakesAll: friendBattle.winnerTakesAll,
         excludeContentIds: getUsedContentIds(mode, language),
       });
 
@@ -418,7 +420,20 @@ export function useLiveRaceSession({
     } catch (error) {
       console.error('Error creating friend battle:', error);
       setPhase('lobby');
-      showNotice(error.message || 'Could not create friend battle.', 'error');
+      const message = error.message || 'Could not create friend battle.';
+      // Same insufficient-funds handling as joinFriendBattle below: the host
+      // pays their own stake up front (see queue_live_race /
+      // _debit_user_balance in app_backend.py), so creating a staked room can
+      // fail here too if their wallet doesn't cover it.
+      if (/unauthorized|sign in/i.test(message)) {
+        showNotice('Please sign in first. Taking you to your profile.', 'info');
+        navigate(`/profile?redirect=${encodeURIComponent('/play')}`);
+      } else if (/insufficient funds|need kes/i.test(message)) {
+        showNotice('Top up your wallet to cover this stake. Taking you to your profile.', 'warning');
+        navigate(`/profile?redirect=${encodeURIComponent('/play')}&topup=1&amount=${Math.ceil(Number(friendBattle.stakeAmount) || 0)}`);
+      } else {
+        showNotice(message, 'error');
+      }
     } finally {
       setLoadingLive(false);
       setLiveAction(null);
@@ -429,9 +444,12 @@ export function useLiveRaceSession({
     friendBattle.customInviteCode,
     friendBattle.maxPlayers,
     friendBattle.password,
+    friendBattle.stakeAmount,
+    friendBattle.winnerTakesAll,
     getUsedContentIds,
     language,
     mode,
+    navigate,
     redirectToProfile,
     refreshFeed,
     setFriendBattle,

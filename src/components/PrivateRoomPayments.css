@@ -1,0 +1,71 @@
+.friend-battle-balance {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.friend-battle-stake {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.friend-battle-stake__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.friend-battle-stake__amount,
+.friend-battle-stake__winner-all {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.friend-battle-stake__winner-all {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.friend-battle-stake__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.friend-battle-stake__pot {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.friend-battle-stake__pot ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.friend-battle-stake__warning {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #f59e0b;
+  font-size: 0.85rem;
+}
+
+.friend-battle-join-preview {
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+}
+
+.room-stake-banner {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
