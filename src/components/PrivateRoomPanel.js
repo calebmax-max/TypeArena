@@ -48,7 +48,6 @@ export default function PrivateRoomPanel({
   const activeInviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
   const walletBalance = Number(currentUser?.balance || 0);
   const stakeAmount = Number(friendBattle.stakeAmount || 0);
-  const winnerTakesAll = Boolean(friendBattle.winnerTakesAll);
 
   // Live preview of a room the player is about to join by invite code, so
   // they can see the stake and pot *before* hitting "Join" and getting
@@ -149,32 +148,19 @@ export default function PrivateRoomPanel({
 
       {/* --- Stake / payment section --- */}
       <div className="friend-battle-stake">
-        <div className="friend-battle-stake__row">
-          <label className="friend-battle-stake__amount">
-            Stake per player (KES)
-            <input
-              type="number"
-              min="0"
-              step="10"
-              value={friendBattle.stakeAmount}
-              onChange={handleStakeChange}
-              placeholder="0 = free play"
-            />
-          </label>
-          <label className="friend-battle-stake__winner-all">
-            <input
-              type="checkbox"
-              checked={winnerTakesAll}
-              onChange={(event) =>
-                setFriendBattle((prev) => ({ ...prev, winnerTakesAll: event.target.checked }))
-              }
-            />
-            Winner takes all
-          </label>
-        </div>
+        <label className="friend-battle-stake__amount">
+          Stake per player (KES)
+          <input
+            type="number"
+            min="0"
+            step="10"
+            value={friendBattle.stakeAmount}
+            onChange={handleStakeChange}
+            placeholder="0 = free play"
+          />
+        </label>
         <p className="friend-battle-stake__hint">
-          You (the host) pay your stake the moment you create the room. Anyone who joins pays the
-          same stake to enter. It's held until the race finishes, then paid out automatically.
+          Stakes are collected on join and paid out automatically when the race ends.
         </p>
 
         {stakeAmount > 0 && createPreview && (

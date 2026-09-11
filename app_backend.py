@@ -2496,7 +2496,6 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'winnerPrize': float(room.get('winnerPrize') or 0),
         'stakeAmount': float(room.get('stakeAmount') or 0),
         'totalEscrow': float(room.get('totalEscrow') or 0),
-        'winnerTakesAll': bool(room.get('winnerTakesAll')),
         'isPrivate': bool(room.get('isPrivate')),
         'hostUserId': room.get('hostUserId'),
         'maxPlayers': max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE))),
@@ -6816,7 +6815,6 @@ def queue_live_race():
             # simply does not join that room. See _debit_user_balance calls
             # below for where the host and each joiner are actually charged.
             stake_amount = 0.0
-            winner_takes_all = bool(payload.get('winnerTakesAll'))
             if is_private:
                 try:
                     stake_amount = round(float(payload.get('stakeAmount') or 0), 2)
@@ -6971,7 +6969,6 @@ def queue_live_race():
                 'isPrivate': is_private,
                 'hostUserId': user['id'] if is_private else None,
                 'maxPlayers': max_players,
-                'winnerTakesAll': winner_takes_all,
                 'stakeAmount': stake_amount,
                 'escrow': initial_escrow,
                 'totalEscrow': round(stake_amount, 2) if initial_escrow else 0,
@@ -7714,7 +7711,7 @@ def join_tournament(tournament_id: int):
                 'duration': min(LIVE_RACE_MAX_DURATION_SECONDS, max(LIVE_RACE_MIN_DURATION_SECONDS, int(tournament.get('match_duration_mins') or 10) * 60)),
                 'countdown': TOURNAMENT_START_DELAY_SECONDS, 'text': content.get('passage') or LIVE_RACE_TEXTS['standard'],
                 'inviteCode': f'T{tournament_id}{secrets.token_hex(3).upper()}', 'password': '', 'isPrivate': False,
-                'hostUserId': None, 'maxPlayers': match_size, 'winnerTakesAll': False, 'stakeAmount': entry_fee,
+                'hostUserId': None, 'maxPlayers': match_size, 'stakeAmount': entry_fee,
                 'escrow': {}, 'totalEscrow': round(entry_fee * match_size, 2),
                 'players': [{'userId': uid, 'username': str(joined_users[uid].get('username') or 'Player'), 'profileImage': joined_users[uid].get('profile_image') or '', 'progress': 0, 'currentWpm': 0, 'currentAccuracy': 100} for uid in joined_user_ids],
                 'results': {}, 'winnerPrize': round(entry_fee * match_size * TOURNAMENT_PODIUM_SHARES[0], 2),

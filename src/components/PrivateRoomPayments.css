@@ -11,25 +11,12 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-.friend-battle-stake__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: flex-end;
-}
-
-.friend-battle-stake__amount,
-.friend-battle-stake__winner-all {
+.friend-battle-stake__amount {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.85rem;
-}
-
-.friend-battle-stake__winner-all {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
+  max-width: 220px;
 }
 
 .friend-battle-stake__hint {

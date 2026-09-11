@@ -970,7 +970,6 @@ export default function Play({ practicePage = false }){
     customInviteCode: '',
     maxPlayers: 2,
     stakeAmount: 0,
-    winnerTakesAll: false,
   });
   // Wallet top-up modal, opened from PrivateRoomPanel when a player's
   // balance can't cover the room's stake (see /api/wallet/* in app_backend.py).

@@ -397,7 +397,6 @@ export function useLiveRaceSession({
         password: friendBattle.password,
         maxPlayers: friendBattle.maxPlayers,
         stakeAmount: friendBattle.stakeAmount,
-        winnerTakesAll: friendBattle.winnerTakesAll,
         excludeContentIds: getUsedContentIds(mode, language),
       });
 
@@ -445,7 +444,6 @@ export function useLiveRaceSession({
     friendBattle.maxPlayers,
     friendBattle.password,
     friendBattle.stakeAmount,
-    friendBattle.winnerTakesAll,
     getUsedContentIds,
     language,
     mode,
