@@ -9,7 +9,6 @@ import {
   adminUpdateTournament,
   adminDeleteAllTournaments,
   adminDeleteTournament,
-  adminLogout,
   fetchAdminAnalytics,
   fetchAdminContent,
   fetchAdminLeaderboardSettings,
@@ -22,7 +21,7 @@ import {
   fetchAdminWallet,
   fetchTournamentParticipants,
   fetchTournaments,
-  getAdminToken,
+  getStoredUserSnapshot,
   verifyAdminSession,
   updateAdminAiSettings,
   updateAdminContent,
@@ -73,7 +72,19 @@ const NAV_ITEMS = [
 
 export default function AdminPanel() {
   const navigate = useNavigate();
-  const [token, setToken] = useState(getAdminToken());
+  // Admin access now rides on the same session token issued at regular
+  // login (see auth_login in app_backend.py) - there's no separate admin
+  // token to store or fetch. We just check the stored user's isAdmin flag.
+  const getAdminAuthToken = () => {
+    const stored = getStoredUserSnapshot();
+    return stored && stored.isAdmin && stored.token ? stored.token : null;
+  };
+  const clearStoredSession = () => {
+    localStorage.removeItem('typearena_user');
+    // Must match the event name TypeProfile.js listens for / dispatches.
+    window.dispatchEvent(new Event('typearena-user-changed'));
+  };
+  const [token, setToken] = useState(getAdminAuthToken());
   const [authChecked, setAuthChecked] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
   const [formData, setFormData] = useState({ name: '', entryFee: '', maxParticipants: '3', image: 'TT', startDate: '', startTime: '', matchDurationMins: '10' });
@@ -155,7 +166,7 @@ export default function AdminPanel() {
         await verifyAdminSession();
       } catch (error) {
         if (!active) return;
-        adminLogout();
+        clearStoredSession();
         setToken(null);
         setAnalytics(null);
         setTournaments([]);
@@ -231,26 +242,14 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not create tournament.'); }
   };
 
-  const handleSignOut = async () => {
-    // Invalidate the token server-side (not just locally) so a copied or
-    // leaked token can't keep working after "Sign Out" is clicked.
-    // NOTE: utils/typingApi.js should expose a dedicated adminLogoutRequest()
-    // that POSTs to /api/admin/logout with the X-Admin-Token header - this
-    // inline fetch is a stand-in since that file wasn't available to edit here.
-    const currentToken = getAdminToken();
-    if (currentToken) {
-      try {
-        await fetch('/api/admin/logout', {
-          method: 'POST',
-          headers: { 'X-Admin-Token': currentToken },
-        });
-      } catch (error) {
-        // Best-effort: still clear local state even if the request fails
-        // (e.g. offline), so the user isn't stuck.
-      }
-    }
-    adminLogout();
+  const handleSignOut = () => {
+    // There's no separate admin session to invalidate anymore - admin
+    // access rides on the same token as the regular account, so "Sign
+    // Out" here signs out of the account entirely (same as the regular
+    // Sign Out on the profile page).
+    clearStoredSession();
     setToken(null);
+    navigate('/profile');
   };
 
   const handleImpersonatePlayer = async (player) => {

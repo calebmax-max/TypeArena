@@ -126,9 +126,6 @@ _public_stats_cache: Dict[str, Any] = {
 _public_stats_cache_lock = _threading.Lock()
 ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
 ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
-ADMIN_TOKEN_TTL_SECONDS = 8 * 60 * 60
-# Must be its own secret, independent of ADMIN_PASSWORD - see _admin_token_secret.
-ADMIN_TOKEN_SECRET = os.getenv('TYPEARENA_ADMIN_TOKEN_SECRET', '').strip()
 ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS = 5
 ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
 TOURNAMENT_MATCH_SIZE = 3
@@ -194,28 +191,6 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _admin_token_secret() -> Optional[bytes]:
-    # Deliberately NOT falling back to ADMIN_PASSWORD: that would make the
-    # login password double as the HMAC signing key, coupling two unrelated
-    # secrets and making it impossible to rotate one without the other.
-    if not ADMIN_TOKEN_SECRET:
-        return None
-    return ADMIN_TOKEN_SECRET.encode('utf-8')
-
-
-# Tokens issued before this timestamp are treated as revoked. Bumped by
-# _invalidate_admin_tokens() on admin logout, so "Sign Out" actually kills
-# the token server-side instead of only forgetting it client-side.
-_admin_token_min_iat = 0
-_admin_token_min_iat_lock = _threading.Lock()
-
-
-def _invalidate_admin_tokens() -> None:
-    global _admin_token_min_iat
-    with _admin_token_min_iat_lock:
-        _admin_token_min_iat = int(time.time())
-
-
 # In-memory sliding-window rate limiter for admin login attempts, keyed by
 # client IP. Keeps brute-forcing the admin password impractical without
 # adding an external dependency (this container has no network egress for
@@ -233,24 +208,6 @@ def _admin_login_rate_limited(key: str) -> bool:
         _admin_login_attempts[key] = attempts
         return len(attempts) > ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS
 
-
-def _issue_admin_token(admin_user_id: int) -> Optional[str]:
-    secret = _admin_token_secret()
-    if secret is None:
-        return None
-    issued_at = int(time.time())
-    payload = json.dumps(
-        {
-            'sub': admin_user_id,
-            'iat': issued_at,
-            'exp': issued_at + ADMIN_TOKEN_TTL_SECONDS,
-            'nonce': secrets.token_urlsafe(18),
-        },
-        separators=(',', ':'),
-    ).encode('utf-8')
-    encoded = base64.urlsafe_b64encode(payload).decode('ascii').rstrip('=')
-    signature = hmac.new(secret, encoded.encode('ascii'), hashlib.sha256).hexdigest()
-    return f'{encoded}.{signature}'
 
 def _build_live_mode_passages(parts: Dict[str, list[str]]) -> list[str]:
     intros = list(parts.get('intros') or [])
@@ -3643,7 +3600,10 @@ MAX_BLUR_EVENTS_BEFORE_FLAG = 1   # more than one tab-switch/blur during a compe
 
 
 def _race_token_secret() -> bytes:
-    secret = ADMIN_TOKEN_SECRET or ADMIN_PASSWORD or 'typearena-fallback-race-token-secret'
+    # ADMIN_TOKEN_SECRET no longer exists (admin auth reuses the regular
+    # session token - see _is_admin_request), so this now falls back
+    # directly to ADMIN_PASSWORD, then a static string as a last resort.
+    secret = ADMIN_PASSWORD or 'typearena-fallback-race-token-secret'
     return secret.encode('utf-8') if isinstance(secret, str) else secret
 
 
@@ -4418,26 +4378,18 @@ def _get_user_from_header(conn) -> Optional[Dict[str, Any]]:
         return cur.fetchone()
 
 def _is_admin_request() -> bool:
-    token = request.headers.get('X-Admin-Token', '').strip()
-    secret = _admin_token_secret()
-    if not token or secret is None:
+    # Admin routes are gated by the exact same bearer token issued at
+    # regular login (see _issue_user_token) - there's no separate admin
+    # credential to configure, rotate, or forget to set. This just checks
+    # that the token resolves to the configured admin account.
+    if not ADMIN_EMAIL:
         return False
+    conn = get_connection()
     try:
-        encoded, signature = token.split('.', 1)
-        expected = hmac.new(secret, encoded.encode('ascii'), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected):
-            return False
-        padding = '=' * (-len(encoded) % 4)
-        payload = json.loads(base64.urlsafe_b64decode((encoded + padding).encode('ascii')))
-        if int(payload.get('exp', 0)) <= int(time.time()):
-            return False
-        with _admin_token_min_iat_lock:
-            min_iat = _admin_token_min_iat
-        if int(payload.get('iat', 0)) < min_iat:
-            return False
-        return True
-    except (ValueError, TypeError, json.JSONDecodeError, UnicodeError):
-        return False
+        user = _get_user_from_header(conn)
+        return bool(user and _is_admin_email(user.get('email') or ''))
+    finally:
+        _return_connection(conn)
 
 def _get_admin_user(cur) -> Optional[Dict[str, Any]]:
     if not ADMIN_EMAIL:
@@ -4526,16 +4478,6 @@ def health():
             'databaseConfigured': bool(DB_HOST and DB_USER and DB_NAME),
         }
     )
-
-
-@app.post('/api/admin/logout')
-def admin_logout_route():
-    # Requires a currently-valid token so a stranger can't invalidate the
-    # real admin's session, but doesn't otherwise need the token afterwards.
-    if not _is_admin_request():
-        return jsonify({'message': 'Unauthorized admin request'}), 401
-    _invalidate_admin_tokens()
-    return jsonify({'message': 'Signed out.'})
 
 
 @app.post('/api/admin/tournaments')
@@ -5797,12 +5739,10 @@ def auth_login():
         safe_user = _safe_user(user, conn)
         safe_user['token'] = token
         if safe_user.get('isAdmin'):
-            admin_token = _issue_admin_token(user['id'])
-            if admin_token is None:
-                app.logger.error('TYPEARENA_ADMIN_TOKEN_SECRET is not configured; cannot issue admin session')
-            else:
-                safe_user['adminEmail'] = ADMIN_EMAIL
-                safe_user['adminToken'] = admin_token
+            # No separate admin token: the regular session token above
+            # doubles as the admin credential, checked against isAdmin
+            # server-side on every /api/admin/* request.
+            safe_user['adminEmail'] = ADMIN_EMAIL
         return jsonify(safe_user)
     finally:
         _return_connection(conn)

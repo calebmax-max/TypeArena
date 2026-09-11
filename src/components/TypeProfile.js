@@ -445,7 +445,7 @@ export default function TypeProfile() {
 
       applyFreshUserState(user);
 
-      if (authMode === 'login' && user?.adminToken) {
+      if (authMode === 'login' && user?.isAdmin) {
         setFormData({ email: '', password: '', username: '', phoneNumber: '' });
         navigate('/admin');
         return;

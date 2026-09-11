@@ -24,11 +24,13 @@ const getStoredUser = () => {
 export const getStoredUserSnapshot = () => getStoredUser();
 
 const syncAdminSessionFromUser = (user) => {
-  if (user?.adminToken) {
-    localStorage.setItem(ADMIN_TOKEN_KEY, user.adminToken);
-    return;
-  }
-  // Fallback check if your backend returns the admin token as just "token"
+  // The backend no longer issues a separate adminToken - admin auth is the
+  // same session token as everything else. This still mirrors that token
+  // into its own storage key, though, because adminImpersonateUser()
+  // overwrites the regular 'typearena_user'/'token' entries with the
+  // impersonated user's identity; keeping a separate copy here is what
+  // lets admin-only calls keep working (and impersonation be un-done)
+  // while "logged in as" shows someone else.
   if (user?.isAdmin && user?.token) {
     localStorage.setItem(ADMIN_TOKEN_KEY, user.token);
     return;
@@ -41,7 +43,7 @@ const syncAdminSessionFromUser = (user) => {
 
 const sanitizeUser = (user) => {
   if (!user) return user;
-  const { passwordHash, adminToken, ...safeUser } = user;
+  const { passwordHash, ...safeUser } = user;
   return safeUser;
 };
 
@@ -82,10 +84,12 @@ const buildAdminHeaders = () => {
   if (!token) {
     throw new Error('Admin session not found. Please login again.');
   }
+  // Backend admin routes now check the regular Authorization bearer token
+  // (see _is_admin_request in app_backend.py) - X-Admin-Token isn't read
+  // anymore, so it's dropped here rather than sent for no reason.
   return {
     ...buildHeaders(),
-    'X-Admin-Token': token,
-    'Authorization': `Bearer ${token}`, // Added to fix 401 Unauthorized API drops
+    'Authorization': `Bearer ${token}`,
   };
 };
 
@@ -187,13 +191,13 @@ export const fetchCurrentUser = async () => {
   }
 };
 
-export const loginUser = async (email, password, otp = "") => {
+export const loginUser = async (email, password) => {
   authGeneration += 1;
   try {
     const response = await apiFetch(buildApiUrl('/api/auth/login'), {
       method: 'POST',
       headers: buildHeaders(),
-      body: JSON.stringify({ email, password, otp }),
+      body: JSON.stringify({ email, password }),
     });
     const user = await parseResponse(response);
     setStoredUser(user);
@@ -521,27 +525,10 @@ export const sendPrizeToWinner = async ({ userId, amount, tournamentId = null })
 };
 
 // --- Admin Infrastructure APIs ---
-
-export const adminLogin = async (email, password, otp = "") => {
-  try {
-    const response = await apiFetch(buildApiUrl('/api/admin/login'), {
-      method: 'POST',
-      headers: buildHeaders(),
-      body: JSON.stringify({ email, password, otp }),
-    });
-    const data = await parseResponse(response);
-    if (data?.token) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('typearena_user');
-      localStorage.setItem(ADMIN_TOKEN_KEY, data.token);
-      window.dispatchEvent(new Event('typearena-user-changed'));
-    }
-    return data;
-  } catch (error) {
-    console.error('Admin login error:', error);
-    throw error;
-  }
-};
+// NOTE: the old dedicated POST /api/admin/login route (and this file's
+// adminLogin() wrapper for it) has been removed. Admin sign-in now goes
+// through the regular loginUser() below; the backend flags admin status
+// via isAdmin on that same response.
 
 export const adminLogout = () => {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
