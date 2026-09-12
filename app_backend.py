@@ -668,46 +668,6 @@ MARKETPLACE_ITEMS = [
         'description': 'Minimal graphite panels, stealth indicators, and a disciplined esports look built for serious ranked players.',
     },
     {
-        'id': 'theme_midnight_rift',
-        'name': 'Midnight Rift Theme',
-        'category': 'typingThemes',
-        'price': 275,
-        'rarity': 'legendary',
-        'collection': 'Glitch Circuit',
-        'displayMark': 'MR',
-        'description': 'A glitchy purple-and-black cyberpunk interface with fractured neon seams and a restless, high-voltage arena feel.',
-    },
-    {
-        'id': 'theme_highland_mist',
-        'name': 'Highland Mist Theme',
-        'category': 'typingThemes',
-        'price': 190,
-        'rarity': 'rare',
-        'collection': 'Sunline Series',
-        'displayMark': 'HM',
-        'description': 'Cool green-and-grey highland tones for a calm, focused arena mood that still feels sharp under pressure.',
-    },
-    {
-        'id': 'theme_crimson_circuit',
-        'name': 'Crimson Circuit Theme',
-        'category': 'typingThemes',
-        'price': 215,
-        'rarity': 'epic',
-        'collection': 'Ranked Circuit',
-        'displayMark': 'CC',
-        'description': 'A bold red-and-black race-track aesthetic with aggressive lane lines built for players chasing podium finishes.',
-    },
-    {
-        'id': 'theme_paper_ink',
-        'name': 'Paper & Ink Theme',
-        'category': 'typingThemes',
-        'price': 130,
-        'rarity': 'rare',
-        'collection': 'Clean Slate',
-        'displayMark': 'PI',
-        'description': 'A minimalist off-white and charcoal layout stripped of visual noise, for players who want zero distraction.',
-    },
-    {
         'id': 'perk_tournament_cashback',
         'name': 'Tournament Cashback Pass',
         'category': 'utilityPasses',
@@ -739,46 +699,6 @@ MARKETPLACE_ITEMS = [
         'displayMark': 'SI',
         'benefit': 'Create private rooms with your own custom invite code instead of using a random one.',
         'description': 'A creator-friendly upgrade that lets you brand private room invites with a cleaner custom code.',
-    },
-    {
-        'id': 'sound_clack_and_chime',
-        'name': 'Clack & Chime Sound Pack',
-        'category': 'soundPacks',
-        'price': 130,
-        'rarity': 'rare',
-        'collection': 'Arena Audio',
-        'displayMark': 'CC',
-        'description': 'Custom mechanical-keyboard keystroke clacks paired with a crisp victory stinger when you cross the finish line.',
-    },
-    {
-        'id': 'title_prestige_pack',
-        'name': 'Prestige Title Pack',
-        'category': 'leaderboardTitles',
-        'price': 110,
-        'rarity': 'rare',
-        'collection': 'Ladder Edge',
-        'displayMark': 'PT',
-        'description': 'Unlocks a rotating set of leaderboard titles like "Speed Demon" and "Ironclad" shown next to your name in results.',
-    },
-    {
-        'id': 'emote_arena_pack',
-        'name': 'Arena Emote Pack',
-        'category': 'chatEmotes',
-        'price': 95,
-        'rarity': 'common',
-        'collection': 'Lobby Life',
-        'displayMark': 'AE',
-        'description': 'A set of reaction emotes for lobby and post-race chat, so you can flex a win or clown a bad finish without typing.',
-    },
-    {
-        'id': 'intro_ignition_effect',
-        'name': 'Ignition Intro Effect',
-        'category': 'raceIntroAnimations',
-        'price': 150,
-        'rarity': 'epic',
-        'collection': 'Velocity Series',
-        'displayMark': 'IG',
-        'description': 'A short ignition-flare flourish that plays the moment you join a live race, before the countdown even starts.',
     },
 ]
 STORE_BUNDLES = []
@@ -1372,9 +1292,9 @@ def _ensure_marketplace_catalog_table(cur) -> None:
 
 
 # Ids that were part of the hardcoded catalog before it was trimmed down to
-# themes + utility passes + the newer cosmetic drops. These no longer live
-# in MARKETPLACE_ITEMS, but a database that was already running still has
-# rows for them. This list exists purely so _sync_marketplace_catalog_from_code
+# just the current 6 themes + utility passes. These no longer live in
+# MARKETPLACE_ITEMS, but a database that was already running still has rows
+# for them. This list exists purely so _sync_marketplace_catalog_from_code
 # can identify and deactivate those specific leftover rows once, without
 # touching anything an admin added by hand under an unrelated id.
 _LEGACY_MARKETPLACE_ITEM_IDS = [
@@ -1383,6 +1303,8 @@ _LEGACY_MARKETPLACE_ITEM_IDS = [
     'badge_founders_mark', 'badge_clutch_streak', 'badge_elite_verified',
     'effect_reactor_sparks', 'effect_afterburn_wave', 'effect_royal_echo',
     'frame_titan_brass', 'frame_carbonglass', 'frame_imperial_crown',
+    'theme_midnight_rift', 'theme_highland_mist', 'theme_crimson_circuit', 'theme_paper_ink',
+    'sound_clack_and_chime', 'title_prestige_pack', 'emote_arena_pack', 'intro_ignition_effect',
 ]
 
 

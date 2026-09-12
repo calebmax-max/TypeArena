@@ -23,10 +23,6 @@ const CATEGORY_COPY = {
   all: { label: 'All Drops', description: 'A sharper, more premium store lineup for serious TypeArena players.' },
   typingThemes: { label: 'Typing Themes', description: 'Full arena looks that change the mood from casual app to premium competition.' },
   utilityPasses: { label: 'Utility Passes', description: 'Permanent gameplay perks that affect tournaments, progression, and private rooms.' },
-  soundPacks: { label: 'Sound Packs', description: 'Custom keystroke sounds and victory stingers for a race that feels as good as it sounds.' },
-  leaderboardTitles: { label: 'Leaderboard Titles', description: 'Text flair next to your name on leaderboards and race results.' },
-  chatEmotes: { label: 'Chat Emotes', description: 'Reactions for the lobby and post-race chat.' },
-  raceIntroAnimations: { label: 'Race Intros', description: 'A short flourish that plays the moment you join a live race.' },
 };
 
 const RARITY_STYLES = {
@@ -39,9 +35,7 @@ const RARITY_STYLES = {
 const ITEM_MARKETING = {
   theme_nairobi_night: ['Trending', 'Night Pack'],
   theme_stealth_hq: ['Elite Pick'],
-  theme_midnight_rift: ['Limited Drop', 'Best Seller'],
   perk_signature_invites: ['Private Rooms Pro'],
-  intro_ignition_effect: ['New'],
 };
 
 const BUNDLE_DEFS = [];
@@ -152,59 +146,6 @@ function MarketplacePreview({ item }) {
             <span />
             <span />
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (item.category === 'soundPacks') {
-    const soundClass = `preview-sound preview-sound--${item.id}`;
-    return (
-      <div className="preview-canvas preview-canvas--sound" aria-hidden="true">
-        <div className={soundClass}>
-          <div className="preview-sound__chip">{mark}</div>
-          <div className="preview-sound__waveform">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (item.category === 'leaderboardTitles') {
-    const titleClass = `preview-title preview-title--${item.id}`;
-    return (
-      <div className="preview-canvas preview-canvas--title" aria-hidden="true">
-        <div className={titleClass}>
-          <span className="preview-title__chip">{mark}</span>
-          <span className="preview-title__text">Speed Demon</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (item.category === 'chatEmotes') {
-    const emoteClass = `preview-emote preview-emote--${item.id}`;
-    return (
-      <div className="preview-canvas preview-canvas--emote" aria-hidden="true">
-        <div className={emoteClass}>
-          <span>{mark}</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (item.category === 'raceIntroAnimations') {
-    const introClass = `preview-intro preview-intro--${item.id}`;
-    return (
-      <div className="preview-canvas preview-canvas--intro" aria-hidden="true">
-        <div className={introClass}>
-          <span className="preview-intro__burst" />
-          <span className="preview-intro__chip">{mark}</span>
         </div>
       </div>
     );
