@@ -95,7 +95,7 @@ export default function AdminPanel() {
   const [adminContent, setAdminContent] = useState([]);
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', dailyDate: '', publishAt: '', expiryAt: '', isActive: true });
   const [marketplaceItems, setMarketplaceItems] = useState([]);
-  const [marketplaceForm, setMarketplaceForm] = useState({ id: '', name: '', category: 'avatars', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
+  const [marketplaceForm, setMarketplaceForm] = useState({ id: '', name: '', category: 'typingThemes', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
   const [editingMarketplaceId, setEditingMarketplaceId] = useState(null);
   const [commentatorEnabled, setCommentatorEnabled] = useState(true);
   const [leaderboardTiers, setLeaderboardTiers] = useState(DEFAULT_LEADERBOARD_TIERS);
@@ -308,7 +308,7 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not save typing content.'); }
   };
 
-  const resetMarketplaceForm = () => setMarketplaceForm({ id: '', name: '', category: 'avatars', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
+  const resetMarketplaceForm = () => setMarketplaceForm({ id: '', name: '', category: 'typingThemes', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
 
   const handleMarketplaceSave = async (e) => {
     if (e?.preventDefault) e.preventDefault();
@@ -335,7 +335,7 @@ export default function AdminPanel() {
   const openMarketplaceEdit = (item) => {
     setEditingMarketplaceId(item.id);
     setMarketplaceForm({
-      id: item.id || '', name: item.name || '', category: item.category || 'avatars',
+      id: item.id || '', name: item.name || '', category: item.category || 'typingThemes',
       price: String(item.price ?? ''), rarity: item.rarity || 'common', collection: item.collection || '',
       description: item.description || '', benefit: item.benefit || '', isActive: item.isActive !== false,
     });
@@ -1853,7 +1853,7 @@ export default function AdminPanel() {
                       <div className="ap-field"><label className="ap-label">Item ID</label><input className="ap-input" value={marketplaceForm.id} disabled={Boolean(editingMarketplaceId)} onChange={e => setMarketplaceForm(p => ({ ...p, id: e.target.value }))} placeholder="neon_frame" /></div>
                       <div className="ap-field"><label className="ap-label">Name</label><input className="ap-input" value={marketplaceForm.name} onChange={e => setMarketplaceForm(p => ({ ...p, name: e.target.value }))} placeholder="Neon Frame" /></div>
                       <div className="ap-field"><label className="ap-label">Price (KES)</label><input className="ap-input" type="number" min="0" step="0.01" value={marketplaceForm.price} onChange={e => setMarketplaceForm(p => ({ ...p, price: e.target.value }))} /></div>
-                      <div className="ap-field"><label className="ap-label">Category</label><select className="ap-select" value={marketplaceForm.category} onChange={e => setMarketplaceForm(p => ({ ...p, category: e.target.value }))}><option value="avatars">Avatars</option><option value="typingThemes">Typing Themes</option><option value="keyboardSkins">Keyboard Skins</option><option value="premiumBadges">Premium Badges</option><option value="animatedEffects">Animated Effects</option><option value="profileFrames">Profile Frames</option><option value="cursors">Cursors</option></select></div>
+                      <div className="ap-field"><label className="ap-label">Category</label><select className="ap-select" value={marketplaceForm.category} onChange={e => setMarketplaceForm(p => ({ ...p, category: e.target.value }))}><option value="typingThemes">Typing Themes</option><option value="utilityPasses">Utility Passes</option><option value="soundPacks">Sound Packs</option><option value="leaderboardTitles">Leaderboard Titles</option><option value="chatEmotes">Chat Emotes</option><option value="raceIntroAnimations">Race Intros</option></select></div>
                       <div className="ap-field"><label className="ap-label">Rarity</label><select className="ap-select" value={marketplaceForm.rarity} onChange={e => setMarketplaceForm(p => ({ ...p, rarity: e.target.value }))}><option value="common">Common</option><option value="rare">Rare</option><option value="epic">Epic</option><option value="legendary">Legendary</option></select></div>
                       <div className="ap-field"><label className="ap-label">Collection</label><input className="ap-input" value={marketplaceForm.collection} onChange={e => setMarketplaceForm(p => ({ ...p, collection: e.target.value }))} /></div>
                     </div>

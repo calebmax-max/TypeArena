@@ -21,13 +21,12 @@ const writeMarketplaceCache = (items) => {
 
 const CATEGORY_COPY = {
   all: { label: 'All Drops', description: 'A sharper, more premium store lineup for serious TypeArena players.' },
-  keyboardSkins: { label: 'Keyboard Skins', description: 'Cleaner decks with stronger contrast and a more tournament-grade feel.' },
   typingThemes: { label: 'Typing Themes', description: 'Full arena looks that change the mood from casual app to premium competition.' },
-  avatars: { label: 'Avatars', description: 'Stronger player identities with more edge, status, and personality.' },
-  premiumBadges: { label: 'Premium Badges', description: 'Visible trust, streak, and founder signals for players building reputation.' },
-  animatedEffects: { label: 'Animated Effects', description: 'Win animations and finish effects that make top results hit harder.' },
-  profileFrames: { label: 'Profile Frames', description: 'Better framing options for profile cards that should look elite, not generic.' },
   utilityPasses: { label: 'Utility Passes', description: 'Permanent gameplay perks that affect tournaments, progression, and private rooms.' },
+  soundPacks: { label: 'Sound Packs', description: 'Custom keystroke sounds and victory stingers for a race that feels as good as it sounds.' },
+  leaderboardTitles: { label: 'Leaderboard Titles', description: 'Text flair next to your name on leaderboards and race results.' },
+  chatEmotes: { label: 'Chat Emotes', description: 'Reactions for the lobby and post-race chat.' },
+  raceIntroAnimations: { label: 'Race Intros', description: 'A short flourish that plays the moment you join a live race.' },
 };
 
 const RARITY_STYLES = {
@@ -38,42 +37,14 @@ const RARITY_STYLES = {
 };
 
 const ITEM_MARKETING = {
-  skin_frostline_pro: ['Limited Drop', 'Best Seller'],
   theme_nairobi_night: ['Trending', 'Night Pack'],
   theme_stealth_hq: ['Elite Pick'],
-  avatar_crown_hawk: ['Creator Favorite'],
-  badge_founders_mark: ['Founder Exclusive'],
-  effect_royal_echo: ['Legendary Finish'],
-  frame_imperial_crown: ['Top Tier'],
+  theme_midnight_rift: ['Limited Drop', 'Best Seller'],
   perk_signature_invites: ['Private Rooms Pro'],
+  intro_ignition_effect: ['New'],
 };
 
-const BUNDLE_DEFS = [
-  {
-    id: 'bundle_ranked_identity',
-    name: 'Ranked Identity Pack',
-    description: 'A sharper competitive identity for players who want their profile and race setup to feel premium instantly.',
-    itemIds: ['avatar_crown_hawk', 'frame_carbonglass', 'badge_elite_verified'],
-    discountRate: 0.15,
-    savingsLabel: 'Save 15%',
-  },
-  {
-    id: 'bundle_arena_luxe',
-    name: 'Arena Luxe Pack',
-    description: 'A premium typing setup with a full arena mood shift, high-end deck, and richer finish effect.',
-    itemIds: ['theme_nairobi_night', 'skin_frostline_pro', 'effect_afterburn_wave'],
-    discountRate: 0.18,
-    savingsLabel: 'Save 18%',
-  },
-  {
-    id: 'bundle_creator_room',
-    name: 'Creator Room Pack',
-    description: 'Built for private-room hosts who want better invite presence, stronger visuals, and a more branded profile.',
-    itemIds: ['perk_signature_invites', 'avatar_signal_ghost', 'frame_imperial_crown'],
-    discountRate: 0.12,
-    savingsLabel: 'Save 12%',
-  },
-];
+const BUNDLE_DEFS = [];
 
 const formatCategoryLabel = (category) => CATEGORY_COPY[category]?.label || category;
 
@@ -181,6 +152,59 @@ function MarketplacePreview({ item }) {
             <span />
             <span />
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.category === 'soundPacks') {
+    const soundClass = `preview-sound preview-sound--${item.id}`;
+    return (
+      <div className="preview-canvas preview-canvas--sound" aria-hidden="true">
+        <div className={soundClass}>
+          <div className="preview-sound__chip">{mark}</div>
+          <div className="preview-sound__waveform">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.category === 'leaderboardTitles') {
+    const titleClass = `preview-title preview-title--${item.id}`;
+    return (
+      <div className="preview-canvas preview-canvas--title" aria-hidden="true">
+        <div className={titleClass}>
+          <span className="preview-title__chip">{mark}</span>
+          <span className="preview-title__text">Speed Demon</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.category === 'chatEmotes') {
+    const emoteClass = `preview-emote preview-emote--${item.id}`;
+    return (
+      <div className="preview-canvas preview-canvas--emote" aria-hidden="true">
+        <div className={emoteClass}>
+          <span>{mark}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (item.category === 'raceIntroAnimations') {
+    const introClass = `preview-intro preview-intro--${item.id}`;
+    return (
+      <div className="preview-canvas preview-canvas--intro" aria-hidden="true">
+        <div className={introClass}>
+          <span className="preview-intro__burst" />
+          <span className="preview-intro__chip">{mark}</span>
         </div>
       </div>
     );
@@ -315,10 +339,10 @@ export default function Marketplace() {
 
   const activeCopy = CATEGORY_COPY[activeCategory] || CATEGORY_COPY.all;
   const previewThemeItem = previewItem?.category === 'typingThemes' ? previewItem : catalog.find((item) => item.id === 'theme_nairobi_night') || previewItem;
-  const previewSkinItem = previewItem?.category === 'keyboardSkins' ? previewItem : catalog.find((item) => item.id === 'skin_velocity_black') || previewItem;
-  const previewAvatarItem = previewItem?.category === 'avatars' ? previewItem : catalog.find((item) => item.id === 'avatar_crown_hawk') || previewItem;
-  const previewFrameItem = previewItem?.category === 'profileFrames' ? previewItem : catalog.find((item) => item.id === 'frame_carbonglass') || previewItem;
-  const previewEffectItem = previewItem?.category === 'animatedEffects' ? previewItem : catalog.find((item) => item.id === 'effect_afterburn_wave') || previewItem;
+  const previewSkinItem = previewItem;
+  const previewAvatarItem = previewItem;
+  const previewFrameItem = previewItem;
+  const previewEffectItem = previewItem;
 
   return (
     <div className="marketplace-shell">
