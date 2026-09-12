@@ -2075,17 +2075,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </div>
           )}
 
-          {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #10: Win streak banner Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
-          {winStreak.count >= 2 && (
-            <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.6rem 1rem', background:'var(--arena-accent-soft)', border:'1px solid var(--arena-accent)', borderRadius:'10px', marginBottom:'0.75rem' }}>
-              <span style={{ fontSize:'1.4rem' }}>Hot</span>
-              <div>
-                <strong style={{ color:'var(--arena-accent)', fontSize:'0.95rem' }}>{winStreak.count}-Race Win Streak!</strong>
-                <p style={{ margin:0, fontSize:'0.78rem', color:'var(--arena-muted)' }}>Keep it going - one more race.</p>
-              </div>
-            </div>
-          )}
-
           {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #4: Daily challenge Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
           <div style={{ marginBottom:'0.75rem' }}>
             <button className="btn btn-outline-primary" onClick={loadDailyChallenge} style={{ marginRight:'0.5rem' }}>
