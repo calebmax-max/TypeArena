@@ -13,10 +13,15 @@
 //   arenaMusic.setVolume(0.6);
 //   arenaMusic.next();
 //
-// Race integration (call from wherever a race actually starts/ends —
-// live match, tournament match, or private room):
-//   arenaMusic.enterRace();   // ducks music out when the race begins
-//   arenaMusic.exitRace();    // brings music back when the race ends/leaves
+// Race integration (Play.js calls these as the typing phase changes):
+//   arenaMusic.toRace();      // ducks the shared playlist quieter while typing
+//   arenaMusic.toLobby();     // brings it back to normal volume in lobby/results
+// Both run through the SAME <audio> element (just a volume ramp), so it is
+// architecturally impossible to hear two overlapping tracks.
+//
+// enterRace()/exitRace() are also available for a harder duck (full pause
+// instead of quieter), if a future integration wants silence during a race
+// rather than a background hum.
 // =============================================================================
 import { useState, useEffect } from 'react';
 import { buildApiUrl } from './api';
@@ -78,6 +83,17 @@ const createMusicEngine = () => {
   // stack up duplicates across repeated play() calls while blocked.
   let pendingResume = null;
 
+  // ── Admin-sync bookkeeping ──────────────────────────────────────────────────
+  // The admin panel writes playlist changes straight to its own tab's engine
+  // (see setTracks below), but every OTHER visitor's engine only ever fetched
+  // the server playlist once, on first load. Without a periodic re-check,
+  // someone who was already on the site never hears a track the admin just
+  // added (or stops hearing one that was removed) until they refresh the page.
+  // syncTimer/syncListenersAttached make sure we only set this up once.
+  const REMOTE_SYNC_INTERVAL_MS = 30000; // re-check the admin playlist every 30s
+  let syncTimer = null;
+  let syncListenersAttached = false;
+
   // ── Persistence ────────────────────────────────────────────────────────────
   const loadSettings = () => {
     try {
@@ -102,12 +118,74 @@ const createMusicEngine = () => {
     } catch {}
   };
 
+  // ── Race/lobby channel (single-element crossfade) ───────────────────────────
+  // Play.js switches the audible "channel" as the typing phase changes
+  // (arenaMusic.toRace() / arenaMusic.toLobby()). Everything still runs
+  // through the ONE shared <audio> element created below — we only ever
+  // ramp its volume — so it is architecturally impossible for two tracks
+  // to be heard at once. If you want the playlist to duck to near-silence
+  // instead (rather than just quieter), use enterRace()/exitRace() below,
+  // which pause playback entirely.
+  const RACE_DUCK_RATIO = 0.35;  // how loud the playlist is, relative to normal, while racing
+  const FADE_STEP_MS = 50;
+  let musicChannel = 'lobby';    // 'lobby' | 'race'
+  let fadeTimer = null;
+
+  const targetVolumeForChannel = () => {
+    if (muted) return 0;
+    return musicChannel === 'race' ? volume * RACE_DUCK_RATIO : volume;
+  };
+
+  const clearFade = () => {
+    if (fadeTimer) {
+      window.clearInterval(fadeTimer);
+      fadeTimer = null;
+    }
+  };
+
+  const fadeAudioTo = (target, durationMs = 500) => {
+    clearFade();
+    if (!audio) return;
+    const start = audio.volume;
+    if (Math.abs(start - target) < 0.001) {
+      audio.volume = target;
+      return;
+    }
+    const steps = Math.max(1, Math.round(durationMs / FADE_STEP_MS));
+    let step = 0;
+    fadeTimer = window.setInterval(() => {
+      step += 1;
+      const t = step / steps;
+      audio.volume = start + (target - start) * t;
+      if (step >= steps) {
+        audio.volume = target;
+        clearFade();
+      }
+    }, FADE_STEP_MS);
+  };
+
+  // Called from Play.js when a typing race starts — ducks the shared
+  // playlist down to RACE_DUCK_RATIO instead of switching tracks.
+  const toRace = () => {
+    musicChannel = 'race';
+    if (!audio) return; // nothing playing yet; play() will apply the ducked volume
+    fadeAudioTo(targetVolumeForChannel());
+  };
+
+  // Called from Play.js when back in the lobby/results screen — brings the
+  // shared playlist back up to the user's normal volume.
+  const toLobby = () => {
+    musicChannel = 'lobby';
+    if (!audio) return;
+    fadeAudioTo(targetVolumeForChannel());
+  };
+
   // ── Audio element ──────────────────────────────────────────────────────────
   const getAudio = () => {
     if (audio) return audio;
     audio = new Audio();
     audio.loop = false;
-    audio.volume = muted ? 0 : volume;
+    audio.volume = targetVolumeForChannel();
     // Note: crossOrigin is intentionally omitted — same-origin /public/music/
     // files need no CORS header, and external URLs that lack CORS headers will
     // be blocked by the browser if crossOrigin is set.
@@ -177,7 +255,8 @@ const createMusicEngine = () => {
     if (!a.src || a.src === window.location.href || loadedTrackId !== current?.id) {
       loadTrack(currentIndex);
     }
-    a.volume = muted ? 0 : volume;
+    clearFade();
+    a.volume = targetVolumeForChannel();
     a.play().then(() => {
       playing = true;
       notify();
@@ -232,14 +311,20 @@ const createMusicEngine = () => {
 
   const setVolume = (vol) => {
     volume = Math.max(0, Math.min(1, vol));
-    if (audio && !muted) audio.volume = volume;
+    if (audio) {
+      clearFade();
+      audio.volume = targetVolumeForChannel();
+    }
     saveSettings();
     notify();
   };
 
   const setMuted = (val) => {
     muted = val;
-    if (audio) audio.volume = muted ? 0 : volume;
+    if (audio) {
+      clearFade();
+      audio.volume = targetVolumeForChannel();
+    }
     saveSettings();
     notify();
   };
@@ -340,6 +425,62 @@ const createMusicEngine = () => {
     return () => listeners.delete(fn);
   };
 
+  // ── Keep picking up admin panel changes after initial load ─────────────────
+  // Two complementary mechanisms:
+  //   1. Polling: every REMOTE_SYNC_INTERVAL_MS, re-fetch /api/media-settings
+  //      and apply any change (tracks added/removed/reordered, or reset to
+  //      defaults) — this is how *other visitors* pick up an admin edit
+  //      without reloading the page. Paused while the tab is hidden so
+  //      backgrounded tabs don't poll for nothing, and forced immediately
+  //      when the tab becomes visible again so it catches up right away.
+  //   2. Storage event: if the admin (or the same user) has multiple tabs
+  //      open on the same browser, a track-list change written to
+  //      localStorage in one tab is picked up instantly in the others,
+  //      without waiting for the next poll.
+  const applyIncomingTracks = (incomingTracks) => {
+    if (!Array.isArray(incomingTracks) || incomingTracks.length === 0) return;
+    const previousId = tracks[currentIndex]?.id ?? null;
+    tracks = incomingTracks.filter((t) => t?.url?.trim());
+    if (tracks.length === 0) return;
+    reindexAfterMutation(previousId, currentIndex);
+    // Reload into the <audio> element whenever the loaded track no longer
+    // matches, regardless of playing state, so playback (or the next
+    // play()) reflects the updated playlist rather than a stale track.
+    if (loadedTrackId !== tracks[currentIndex]?.id) {
+      if (audio) {
+        loadTrack(currentIndex);
+        if (playing) play();
+      } else {
+        loadedTrackId = null; // force play() to load fresh next time
+      }
+    }
+    notify();
+  };
+
+  const handleStorageEvent = (e) => {
+    if (e.key !== STORAGE_KEY || !e.newValue) return;
+    try {
+      const s = JSON.parse(e.newValue);
+      if (Array.isArray(s.tracks)) applyIncomingTracks(s.tracks);
+    } catch {}
+  };
+
+  const startAdminSync = () => {
+    if (syncListenersAttached || typeof window === 'undefined') return;
+    syncListenersAttached = true;
+
+    syncTimer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      loadRemoteSettings();
+    }, REMOTE_SYNC_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') loadRemoteSettings();
+    });
+
+    window.addEventListener('storage', handleStorageEvent);
+  };
+
   // ── Init ───────────────────────────────────────────────────────────────────
   loadSettings();
   if (typeof window !== 'undefined') {
@@ -348,6 +489,7 @@ const createMusicEngine = () => {
     // back to "resume on first click/keypress" if the browser blocks
     // autoplay before the user has interacted with the page.
     loadRemoteSettings().finally(() => play());
+    startAdminSync();
   }
 
   return {
@@ -362,6 +504,8 @@ const createMusicEngine = () => {
     toggleMute,
     enterRace,
     exitRace,
+    toRace,
+    toLobby,
     setTracks,
     addTrack,
     removeTrack,

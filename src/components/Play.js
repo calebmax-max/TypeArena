@@ -293,288 +293,6 @@ const playSound = (type) => {
 };
 
 // ---------------------------------------------------------------------------
-// Arena Orchestra Ã¯Â¿Â½?" procedural FIFA-style orchestral background music
-// Built entirely with Web Audio API: no files, no external deps.
-//
-// Architecture:
-//   Ã¯Â¿Â½?Ã¯Â¿Â½ _arenaOrchestraCtx  Ã¯Â¿Â½?" shared AudioContext (same as sound effects)
-//   Ã¯Â¿Â½?Ã¯Â¿Â½ masterGain          Ã¯Â¿Â½?" top-level volume fader
-//   Ã¯Â¿Â½?Ã¯Â¿Â½ Lobby layer         Ã¯Â¿Â½?" slow strings + pad (calm, majestic)
-//   Ã¯Â¿Â½?Ã¯Â¿Â½ Race layer          Ã¯Â¿Â½?" driving brass ostinato + percussion (intense)
-//   Ã¯Â¿Â½?Ã¯Â¿Â½ Each layer crossfades on phase change
-// ---------------------------------------------------------------------------
-
-const _orchestra = (() => {
-  let ctx = null;
-  let masterGain = null;
-  let lobbyNodes = [];
-  let raceNodes = [];
-  let lobbyGain = null;
-  let raceGain = null;
-  let running = false;
-  let currentPhase = 'lobby'; // 'lobby' | 'race'
-  let enabled = true;
-  let _stopTimeoutId = null; // Fix #8: track pending stop timeout to cancel on re-start
-
-  const getCtx = () => {
-    // Always reuse the shared AudioContext so the orchestra and sound effects
-    // share the same audio graph Ã¯Â¿Â½?" avoids dual-context resource waste.
-    ctx = _getAudioCtx();
-    return ctx;
-  };
-
-  // Smoothly ramp a gain node
-  const ramp = (gainNode, target, duration = 1.5) => {
-    const c = getCtx();
-    if (!c || !gainNode) return;
-    gainNode.gain.cancelScheduledValues(c.currentTime);
-    gainNode.gain.setValueAtTime(gainNode.gain.value, c.currentTime);
-    gainNode.gain.linearRampToValueAtTime(target, c.currentTime + duration);
-  };
-
-  // Create a looping oscillator with vibrato
-  const makeOsc = (frequency, type, gainValue, vibratoHz = 0, vibratoDepth = 0) => {
-    const c = getCtx();
-    if (!c) return null;
-    const osc = c.createOscillator();
-    const g = c.createGain();
-    osc.type = type;
-    osc.frequency.value = frequency;
-    g.gain.value = gainValue;
-    osc.connect(g);
-
-    if (vibratoHz > 0) {
-      const lfo = c.createOscillator();
-      const lfoGain = c.createGain();
-      lfo.frequency.value = vibratoHz;
-      lfoGain.gain.value = vibratoDepth;
-      lfo.connect(lfoGain);
-      lfoGain.connect(osc.frequency);
-      lfo.start();
-      // Fix #10 (Issue 10): LFO node was previously orphaned Ã¯Â¿Â½?" started but never
-      // tracked, so it survived every stop() call and leaked in the AudioContext.
-      // Return it alongside the main osc so callers can push it into the nodes array.
-      return { osc, gain: g, lfo };
-    }
-    return { osc, gain: g };
-  };
-
-  // Low-pass filtered noise for crowd/string texture
-  const makeFilteredNoise = (gainValue, cutoff = 800) => {
-    const c = getCtx();
-    if (!c) return null;
-    const bufferSize = c.sampleRate * 4;
-    const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-    const source = c.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    const filter = c.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = cutoff;
-    filter.Q.value = 0.8;
-    const g = c.createGain();
-    g.gain.value = gainValue;
-    source.connect(filter);
-    filter.connect(g);
-    return { source, gain: g, filter };
-  };
-
-  // Slow rhythmic pulse Ã¯Â¿Â½?" simulates a distant bass drum
-  const makeRhythmicPulse = (gainNode, bpm = 72) => {
-    const c = getCtx();
-    if (!c) return null;
-    const intervalMs = (60 / bpm) * 1000;
-    let beat = 0;
-    const tick = () => {
-      if (!running || !enabled) return;
-      const t = c.currentTime;
-      const pulse = c.createOscillator();
-      const pg = c.createGain();
-      pulse.type = 'sine';
-      pulse.frequency.value = beat % 4 === 0 ? 55 : 44; // kick pattern
-      pulse.connect(pg);
-      pg.connect(gainNode);
-      pg.gain.setValueAtTime(0, t);
-      pg.gain.linearRampToValueAtTime(0.18, t + 0.02);
-      pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-      pulse.start(t);
-      pulse.stop(t + 0.3);
-      beat++;
-    };
-    tick();
-    return window.setInterval(tick, intervalMs);
-  };
-
-  // Ã¯Â¿Â½"?Ã¯Â¿Â½"? LOBBY LAYER Ã¯Â¿Â½?" calm, slow strings + deep pad Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
-  // Chord: D minor (D2, F2, A2, C3) Ã¯Â¿Â½?" majestic, slightly melancholic FIFA feel
-  const LOBBY_CHORD = [73.4, 87.3, 110, 130.8]; // D2 F2 A2 C3
-  const buildLobbyLayer = () => {
-    const c = getCtx();
-    if (!c) return;
-    // Disconnect any previous lobby nodes before rebuilding
-    lobbyNodes.forEach((n) => { try { n.stop(); } catch {} });
-    lobbyNodes = [];
-    lobbyGain = c.createGain();
-    lobbyGain.gain.value = 0;
-    lobbyGain.connect(masterGain);
-
-    const nodes = [];
-
-    // Pad strings Ã¯Â¿Â½?" triangle waves (warm, string-like)
-    LOBBY_CHORD.forEach((freq, i) => {
-      const n = makeOsc(freq, 'triangle', 0.06 + (i === 0 ? 0.04 : 0), 5.2 + i * 0.3, 1.2);
-      if (!n) return;
-      n.gain.connect(lobbyGain);
-      n.osc.start();
-      nodes.push(n.osc);
-      // Fix #10: track LFO so it is stopped with the rest of the layer
-      if (n.lfo) nodes.push(n.lfo);
-    });
-
-    // Octave bass pad
-    const bass = makeOsc(36.7, 'sine', 0.10); // D1
-    if (bass) { bass.gain.connect(lobbyGain); bass.osc.start(); nodes.push(bass.osc); }
-
-    // Soft filtered noise (crowd ambience murmur)
-    const noise = makeFilteredNoise(0.018, 320);
-    if (noise) { noise.gain.connect(lobbyGain); noise.source.start(); nodes.push(noise.source); }
-
-    // Slow shimmer on top (high triangle Ã¯Â¿Â½?" like a glockenspiel ghost note)
-    const shimmer = makeOsc(523.25, 'triangle', 0.012, 0.2, 4); // C5
-    if (shimmer) {
-      shimmer.gain.connect(lobbyGain);
-      shimmer.osc.start();
-      nodes.push(shimmer.osc);
-      // Fix #10: track LFO
-      if (shimmer.lfo) nodes.push(shimmer.lfo);
-    }
-
-    lobbyNodes = nodes;
-  };
-
-  // Ã¯Â¿Â½"?Ã¯Â¿Â½"? RACE LAYER Ã¯Â¿Â½?" driving brass ostinato + percussion Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
-  // Chord: D minor Ã¯Â¿Â½?" same root, but brighter (sawtooth brass feel)
-  const RACE_CHORD = [146.8, 174.6, 220, 261.6]; // D3 F3 A3 C4
-  let raceRhythmId = null;
-  const buildRaceLayer = () => {
-    const c = getCtx();
-    if (!c) return;
-    // Disconnect any previous race nodes before rebuilding
-    raceNodes.forEach((n) => { try { n.stop(); } catch {} });
-    raceNodes = [];
-    if (raceRhythmId) { window.clearInterval(raceRhythmId); raceRhythmId = null; }
-    raceGain = c.createGain();
-    raceGain.gain.value = 0;
-
-    // Compressor for punchy loudness
-    const comp = c.createDynamicsCompressor();
-    comp.threshold.value = -18;
-    comp.knee.value = 6;
-    comp.ratio.value = 4;
-    comp.attack.value = 0.003;
-    comp.release.value = 0.15;
-    comp.connect(masterGain);
-    raceGain.connect(comp);
-
-    const nodes = [];
-
-    // Driving brass ostinato Ã¯Â¿Â½?" sawtooth, slightly detuned pairs
-    RACE_CHORD.forEach((freq, i) => {
-      const n1 = makeOsc(freq, 'sawtooth', 0.045, 0, 0);
-      const n2 = makeOsc(freq * 1.008, 'sawtooth', 0.038, 0, 0); // detune for thickness
-      if (n1) { n1.gain.connect(raceGain); n1.osc.start(); nodes.push(n1.osc); }
-      if (n2) { n2.gain.connect(raceGain); n2.osc.start(); nodes.push(n2.osc); }
-    });
-
-    // Octave brass bass
-    const brassBass = makeOsc(73.4, 'sawtooth', 0.09); // D2
-    if (brassBass) { brassBass.gain.connect(raceGain); brassBass.osc.start(); nodes.push(brassBass.osc); }
-
-    // High tension strings (high Dm arpeggio texture via filtered noise)
-    const tension = makeFilteredNoise(0.028, 1800);
-    if (tension) { tension.gain.connect(raceGain); tension.source.start(); nodes.push(tension.source); }
-
-    // Rhythmic pulse (bass drum feel) at 96bpm Ã¯Â¿Â½?" stadium stomp
-    raceRhythmId = makeRhythmicPulse(raceGain, 96);
-
-    raceNodes = nodes;
-  };
-
-  // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Public API Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
-  const start = () => {
-    const c = getCtx();
-    if (!c || running || !enabled) return;
-    // Fix #8: cancel any pending stop cleanup so a quick remount gets a fresh start
-    if (_stopTimeoutId) { clearTimeout(_stopTimeoutId); _stopTimeoutId = null; }
-    running = true;
-
-    masterGain = c.createGain();
-    masterGain.gain.value = 0;
-    masterGain.connect(c.destination);
-
-    buildLobbyLayer();
-    buildRaceLayer();
-
-    // Fade master in over 2s
-    ramp(masterGain, 0.38, 2.0);
-    // Start on lobby layer
-    ramp(lobbyGain, 1.0, 2.5);
-    currentPhase = 'lobby';
-  };
-
-  const toRace = () => {
-    if (!running || currentPhase === 'race') return;
-    currentPhase = 'race';
-    ramp(lobbyGain, 0.0, 2.2);
-    ramp(raceGain, 1.0, 1.8);
-    // Boost master slightly for race intensity
-    ramp(masterGain, 0.52, 2.0);
-  };
-
-  const toLobby = () => {
-    if (!running || currentPhase === 'lobby') return;
-    currentPhase = 'lobby';
-    ramp(raceGain, 0.0, 2.5);
-    ramp(lobbyGain, 1.0, 2.0);
-    ramp(masterGain, 0.38, 2.5);
-  };
-
-  const stop = () => {
-    if (!running) return;
-    running = false; // mark stopped immediately so start() can be called again
-    ramp(masterGain, 0, 1.5);
-    if (_stopTimeoutId) clearTimeout(_stopTimeoutId);
-    _stopTimeoutId = setTimeout(() => {
-      _stopTimeoutId = null;
-      [...lobbyNodes, ...raceNodes].forEach((n) => { try { n.stop(); } catch {} });
-      if (raceRhythmId) window.clearInterval(raceRhythmId);
-      lobbyNodes = []; raceNodes = [];
-      masterGain = null; // force fresh graph on next start()
-    }, 1600);
-  };
-
-  const setEnabled = (val) => {
-    enabled = val;
-    if (!val) {
-      stop();
-    } else {
-      // Re-enable: start fresh if AudioContext is available
-      const c = getCtx();
-      if (c) start();
-    }
-  };
-
-  const setVolume = (vol) => {
-    // vol: 0.0 Ã¯Â¿Â½?" 1.0
-    if (masterGain) ramp(masterGain, Math.max(0, Math.min(1, vol)) * (currentPhase === 'race' ? 0.52 : 0.38), 0.5);
-  };
-
-  return { start, stop, toRace, toLobby, setEnabled, setVolume };
-})();
-
-// ---------------------------------------------------------------------------
 // Commentator engine Ã¯Â¿Â½?" eFootball-style live match announcer via Web Speech API
 // Speaks in short punchy chains like a real match commentator:
 //   "Oh!  What a move!  Incredible!  The crowd is on its feet!"
@@ -1040,9 +758,9 @@ export default function Play({ practicePage = false }){
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // Stop/start orchestra when music setting changes
+  // Mute/unmute the shared playlist when the player's music setting changes
   useEffect(() => {
-    _orchestra.setEnabled(musicEnabled);
+    arenaMusic.setMuted(!musicEnabled);
   }, [musicEnabled]);
 
   // Cancel speech and hard-disable when commentator is toggled off
@@ -1179,27 +897,6 @@ export default function Play({ practicePage = false }){
       window.removeEventListener('typearena-user-changed', syncUser);
       window.removeEventListener('storage', syncUser);
     };
-  }, []);
-  // Start background music on first interaction Ã¯Â¿Â½?" autoplay policy safe because
-  // the AudioContext is created inside a user-gesture handler
-  useEffect(() => {
-    if (!musicEnabled) return;
-    const tryStart = () => {
-      _orchestra.start();
-      window.removeEventListener('click', tryStart);
-      window.removeEventListener('keydown', tryStart);
-    };
-    if (_audioCtx && _audioCtx.state === 'running') {
-      _orchestra.start();
-    } else {
-      window.addEventListener('click', tryStart, { once: true });
-      window.addEventListener('keydown', tryStart, { once: true });
-    }
-    return () => {
-      window.removeEventListener('click', tryStart);
-      window.removeEventListener('keydown', tryStart);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Commentator: fire welcome + feature tour once when the user's name becomes available
@@ -1601,8 +1298,7 @@ export default function Play({ practicePage = false }){
   // Keep the ref always pointing at the latest finishRace so the timer
   // interval can call it without being listed as a dep of the timer effect
   finishRaceRef.current = finishRace;
-  // Stop music when component unmounts (navigate away)
-  useEffect(() => () => { _orchestra.stop(); }, []);
+  // (No page-local music teardown needed - arenaMusic is a shared, global player.)
   useEffect(() => () => { blurTrackerRef.current?.detach(); }, []);
 
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #2: AFK / rage-quit penalty detection Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
@@ -1676,12 +1372,16 @@ export default function Play({ practicePage = false }){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, practicePage]);
 
-  // Orchestra phase transitions
+  // Switch the shared playlist between its idle (lobby/results) channel and
+  // its race channel as the typing phase changes. Replaces the old
+  // orchestra.toRace()/toLobby() crossfade now that arenaMusic owns all
+  // background audio - see arenaMusic.js for the two-playlist support this
+  // needs (toRace/toLobby methods analogous to the removed orchestra's).
   useEffect(() => {
     if (phase === 'racing') {
-      _orchestra.toRace();
+      arenaMusic.toRace();
     } else if (phase === 'lobby' || phase === 'results') {
-      _orchestra.toLobby();
+      arenaMusic.toLobby();
     }
   }, [phase]);
 
@@ -1884,17 +1584,9 @@ export default function Play({ practicePage = false }){
   // Clean up ghost interval on unmount
   useEffect(() => () => window.clearInterval(ghostIntervalRef.current), []);
 
-  // Pause background music for the duration of a race and bring it back
-  // afterwards. setPhase('racing') is the single funnel point for every
-  // race type (practice, live, tournament, private room), so this one
-  // effect covers all of them. The cleanup fires whenever phase changes
-  // away from 'racing' (finish, forfeit, navigating away) AND on unmount
-  // (closing the tab mid-race), so music can never get stuck paused.
-  useEffect(() => {
-    if (phase !== 'racing') return undefined;
-    arenaMusic.enterRace();
-    return () => arenaMusic.exitRace();
-  }, [phase]);
+  // (Race-time music is now handled by the toRace/toLobby effect above -
+  // the old pause-for-the-duration-of-a-race behavior is gone; the race
+  // channel plays instead of silence.)
   useEffect(() => {
     if (phase !== 'results' || !raceResult) return;
     setAiCoaching('loading');
