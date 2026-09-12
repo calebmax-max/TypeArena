@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { buildHeaders, fetchLiveRaces } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
 import { preloadPlayContent, preloadRoute } from '../utils/navigationPrefetch';
+import { arenaMusic } from '../utils/arenaMusic';
 import '../styles/Home.css';
 
 const DEMO_SENTENCES = [
@@ -237,6 +238,16 @@ export default function Home({ currentUser }) {
   const preloadTournamentsPage = () => {
     void preloadRoute('tournaments');
   };
+
+  // Home is the site's entry point, so this is the only page that kicks off
+  // the shared background playlist. It keeps playing across every other
+  // page after this (arenaMusic is a persistent singleton) — someone who
+  // deep-links straight into Profile/Play/etc. without visiting Home first
+  // won't hear it start. Playback actually stops when the visitor leaves
+  // the site entirely (arenaMusic handles that itself via `pagehide`).
+  useEffect(() => {
+    arenaMusic.play();
+  }, []);
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') {

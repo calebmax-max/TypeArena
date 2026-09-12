@@ -7,9 +7,21 @@
 // they survive page refreshes and navigation, and are synced from the server
 // on load so every visitor hears the current admin-configured playlist.
 //
-// Usage from any component:
+// AUTOPLAY: the engine itself does NOT start playback on import — it only
+// hydrates the playlist. Only the Home page should trigger the first
+// play(), on mount:
+//   // Home.js
+//   useEffect(() => { arenaMusic.play(); }, []);
+// This way music starts when someone *enters the site via Home*, not when
+// they deep-link straight into Profile, Play, or any other page. Once
+// started, it keeps playing across every other page (it's a singleton) —
+// navigating to Profile does not stop it — and it only actually stops when
+// the visitor leaves the site entirely (tab/browser closed, or navigates
+// off-site), which the engine handles internally via `pagehide`.
+//
+// Usage from any other component (control an already-running player):
 //   import { arenaMusic } from '../utils/arenaMusic';
-//   arenaMusic.play();
+//   arenaMusic.toggle();
 //   arenaMusic.setVolume(0.6);
 //   arenaMusic.next();
 //
@@ -89,9 +101,8 @@ const createMusicEngine = () => {
   // the server playlist once, on first load. Without a periodic re-check,
   // someone who was already on the site never hears a track the admin just
   // added (or stops hearing one that was removed) until they refresh the page.
-  // syncTimer/syncListenersAttached make sure we only set this up once.
+  // syncListenersAttached makes sure we only set this up once.
   const REMOTE_SYNC_INTERVAL_MS = 30000; // re-check the admin playlist every 30s
-  let syncTimer = null;
   let syncListenersAttached = false;
 
   // ── Persistence ────────────────────────────────────────────────────────────
@@ -469,7 +480,7 @@ const createMusicEngine = () => {
     if (syncListenersAttached || typeof window === 'undefined') return;
     syncListenersAttached = true;
 
-    syncTimer = window.setInterval(() => {
+    window.setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       loadRemoteSettings();
     }, REMOTE_SYNC_INTERVAL_MS);
@@ -484,12 +495,25 @@ const createMusicEngine = () => {
   // ── Init ───────────────────────────────────────────────────────────────────
   loadSettings();
   if (typeof window !== 'undefined') {
-    // Sync with the admin-configured playlist as soon as the engine spins up
-    // on any page, then start playback immediately — play() already falls
-    // back to "resume on first click/keypress" if the browser blocks
-    // autoplay before the user has interacted with the page.
-    loadRemoteSettings().finally(() => play());
+    // Hydrate the admin-configured playlist as soon as the engine spins up
+    // on any page — but do NOT auto-play here. Auto-starting playback is
+    // the Home page's job (it calls arenaMusic.play() once on mount), so
+    // someone who lands directly on Profile, Play, or any other page via a
+    // deep link doesn't hear music start until they actually visit Home.
+    loadRemoteSettings();
     startAdminSync();
+
+    // Stop playback when the visitor actually leaves the site — closes the
+    // tab, closes the browser, or navigates to another domain — as opposed
+    // to merely switching to a different browser tab (which should NOT
+    // stop the music; that's what `visibilitychange` above is for, and it
+    // only pauses the *admin-sync* polling, not playback). `pagehide` is
+    // the reliable cross-browser signal for "this page is going away" and,
+    // unlike `beforeunload`, doesn't block the page from being cached for
+    // instant back/forward navigation.
+    window.addEventListener('pagehide', () => {
+      if (playing) pause();
+    });
   }
 
   return {
