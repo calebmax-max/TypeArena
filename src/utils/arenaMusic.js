@@ -40,6 +40,19 @@ import { buildApiUrl } from './api';
 
 const STORAGE_KEY = 'typearena_music_settings';
 
+// The user-facing on/off preference, set from the Settings toggle in
+// TypeProfile.js (and mirrored by Play.js's own state for its UI). This is
+// intentionally a separate key from STORAGE_KEY above (which holds the
+// engine's internal playlist/volume/mute blob) — USER_MUTE_KEY is the single
+// source of truth for "does the user want music", and the engine below syncs
+// its own `muted` flag to it directly, rather than depending on some other
+// mounted component (e.g. Play) to relay the change via setMuted().
+const USER_MUTE_KEY = 'typearena_music';
+const isUserMusicDisabled = () => {
+  try { return localStorage.getItem(USER_MUTE_KEY) === 'false'; }
+  catch { return false; }
+};
+
 // ---------------------------------------------------------------------------
 // Default curated playlist — drop your MP3s in /public/music/ and they'll
 // load without any CORS issues (same-origin). Admin can replace or extend.
@@ -116,6 +129,9 @@ const createMusicEngine = () => {
       if (typeof s.currentIndex === 'number') currentIndex = Math.min(s.currentIndex, tracks.length - 1);
       if (typeof s.muted === 'boolean') muted = s.muted;
     } catch {}
+    // The user's explicit Settings toggle always wins over whatever this
+    // engine last persisted for itself, in case they drifted apart.
+    muted = isUserMusicDisabled();
   };
 
   const saveSettings = () => {
@@ -469,6 +485,14 @@ const createMusicEngine = () => {
   };
 
   const handleStorageEvent = (e) => {
+    // The user's mute/unmute toggle (Settings page, or any other tab) — this
+    // is the source of truth for whether the user wants music, independent
+    // of whether Play.js or any other component happens to be mounted.
+    if (e.key === USER_MUTE_KEY) {
+      setMuted(e.newValue === 'false');
+      return;
+    }
+
     if (e.key !== STORAGE_KEY || !e.newValue) return;
     try {
       const s = JSON.parse(e.newValue);
