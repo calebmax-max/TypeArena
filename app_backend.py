@@ -1354,14 +1354,83 @@ def _ensure_marketplace_catalog_table(cur) -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
     )
+    # 'source' distinguishes rows that come from the MARKETPLACE_ITEMS list
+    # in code ('code') from ones an admin added by hand through the admin
+    # panel ('admin'). Without this distinction, syncing the DB to match
+    # the code list on every boot would also wipe out admin-created items,
+    # since they're never in MARKETPLACE_ITEMS.
+    cur.execute("SHOW COLUMNS FROM marketplace_items LIKE 'source'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE marketplace_items ADD COLUMN source VARCHAR(10) NOT NULL DEFAULT 'admin' AFTER is_active")
     cur.execute('SELECT COUNT(*) AS item_count FROM marketplace_items')
     count = int((cur.fetchone() or {}).get('item_count') or 0)
-    if count:
-        return
+    if not count:
+        cur.executemany(
+            "INSERT INTO marketplace_items (id, item_json, price, is_active, source) VALUES (%s, %s, %s, 1, 'code')",
+            [(item['id'], json.dumps(item), float(item.get('price') or 0)) for item in MARKETPLACE_ITEMS],
+        )
+
+
+# Ids that were part of the hardcoded catalog before it was trimmed down to
+# themes + utility passes + the newer cosmetic drops. These no longer live
+# in MARKETPLACE_ITEMS, but a database that was already running still has
+# rows for them. This list exists purely so _sync_marketplace_catalog_from_code
+# can identify and deactivate those specific leftover rows once, without
+# touching anything an admin added by hand under an unrelated id.
+_LEGACY_MARKETPLACE_ITEM_IDS = [
+    'skin_velocity_black', 'skin_molten_copper', 'skin_frostline_pro',
+    'avatar_apex_panther', 'avatar_signal_ghost', 'avatar_crown_hawk',
+    'badge_founders_mark', 'badge_clutch_streak', 'badge_elite_verified',
+    'effect_reactor_sparks', 'effect_afterburn_wave', 'effect_royal_echo',
+    'frame_titan_brass', 'frame_carbonglass', 'frame_imperial_crown',
+]
+
+
+def _sync_marketplace_catalog_from_code(cur) -> None:
+    """Reconcile the marketplace_items table with the MARKETPLACE_ITEMS list
+    defined in code. Runs once at startup (see _bootstrap_db), not on every
+    request, so it never fights with admin edits made in between boots.
+
+    - Every item in MARKETPLACE_ITEMS is inserted (if missing) or updated in
+      place (name/price/description/etc.), tagged source='code', and
+      re-activated if a previous sync had deactivated it.
+    - Any row tagged source='code' whose id is no longer in MARKETPLACE_ITEMS
+      is deactivated (not hard-deleted, so purchase history keeps working).
+    - _LEGACY_MARKETPLACE_ITEM_IDS covers old catalog rows that predate the
+      'source' column; they're tagged 'code' here so the step above can
+      finally deactivate them too.
+    - Rows an admin created through the admin panel (source='admin') are
+      never touched by this function.
+    """
+    if _LEGACY_MARKETPLACE_ITEM_IDS:
+        placeholders = ', '.join(['%s'] * len(_LEGACY_MARKETPLACE_ITEM_IDS))
+        cur.execute(
+            f"UPDATE marketplace_items SET source = 'code' WHERE source = 'admin' AND id IN ({placeholders})",
+            tuple(_LEGACY_MARKETPLACE_ITEM_IDS),
+        )
+
     cur.executemany(
-        'INSERT INTO marketplace_items (id, item_json, price, is_active) VALUES (%s, %s, %s, 1)',
+        """
+        INSERT INTO marketplace_items (id, item_json, price, is_active, source)
+        VALUES (%s, %s, %s, 1, 'code')
+        ON DUPLICATE KEY UPDATE
+            item_json = VALUES(item_json),
+            price = VALUES(price),
+            is_active = 1,
+            source = 'code'
+        """,
         [(item['id'], json.dumps(item), float(item.get('price') or 0)) for item in MARKETPLACE_ITEMS],
     )
+
+    code_ids = [item['id'] for item in MARKETPLACE_ITEMS]
+    if code_ids:
+        placeholders = ', '.join(['%s'] * len(code_ids))
+        cur.execute(
+            f"UPDATE marketplace_items SET is_active = 0 WHERE source = 'code' AND is_active = 1 AND id NOT IN ({placeholders})",
+            tuple(code_ids),
+        )
+    else:
+        cur.execute("UPDATE marketplace_items SET is_active = 0 WHERE source = 'code' AND is_active = 1")
 
 
 def _marketplace_items_from_db(cur, include_inactive: bool = False) -> list[Dict[str, Any]]:
@@ -8720,6 +8789,7 @@ def _bootstrap_db() -> None:
                 _ensure_typing_content_table(cur)
                 _ensure_typing_content_schedule_column(cur)
                 _ensure_marketplace_catalog_table(cur)
+                _sync_marketplace_catalog_from_code(cur)
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_admin_wallet_transactions_table(cur)
