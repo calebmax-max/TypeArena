@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import PlacementTest from '../PlacementTest';
-import CurriculumMap from '../CurriculumMap';
-import LessonRunner from '../LessonRunner';
-import { getLessonById, getNextLessonId, LESSON_SEQUENCE } from '../curriculum';
+import PlacementTest from './PlacementTest';
+import CurriculumMap from './CurriculumMap';
+import LessonRunner from './LessonRunner';
+import { getLessonById, getNextLessonId, LESSON_SEQUENCE } from './curriculum';
 import {
   isPlacementDone,
   loadProgress,
   setCurrentLesson,
   getCurrentLessonId,
   flushQueuedTrainingEvents,
-} from '../trainingProgress';
+} from './trainingProgress';
 import './Training.css';
 
 export default function TrainingPage() {
