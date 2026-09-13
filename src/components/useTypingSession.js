@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { computeTypingStats } from 'src/placementTest';
+import { computeTypingStats } from './placement';
 
 /**
  * Drives a single typing attempt against `targetText`: starts timing on the
