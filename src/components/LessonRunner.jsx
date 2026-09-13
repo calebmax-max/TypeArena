@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import TypingBox from 'src/TypingBox';
-import { useTypingSession } from 'src/useTypingSession';
-import { generateLessonText, requiredPassesFor } from 'src/curriculum';
-import { recordAttempt, loadProgress } from 'src/trainingProgress';
+import TypingBox from './TypingBox';
+import { useTypingSession } from './useTypingSession';
+import { generateLessonText, requiredPassesFor } from './curriculum';
+import { recordAttempt, loadProgress } from './trainingProgress';
 
 export default function LessonRunner({ lesson, onLessonPassed }) {
   const [attemptKey, setAttemptKey] = useState(0);

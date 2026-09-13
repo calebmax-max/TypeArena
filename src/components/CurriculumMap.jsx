@@ -1,6 +1,6 @@
 import React from 'react';
-import { UNITS, LESSON_SEQUENCE, requiredPassesFor } from 'src/curriculum';
-import { isLessonPassed, isLessonUnlocked } from 'src/trainingProgress';
+import { UNITS, LESSON_SEQUENCE, requiredPassesFor } from './curriculum';
+import { isLessonPassed, isLessonUnlocked } from './trainingProgress';
 
 function lessonStatus(progress, lesson, currentLessonId) {
   if (isLessonPassed(progress, lesson)) return 'passed';
