@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { computeTypingStats } from './placement';
 
 /**
@@ -58,6 +58,20 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
     return () => clearInterval(interval);
   }, [startedAt, finished, maxDurationSeconds, finish, typedText]);
 
+  // Live WPM/accuracy while the learner is still typing, so the number on
+  // screen isn't frozen until the attempt actually finishes. Cheap to
+  // recompute: it only runs when typedText or the 200ms elapsed-tick
+  // updates, and computeTypingStats is already used for the same passage
+  // length on finish.
+  const liveStats = useMemo(() => {
+    if (!startedAt || finished) return null;
+    return computeTypingStats({
+      targetText,
+      typedText,
+      elapsedSeconds: Math.max(elapsedSeconds, 0.001), // avoid divide-by-zero on the very first tick
+    });
+  }, [targetText, typedText, elapsedSeconds, startedAt, finished]);
+
   const reset = useCallback(() => {
     setTypedText('');
     setStartedAt(null);
@@ -74,6 +88,7 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
     handleChange,
     reset,
     inputRef,
+    liveStats,
     timeRemaining: maxDurationSeconds ? Math.max(0, maxDurationSeconds - elapsedSeconds) : null,
   };
 }

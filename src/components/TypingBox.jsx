@@ -5,7 +5,25 @@ import React from 'react';
  * learner has typed that character correctly, incorrectly, or not yet - plus
  * the actual (visually hidden) input that captures keystrokes.
  */
-export default function TypingBox({ targetText, typedText, onChange, inputRef, disabled, autoFocus = true }) {
+export default function TypingBox({
+  targetText,
+  typedText,
+  onChange,
+  inputRef,
+  disabled,
+  autoFocus = true,
+  blockPaste = false,
+}) {
+  // Simple, local guard: refuses pasted input so WPM/accuracy reflect actual
+  // typing. This is intentionally independent of utils/typingEngine's
+  // handlePasteAttempt (used on the racing side) since that file hasn't
+  // been reviewed here - if Training should share that exact logic
+  // (e.g. logging the attempt, not just silently blocking it), swap this
+  // handler out for that shared util instead.
+  function handlePaste(event) {
+    if (blockPaste) event.preventDefault();
+  }
+
   return (
     <div className="training-typing-box">
       <div className="training-typing-box__passage" aria-hidden="true">
@@ -30,6 +48,7 @@ export default function TypingBox({ targetText, typedText, onChange, inputRef, d
         className="training-typing-box__input"
         value={typedText}
         onChange={onChange}
+        onPaste={handlePaste}
         disabled={disabled}
         autoFocus={autoFocus}
         spellCheck={false}

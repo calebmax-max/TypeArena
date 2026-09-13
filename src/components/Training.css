@@ -276,12 +276,27 @@
 
 .training-typing-box__char--correct {
   color: var(--tp-mint);
+  font-weight: 600;
 }
 
 .training-typing-box__char--incorrect {
   color: #ffe1dd;
   background: rgba(179, 66, 58, 0.55);
   border-radius: 3px;
+  text-decoration: underline wavy rgba(255, 225, 221, 0.9);
+  text-underline-offset: 3px;
+}
+
+.training-lesson__live-stats {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--tp-paper);
+  border: 1px solid var(--tp-sage-border);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--tp-muted);
 }
 
 .training-typing-box__char--cursor {
@@ -310,6 +325,32 @@
 .training-typing-box__input:disabled {
   background: var(--tp-paper);
   color: var(--tp-muted);
+}
+
+/* ==========================================================================
+   Certified screen
+   ========================================================================== */
+
+.training-certified {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1.75rem;
+  border-radius: var(--tp-radius);
+  background: var(--tp-forest);
+  color: #fff;
+}
+
+.training-certified h2 {
+  margin: 0;
+  color: var(--tp-mint);
+}
+
+.training-certified p {
+  margin: 0;
+  max-width: 60ch;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 /* ==========================================================================

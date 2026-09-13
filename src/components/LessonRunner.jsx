@@ -8,12 +8,14 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
   const [attemptKey, setAttemptKey] = useState(0);
   const [outcome, setOutcome] = useState(null); // { wpm, accuracy, passed, passCount }
   // attemptKey isn't read inside generateLessonText - it exists purely to force a
-  // fresh passage each time the learner retries the same lesson.
+  // fresh passage when moving on to the next required pass (nextAttempt).
+  // A failed retry (retrySamePassage) intentionally leaves attemptKey alone
+  // so the learner re-types the exact passage they just failed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const targetText = useMemo(() => generateLessonText(lesson), [lesson, attemptKey]);
   const required = requiredPassesFor(lesson);
 
-  const { typedText, finished, handleChange, inputRef } = useTypingSession(targetText, {
+  const { typedText, finished, handleChange, reset, inputRef, liveStats } = useTypingSession(targetText, {
     onFinish: (stats) => {
       const passed = stats.wpm >= lesson.minWpm && stats.accuracy >= lesson.minAccuracy;
       const state = recordAttempt({ lesson, wpm: stats.wpm, accuracy: stats.accuracy, passed });
@@ -21,9 +23,19 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
     },
   });
 
-  function retry() {
+  // Failed the bar: keep the exact same passage, just clear the typed state
+  // so the learner can have another go at it.
+  function retrySamePassage() {
+    setOutcome(null);
+    reset();
+  }
+
+  // Passed, but this lesson needs more than one qualifying pass: draw a new
+  // passage for the next attempt rather than repeating the one just typed.
+  function nextAttempt() {
     setOutcome(null);
     setAttemptKey((k) => k + 1);
+    reset();
   }
 
   const fullyPassed = outcome && outcome.passCount >= required;
@@ -61,13 +73,21 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
       </div>
 
       {!outcome && (
-        <TypingBox
-          targetText={targetText}
-          typedText={typedText}
-          onChange={handleChange}
-          inputRef={inputRef}
-          disabled={finished}
-        />
+        <>
+          {liveStats && (
+            <p className="training-lesson__live-stats" aria-live="polite">
+              {Math.round(liveStats.wpm)} WPM · {Math.round(liveStats.accuracy)}% accuracy so far
+            </p>
+          )}
+          <TypingBox
+            targetText={targetText}
+            typedText={typedText}
+            onChange={handleChange}
+            inputRef={inputRef}
+            disabled={finished}
+            blockPaste
+          />
+        </>
       )}
 
       {outcome && (
@@ -91,7 +111,7 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
                 That's pass {outcome.passCount} of {required} needed - one good run isn't enough on
                 this one. One more like that and you're through.
               </p>
-              <button type="button" className="training-button" onClick={retry}>
+              <button type="button" className="training-button" onClick={nextAttempt}>
                 Attempt {outcome.passCount + 1}
               </button>
             </>
@@ -101,9 +121,9 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
             <>
               <p>
                 Not quite - needed {lesson.minWpm} WPM at {lesson.minAccuracy}% accuracy. Same
-                lesson, new passage.
+                passage, have another go.
               </p>
-              <button type="button" className="training-button" onClick={retry}>
+              <button type="button" className="training-button" onClick={retrySamePassage}>
                 Retry lesson
               </button>
             </>

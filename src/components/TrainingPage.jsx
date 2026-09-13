@@ -16,6 +16,7 @@ export default function TrainingPage() {
   const [placed, setPlaced] = useState(isPlacementDone());
   const [progress, setProgress] = useState(loadProgress());
   const [activeLessonId, setActiveLessonId] = useState(null);
+  const [justCertified, setJustCertified] = useState(false);
 
   useEffect(() => {
     flushQueuedTrainingEvents();
@@ -39,6 +40,7 @@ export default function TrainingPage() {
   }
 
   function handleSelectLesson(lessonId) {
+    setJustCertified(false);
     setActiveLessonId(lessonId);
   }
 
@@ -49,8 +51,11 @@ export default function TrainingPage() {
       setActiveLessonId(nextId);
     } else {
       // Passed the very last lesson in the sequence (all required passes
-      // of Pro Certification complete).
+      // of Pro Certification complete). Nowhere further to advance to, so
+      // stay on this lesson but show a dedicated certified screen instead
+      // of silently returning to "Select a lesson to begin."
       setCurrentLesson(lessonId);
+      setJustCertified(true);
     }
     refreshProgress();
   }
@@ -76,7 +81,24 @@ export default function TrainingPage() {
         />
       </aside>
       <main className="training-page__main">
-        {activeLesson ? (
+        {justCertified ? (
+          <div className="training-certified">
+            <h2>You're Pro Certified</h2>
+            <p>
+              You cleared every required pass of {activeLesson?.title || 'Pro Certification'} at
+              the full bar. That's the whole curriculum, start to finish.
+            </p>
+            <button
+              type="button"
+              className="training-button"
+              onClick={() => {
+                setJustCertified(false);
+              }}
+            >
+              Review this lesson again
+            </button>
+          </div>
+        ) : activeLesson ? (
           <LessonRunner
             key={activeLesson.id}
             lesson={activeLesson}
