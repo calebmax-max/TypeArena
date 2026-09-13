@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import TypingBox from './TypingBox';
-import { useTypingSession } from './useTypingSession';
+import TypingBox from '../TypingBox';
+import { useTypingSession } from '../useTypingSession';
 import { PLACEMENT_DURATION_SECONDS, PLACEMENT_SAMPLE_TEXT, findPlacementLesson } from 'src/placementTest';
-import { LESSON_SEQUENCE, getLessonById } from './curriculum';
-import { applyPlacement } from './trainingProgress';
+import { LESSON_SEQUENCE, getLessonById } from '../curriculum';
+import { applyPlacement } from '../trainingProgress';
 
 export default function PlacementTest({ onPlaced }) {
   const [result, setResult] = useState(null);
