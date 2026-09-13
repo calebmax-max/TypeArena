@@ -154,6 +154,10 @@
   max-width: 78ch;
 }
 
+.training-typing-box__char {
+  color: #2b2b2b;
+}
+
 .training-typing-box__char--correct {
   color: #2f6f4f;
 }
