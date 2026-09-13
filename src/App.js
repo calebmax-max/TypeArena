@@ -18,7 +18,7 @@ import { buildApiUrl } from './utils/api';
 import { arenaMusic } from './utils/arenaMusic';
 import { preloadPlayContent } from './utils/navigationPrefetch';
 import Play from './components/Play';
-import TrainingPage from './components/TrainingPage';
+import TrainingPage from '../components/TrainingPage';
 import Tournaments from './components/Tournaments';
 import Leaderboard from './components/Leaderboard';
 import Profile from './components/TypeProfile';
