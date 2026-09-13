@@ -1,6 +1,6 @@
 import './App.css';
 import { BrowserRouter, Routes, Route, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Home from './components/Home';
 import ChatWidget from './components/ChatWidget';
 
@@ -16,7 +16,16 @@ import './styles/TypeArena.css';
 import { fetchSiteMarquee, updateUserProfile } from './utils/typingApi';
 import { buildApiUrl } from './utils/api';
 import { arenaMusic } from './utils/arenaMusic';
-import { preloadPlayContent, preloadRoute } from './utils/navigationPrefetch';
+import { preloadPlayContent } from './utils/navigationPrefetch';
+import Play from './components/Play';
+import TrainingPage from './TrainingPage';
+import Tournaments from './components/Tournaments';
+import Leaderboard from './components/Leaderboard';
+import Profile from './components/TypeProfile';
+import AdminPanel from './components/AdminPanel';
+import Marketplace from './components/Marketplace';
+import Results from './components/Results';
+import Spectate from './components/Spectate';
 
 
 
@@ -29,79 +38,6 @@ const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Private friend battles are live now.',
   'Wallet top-up, tournaments, and marketplace are active.',
 ];
-
-const Play = lazy(() => import(/* webpackPrefetch: true */ './components/Play'));
-const Tournaments = lazy(() => import(/* webpackPrefetch: true */ './components/Tournaments'));
-const Leaderboard = lazy(() => import(/* webpackPrefetch: true */ './components/Leaderboard'));
-const Profile = lazy(() => import(/* webpackPrefetch: true */ './components/TypeProfile'));
-const AdminPanel = lazy(() => import('./components/AdminPanel'));
-const Marketplace = lazy(() => import(/* webpackPrefetch: true */ './components/Marketplace'));
-const Results = lazy(() => import(/* webpackPrefetch: true */ './components/Results'));
-const Spectate = lazy(() => import(/* webpackPrefetch: true */ './components/Spectate'));
-
-// Warms the browser's module cache for every lazy route once the main
-// thread is idle, so a cold click on a nav link (or a fast mobile tap
-// where hover/touchstart preload never gets a head start) doesn't have
-// to wait on a fresh chunk download. Admin panel is intentionally
-// excluded - most visitors never need it, so there's no point spending
-// bandwidth warming it for everyone.
-//
-// Note: this duplicates what the `webpackPrefetch: true` magic comments
-// above already ask the browser to do via <link rel="prefetch"> tags
-// emitted into the HTML. The two are complementary right now (webpack's
-// hint fires as soon as the initial bundle parses; this fires on true
-// browser idle time and works identically across bundlers), but once
-// you've confirmed the webpackPrefetch hints are reliably firing across
-// your target browsers, this manual scheduler can likely be removed to
-// avoid doing the work twice.
-const ROUTE_CHUNK_IMPORTERS = [
-  () => import('./components/Play'),
-  () => import('./components/Tournaments'),
-  () => import('./components/Leaderboard'),
-  () => import('./components/TypeProfile'),
-  () => import('./components/Marketplace'),
-  () => import('./components/Results'),
-  () => import('./components/Spectate'),
-];
-
-const prefetchAllRouteChunks = () => {
-  ROUTE_CHUNK_IMPORTERS.forEach((importChunk) => {
-    importChunk().catch(() => {
-      // A failed background prefetch (offline, flaky network) isn't
-      // fatal - the normal lazy() import will just retry on navigation.
-    });
-  });
-};
-
-const scheduleRouteChunkPrefetch = () => {
-  if (typeof window === 'undefined') return () => {};
-
-  if ('requestIdleCallback' in window) {
-    const handle = window.requestIdleCallback(prefetchAllRouteChunks, { timeout: 4000 });
-    return () => window.cancelIdleCallback(handle);
-  }
-
-  // Safari and older browsers don't support requestIdleCallback - fall
-  // back to a short timeout so this still runs after the initial mount
-  // work (session refresh, marquee fetch, music settings) has kicked off.
-  const timeoutId = window.setTimeout(prefetchAllRouteChunks, 2000);
-  return () => window.clearTimeout(timeoutId);
-};
-
-function RouteLoader() {
-  return (
-    <div className="profile-container" style={{ minHeight: '60vh', display: 'grid', placeItems: 'center' }}>
-      <div style={{ display: 'grid', gap: '1rem', justifyItems: 'center' }}>
-        <div className="loader" aria-hidden="true">
-          <div className="slider" style={{ '--i': 0 }} />
-          <div className="slider" style={{ '--i': 1 }} />
-          <div className="slider" style={{ '--i': 2 }} />
-        </div>
-        <p className="auth-notice" style={{ margin: 0 }}>Loading arena page...</p>
-      </div>
-    </div>
-  );
-}
 
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -192,11 +128,6 @@ function AppLayout() {
   }, []);
 
   useEffect(() => {
-    const cancelPrefetch = scheduleRouteChunkPrefetch();
-    return cancelPrefetch;
-  }, []);
-
-  useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     setMenuOpen(false);
   }, [location.key]);
@@ -283,12 +214,7 @@ function AppLayout() {
   }, []);
 
   const preloadPlayPage = () => {
-    void preloadRoute('play');
     void preloadPlayContent();
-  };
-
-  const preloadByRoute = (routeName) => () => {
-    void preloadRoute(routeName);
   };
 
   const handleSignOut = () => {
@@ -315,10 +241,11 @@ function AppLayout() {
           </button>
           <nav id="arena-primary-nav" className={`arena-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
             <NavLink to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
-            <NavLink to="/tournaments" className={navLinkClassName} onMouseEnter={preloadByRoute('tournaments')} onFocus={preloadByRoute('tournaments')} onTouchStart={preloadByRoute('tournaments')}>Tournaments</NavLink>
-            <NavLink to="/leaderboard" className={navLinkClassName} onMouseEnter={preloadByRoute('leaderboard')} onFocus={preloadByRoute('leaderboard')} onTouchStart={preloadByRoute('leaderboard')}>Leaderboard</NavLink>
-            <NavLink to="/marketplace" className={navLinkClassName} onMouseEnter={preloadByRoute('marketplace')} onFocus={preloadByRoute('marketplace')} onTouchStart={preloadByRoute('marketplace')}>Marketplace</NavLink>
-            <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`} onMouseEnter={preloadByRoute('profile')} onFocus={preloadByRoute('profile')} onTouchStart={preloadByRoute('profile')}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
+            <NavLink to="/training" className={navLinkClassName}>Training</NavLink>
+            <NavLink to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
+            <NavLink to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
+            <NavLink to="/marketplace" className={navLinkClassName}>Marketplace</NavLink>
+            <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
             {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout">Sign Out</button>}
           </nav>
         </div>
@@ -335,21 +262,20 @@ function AppLayout() {
       
       <main>
         <ChatWidget currentUser={currentUser} />
-        <Suspense fallback={<RouteLoader />}>
-          <Routes>
-            <Route path="/" element={<Home currentUser={currentUser} />} />
-            <Route path="/play" element={<Play />} />
-            <Route path="/practice" element={<Play practicePage />} />
-            <Route path="/tournaments" element={<Tournaments />} />
-            <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/marketplace" element={<Marketplace />} />
-            <Route path="/admin" element={<AdminPanel />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/spectate/:roomId" element={<Spectate />} />
-            <Route path="/results/:raceId" element={<Results />} />
-            <Route path="*" element={<Notfound />} />
-          </Routes>
-        </Suspense>
+        <Routes>
+          <Route path="/" element={<Home currentUser={currentUser} />} />
+          <Route path="/play" element={<Play />} />
+          <Route path="/training" element={<TrainingPage />} />
+          <Route path="/practice" element={<Play practicePage />} />
+          <Route path="/tournaments" element={<Tournaments />} />
+          <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/marketplace" element={<Marketplace />} />
+          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/spectate/:roomId" element={<Spectate />} />
+          <Route path="/results/:raceId" element={<Results />} />
+          <Route path="*" element={<Notfound />} />
+        </Routes>
       </main>
 
       <footer className="arena-footer">
