@@ -3931,7 +3931,7 @@ def _complete_live_race_if_ready(room: Dict[str, Any], conn=None) -> None:
     _persist_completed_live_race(room, conn=conn)
 
 
-def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
+def _finalize_live_room_if_expired(room: Dict[str, Any], conn=None) -> bool:
     if not room or str(room.get('status') or '').lower() == 'completed':
         return False
 
@@ -3992,18 +3992,21 @@ def _finalize_live_room_if_expired(room: Dict[str, Any]) -> bool:
     # escrow, so this is a no-op for them.
     if ranked_player_ids:
         try:
-            settlement_conn = get_connection()
+            owns_settlement_conn = conn is None
+            settlement_conn = conn or get_connection()
             try:
                 _settle_private_room_stakes(room, ranked_player_ids, settlement_conn)
-                settlement_conn.commit()
+                if owns_settlement_conn:
+                    settlement_conn.commit()
             finally:
-                _return_connection(settlement_conn)
+                if owns_settlement_conn:
+                    _return_connection(settlement_conn)
         except Exception as settle_err:
             print(f"Error settling private room stakes: {settle_err}")
 
     # Log stats directly to your historical logs safely
     try:
-        _persist_completed_live_race(room)
+        _persist_completed_live_race(room, conn=conn)
     except Exception as db_err:
         print(f"Error persisting data logs: {db_err}")
 
@@ -6869,19 +6872,29 @@ def get_live_race(room_id: str):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            room = _get_live_room(cur, room_id)
+            # for_update=True: without this lock, two concurrent GET requests
+            # near a race's expiry moment (ordinary polling from two players
+            # is enough - no malicious intent required) could each load their
+            # own copy of the room before either write lands, both see it as
+            # not-yet-finalized, and both pay out the stake pool via
+            # _finalize_live_room_if_expired -> _settle_private_room_stakes.
+            # The lock forces a second concurrent request to wait until the
+            # first one's commit, by which point the room is already
+            # persisted as completed/settled.
+            room = _get_live_room(cur, room_id, for_update=True)
             if not room:
                 return jsonify({'message': 'Live race room not found.'}), 404
-            expired = _finalize_live_room_if_expired(room)
+            expired = _finalize_live_room_if_expired(room, conn=conn)
             viewer = _get_user_from_header(conn)
             viewer_user_id = int(viewer['id']) if viewer else None
             is_spectator = viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}
             if is_spectator:
                 room['spectators'] = int(room.get('spectators') or 0) + 1
-            # Only persist when something meaningful changed
             if expired or is_spectator:
                 _save_live_room(cur, room)
-                conn.commit()
+            # Always commit (even when nothing changed) to release the
+            # FOR UPDATE lock before the connection goes back to the pool.
+            conn.commit()
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
     finally:
         _return_connection(conn)
@@ -6892,10 +6905,13 @@ def get_live_race_by_invite(invite_code: str):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            room = _get_live_room_by_invite(cur, invite_code)
+            # See get_live_race for why for_update=True matters here: it
+            # prevents two simultaneous requests from both finalizing (and
+            # both paying out) the same expired room.
+            room = _get_live_room_by_invite(cur, invite_code, for_update=True)
             if not room:
                 return jsonify({'message': 'Friend battle room not found.'}), 404
-            _finalize_live_room_if_expired(room)
+            _finalize_live_room_if_expired(room, conn=conn)
             _save_live_room(cur, room)
             conn.commit()
             viewer = _get_user_from_header(conn)
@@ -8518,6 +8534,13 @@ def submit_race():
         # it does NOT feed into users.wins or race_history.place_position,
         # which the live-race path also aggregates from.
         beat_own_average = wpm >= float(user.get('wpm') or 0)
+        # Solo/practice races have no entry fee and no opponent, so paying
+        # this straight into the player's withdrawable balance was free
+        # money - a player could mint at least 50 (scaling with wpm) per
+        # race with zero cost, no cap. It's kept as a stats/season-points
+        # figure (see _apply_user_performance_update /
+        # _increment_season_stats) and shown in the response for UI/history
+        # purposes, but it is intentionally never credited to users.balance.
         earnings = int(max(50, round(wpm * 3)))
         now_dt = datetime.utcnow()
 
@@ -8536,10 +8559,6 @@ def submit_race():
                 verification_method=verification_method,
                 anti_cheat_flags=anti_cheat_flags,
             )
-            # Solo earnings still credit the player's balance directly here;
-            # _apply_user_performance_update intentionally doesn't touch
-            # balance since live races pay out prizes separately.
-            cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (earnings, user['id']))
 
         conn.commit()
 
