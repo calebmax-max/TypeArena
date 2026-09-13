@@ -32,10 +32,32 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
     <div className="training-lesson">
       <div className="training-lesson__header">
         <h2>{lesson.title}</h2>
-        <p className="training-lesson__bar">
-          Pass bar: {lesson.minWpm} WPM at {lesson.minAccuracy}% accuracy
-          {required > 1 && ` · needs ${required} separate passes`}
-        </p>
+        <div className="training-lesson__bar">
+          <span className="training-lesson__bar-stat">{lesson.minWpm} WPM</span>
+          <span className="training-lesson__bar-divider" aria-hidden="true" />
+          <span className="training-lesson__bar-stat">{lesson.minAccuracy}% accuracy</span>
+        </div>
+
+        {required > 1 && (
+          <div
+            className="training-lesson__passes"
+            role="img"
+            aria-label={`${outcome ? outcome.passCount : 0} of ${required} required passes complete`}
+          >
+            {Array.from({ length: required }).map((_, i) => (
+              <span
+                key={i}
+                className={
+                  'training-lesson__pass-segment' +
+                  (outcome && i < outcome.passCount ? ' training-lesson__pass-segment--filled' : '')
+                }
+              />
+            ))}
+            <span className="training-lesson__passes-label">
+              {outcome ? outcome.passCount : 0}/{required} passes
+            </span>
+          </div>
+        )}
       </div>
 
       {!outcome && (

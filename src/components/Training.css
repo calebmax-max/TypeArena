@@ -1,3 +1,27 @@
+/* ==========================================================================
+   Tokens
+   ========================================================================== */
+
+:root {
+  --tp-ink: #16281f;
+  --tp-paper: #f6f8f4;
+  --tp-forest: #1f4d3b;
+  --tp-forest-dark: #163a2c;
+  --tp-moss: #2f6f4f;
+  --tp-moss-hover: #285f43;
+  --tp-mint: #7be0a8;
+  --tp-sage: #e3f0e6;
+  --tp-sage-border: #bfdac9;
+  --tp-muted: #6b7570;
+  --tp-rust: #b3423a;
+  --tp-rust-bg: #fbe6e4;
+  --tp-radius: 10px;
+}
+
+/* ==========================================================================
+   Page shell
+   ========================================================================== */
+
 .training-page {
   display: flex;
   flex-direction: column;
@@ -5,6 +29,7 @@
   max-width: 900px;
   margin: 0 auto;
   padding: 1.5rem;
+  color: var(--tp-ink);
 }
 
 .training-page--curriculum {
@@ -15,6 +40,8 @@
 
 .training-page__sidebar {
   flex: 0 0 260px;
+  position: sticky;
+  top: 1.5rem;
 }
 
 .training-page__main {
@@ -22,7 +49,9 @@
   min-width: 0;
 }
 
-/* --- Placement test --- */
+/* ==========================================================================
+   Placement test
+   ========================================================================== */
 
 .training-placement {
   display: flex;
@@ -32,15 +61,18 @@
 
 .training-placement__timer {
   font-variant-numeric: tabular-nums;
-  color: #6b6b6b;
+  color: var(--tp-muted);
 }
 
 .training-placement__stats {
   font-size: 1.25rem;
   font-weight: 600;
+  color: var(--tp-forest);
 }
 
-/* --- Curriculum map --- */
+/* ==========================================================================
+   Curriculum map
+   ========================================================================== */
 
 .training-map {
   display: flex;
@@ -50,8 +82,7 @@
 
 .training-map__unit-title {
   font-size: 0.85rem;
-  letter-spacing: 0.02em;
-  color: #4a4a4a;
+  color: var(--tp-muted);
   margin-bottom: 0.4rem;
 }
 
@@ -71,12 +102,24 @@
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.65rem;
-  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--tp-radius);
   border: 1px solid transparent;
-  background: #f3f3f1;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #ebeae5;
   cursor: pointer;
   font-size: 0.9rem;
+  color: var(--tp-ink);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.training-map__lesson-button:hover:not(:disabled) {
+  background: var(--tp-sage);
+}
+
+.training-map__lesson-button:focus-visible {
+  outline: 2px solid var(--tp-moss);
+  outline-offset: 1px;
 }
 
 .training-map__lesson-button:disabled {
@@ -85,56 +128,128 @@
 }
 
 .training-map__lesson--current .training-map__lesson-button {
-  border-color: #2f6f4f;
-  background: #eaf4ee;
+  border-color: var(--tp-moss);
+  background: var(--tp-sage);
+  box-shadow: none;
+  font-weight: 600;
 }
 
 .training-map__lesson--passed .training-map__lesson-button {
-  background: #f0f0f0;
-  color: #6b6b6b;
+  background: transparent;
+  box-shadow: none;
+  color: var(--tp-muted);
 }
 
 .training-map__lesson-meta {
   font-size: 0.75rem;
-  color: #7a7a7a;
+  color: var(--tp-muted);
   white-space: nowrap;
 }
 
-/* --- Lesson runner --- */
+/* ==========================================================================
+   Lesson runner
+   ========================================================================== */
 
 .training-lesson {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
+.training-lesson__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.training-lesson__header h2 {
+  margin: 0;
+}
+
+/* The pass-requirement bar: a visible pill, not caption text */
 .training-lesson__bar {
-  color: #6b6b6b;
-  font-size: 0.9rem;
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: var(--tp-sage);
+  border: 1px solid var(--tp-sage-border);
+  font-size: 0.85rem;
+  color: var(--tp-forest);
+}
+
+.training-lesson__bar-stat {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.training-lesson__bar-divider {
+  width: 1px;
+  height: 0.9em;
+  background: var(--tp-sage-border);
+}
+
+/* Segmented progress bar for lessons that need multiple passes */
+.training-lesson__passes {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.training-lesson__pass-segment {
+  width: 2.25rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--tp-sage);
+  border: 1px solid var(--tp-sage-border);
+}
+
+.training-lesson__pass-segment--filled {
+  background: var(--tp-moss);
+  border-color: var(--tp-moss);
+}
+
+.training-lesson__passes-label {
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--tp-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .training-lesson__result {
-  padding: 1rem;
-  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  border-radius: var(--tp-radius);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
 .training-lesson__result--pass {
-  background: #eaf4ee;
+  background: var(--tp-sage);
+  border: 1px solid var(--tp-sage-border);
 }
 
 .training-lesson__result--fail {
-  background: #fbeeee;
+  background: var(--tp-rust-bg);
+  border: 1px solid #f0c9c5;
 }
 
 .training-lesson__result-stats {
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--tp-forest);
+  font-variant-numeric: tabular-nums;
 }
 
-/* --- Typing box --- */
+.training-lesson__result--fail .training-lesson__result-stats {
+  color: var(--tp-rust);
+}
+
+/* ==========================================================================
+   Typing box
+   ========================================================================== */
 
 .training-typing-box {
   display: flex;
@@ -147,28 +262,31 @@
   font-size: 1.1rem;
   line-height: 1.7;
   letter-spacing: 0.01em;
-  padding: 1rem;
-  border-radius: 8px;
-  background: #fafaf8;
-  border: 1px solid #e4e4e0;
+  padding: 1.25rem 1.4rem;
+  border-radius: var(--tp-radius);
+  background: var(--tp-forest);
+  border: 1px solid var(--tp-forest-dark);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   max-width: 78ch;
 }
 
 .training-typing-box__char {
-  color: #2b2b2b;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .training-typing-box__char--correct {
-  color: #2f6f4f;
+  color: var(--tp-mint);
 }
 
 .training-typing-box__char--incorrect {
-  color: #b3423a;
-  background: #fbe6e4;
+  color: #ffe1dd;
+  background: rgba(179, 66, 58, 0.55);
+  border-radius: 3px;
 }
 
 .training-typing-box__char--cursor {
-  border-bottom: 2px solid #2f6f4f;
+  color: #fff;
+  border-bottom: 2px solid var(--tp-mint);
 }
 
 .training-typing-box__input {
@@ -176,23 +294,46 @@
   min-height: 90px;
   font-family: 'Courier New', Courier, monospace;
   font-size: 1.05rem;
-  padding: 0.75rem;
-  border-radius: 8px;
-  border: 1px solid #d8d8d3;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--tp-radius);
+  border: 1px solid var(--tp-sage-border);
+  background: #fff;
+  color: var(--tp-ink);
   resize: vertical;
 }
 
+.training-typing-box__input:focus-visible {
+  outline: 2px solid var(--tp-moss);
+  outline-offset: 1px;
+}
+
+.training-typing-box__input:disabled {
+  background: var(--tp-paper);
+  color: var(--tp-muted);
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+
 .training-button {
   align-self: flex-start;
-  padding: 0.55rem 1.1rem;
-  border-radius: 6px;
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--tp-radius);
   border: none;
-  background: #2f6f4f;
+  background: var(--tp-moss);
   color: #fff;
   font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
 .training-button:hover {
-  background: #285f43;
+  background: var(--tp-moss-hover);
+}
+
+.training-button:focus-visible {
+  outline: 2px solid var(--tp-forest);
+  outline-offset: 2px;
 }
