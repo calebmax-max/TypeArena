@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import TypingBox from './TypingBox';
 import { useTypingSession } from './useTypingSession';
-import { PLACEMENT_DURATION_SECONDS, PLACEMENT_SAMPLE_TEXT, findPlacementLesson } from './PlacementTest';
+import { PLACEMENT_DURATION_SECONDS, PLACEMENT_SAMPLE_TEXT, findPlacementLesson } from './placementTest';
 import { LESSON_SEQUENCE, getLessonById } from './curriculum';
 import { applyPlacement } from './trainingProgress';
 
