@@ -2,11 +2,14 @@ import React, { useMemo, useState } from 'react';
 import TypingBox from './TypingBox';
 import { useTypingSession } from './useTypingSession';
 import { generateLessonText, requiredPassesFor } from './curriculum';
-import { recordAttempt, loadProgress } from './trainingProgress';
+import { recordAttempt } from './trainingProgress';
 
 export default function LessonRunner({ lesson, onLessonPassed }) {
   const [attemptKey, setAttemptKey] = useState(0);
   const [outcome, setOutcome] = useState(null); // { wpm, accuracy, passed, passCount }
+  // attemptKey isn't read inside generateLessonText - it exists purely to force a
+  // fresh passage each time the learner retries the same lesson.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const targetText = useMemo(() => generateLessonText(lesson), [lesson, attemptKey]);
   const required = requiredPassesFor(lesson);
 
