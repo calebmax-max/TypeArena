@@ -7080,7 +7080,7 @@ def update_live_race_progress(room_id: str):
         player['currentAccuracy'] = round(current_accuracy, 1)
         if room['status'] == 'countdown':
             room['status'] = 'racing'
-        expired = _finalize_live_room_if_expired(room)
+        expired = _finalize_live_room_if_expired(room, conn=conn)
         status_changed = room.get('status') != status_before
         should_persist = status_changed or expired or now_ts - float(evidence.get('lastPersistAt') or 0) >= 1
         if should_persist:

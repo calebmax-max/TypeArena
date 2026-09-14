@@ -1019,7 +1019,22 @@ export default function Play({ practicePage = false }){
             // is the source of truth for WPM/accuracy - once its response lands,
             // patch the displayed result to match it (typingEngine.js's "always
             // let the server's response be the number you display" guidance).
+            //
+            // EXCEPTION: if raceToken didn't make it in time (e.g. startRace()'s
+            // token-mint request was still in flight on a fresh page load - it
+            // competes with fetchCurrentUser/fetchMediaSettings/content-load on
+            // mount), the backend flags this submission "legacy_client_unverified"
+            // and caps the WPM/accuracy it returns as an anti-cheat penalty for
+            // unverified runs (see typingApi.js's submitRaceResult docstring).
+            // That capped number is real (often a legitimate 0/low value), but it
+            // is NOT a correction of the player's actual typing - it's a penalty
+            // for missing proof. Never let it silently overwrite the client-
+            // computed numbers that were already displayed.
             if (!serverResult) return;
+            if (serverResult.flags?.includes('legacy_client_unverified')) {
+              console.warn('Race submitted unverified (raceToken missing/late) - keeping client-computed WPM/accuracy.');
+              return;
+            }
             const officialWpm = typeof serverResult.wpm === 'number' ? serverResult.wpm : undefined;
             const officialAccuracy = typeof serverResult.accuracy === 'number' ? serverResult.accuracy : undefined;
             if (officialWpm === undefined && officialAccuracy === undefined) return;
