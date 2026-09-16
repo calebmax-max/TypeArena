@@ -498,10 +498,12 @@ export default function Play({ practicePage = false }){
     if (!raceResult) return;
     if (raceResult.netWPM != null) return;
     const wpmValueForNet = Number(raceResult.wpm);
-    const accuracyValueForNet = Number(raceResult.accuracy);
-    if (!Number.isFinite(wpmValueForNet) || !Number.isFinite(accuracyValueForNet)) return;
+    if (!Number.isFinite(wpmValueForNet)) return;
+    // wpm is already net-of-errors (calculateOfficialWPM / server's
+    // _compute_official_wpm both subtract the error penalty already), so
+    // this just mirrors it rather than multiplying by accuracy again.
     setRaceResult((prev) => (prev && prev.netWPM == null
-      ? { ...prev, netWPM: Math.max(0, Math.round((wpmValueForNet * (accuracyValueForNet / 100)) * 10) / 10) }
+      ? { ...prev, netWPM: Math.max(0, Math.round(wpmValueForNet * 10) / 10) }
       : prev));
   }, [raceResult]);
   const [generatedContent, setGeneratedContent] = useState(null);
@@ -899,6 +901,13 @@ export default function Play({ practicePage = false }){
   // Refs that mirror fast-changing state so useCallback dependencies stay stable
   const typingTextRef = useRef(typingText);
   const timeLeftRef   = useRef(timeLeft);
+  // Wall-clock start of the current solo/practice race, set in
+  // startPracticeRaceWithMode. finishRace uses this instead of
+  // `duration - timeLeftRef.current`: that subtraction was always off by
+  // ~1s (finishRace can run from inside the setTimeLeft(1) updater, before
+  // the ref itself has been written to 0) and drifts further if the timer
+  // interval gets throttled by a backgrounded tab.
+  const raceStartedAtRef = useRef(null);
   const replayFramesRef = useRef(replayFrames);
   useEffect(() => { typingTextRef.current   = typingText;   }, [typingText]);
   useEffect(() => { timeLeftRef.current     = timeLeft;     }, [timeLeft]);
@@ -993,7 +1002,14 @@ export default function Play({ practicePage = false }){
         const currentTimeLeft     = timeLeftRef.current;
         const currentReplayFrames = replayFramesRef.current;
 
-        const elapsed = Math.max(1, duration - currentTimeLeft);
+        // Wall-clock elapsed, capped at duration - see raceStartedAtRef comment
+        // above. Replaces `duration - currentTimeLeft`, which could read one
+        // tick low (finishRace can fire from inside the setTimeLeft updater
+        // before timeLeftRef reflects the final tick) and drifts if the
+        // timer's setInterval gets throttled in a backgrounded tab.
+        const elapsed = raceStartedAtRef.current
+          ? Math.min(duration, Math.max(1, (Date.now() - raceStartedAtRef.current) / 1000))
+          : Math.max(1, duration - currentTimeLeft);
         // Bug A fix: finishRace previously always computed accuracy against
         // generatedContent?.passage, which is wrong when the player is using the
         // daily challenge or custom text. Mirror the same sourceText priority chain
@@ -1071,14 +1087,22 @@ export default function Play({ practicePage = false }){
             const officialAccuracy = typeof serverResult.accuracy === 'number' ? serverResult.accuracy : undefined;
             if (officialWpm === undefined && officialAccuracy === undefined) return;
             setRaceResult((prev) => {
-              if (!prev) return prev;
+              // Guard against a late response landing on a race that's no
+              // longer the one being displayed (e.g. the player already
+              // started a new race before this response arrived).
+              if (!prev || prev.id !== finalData.id) return prev;
               const nextWpm = officialWpm ?? prev.wpm;
               const nextAccuracy = officialAccuracy ?? prev.accuracy;
               return {
                 ...prev,
                 wpm: nextWpm,
                 accuracy: nextAccuracy,
-                netWPM: Math.max(0, Math.round((nextWpm * (nextAccuracy / 100)) * 10) / 10),
+                // calculateOfficialWPM (client) and _compute_official_wpm
+                // (server) both already subtract the error penalty, so
+                // nextWpm IS the net figure - multiplying by accuracy again
+                // here double-penalizes errors and was the other half of
+                // the "netWPM collapses to ~0" symptom.
+                netWPM: Math.max(0, Math.round(nextWpm * 10) / 10),
                 shareText: `I typed ${Math.round(nextWpm)} WPM on TypeArena.`,
                 antiCheatFlags: serverResult.flags || prev.antiCheatFlags,
               };
@@ -1124,7 +1148,10 @@ export default function Play({ practicePage = false }){
 
         const resultPayload = {
             ...finalData,
-            netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+            // wpm is already net-of-errors (calculateOfficialWPM) - see the
+            // reconciliation comment above for why this no longer multiplies
+            // by accuracy again.
+            netWPM: Math.max(0, Math.round(wpm * 10) / 10),
             coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
             replayFrames: currentReplayFrames,
             shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
@@ -1353,6 +1380,7 @@ export default function Play({ practicePage = false }){
     showNotice(null);
     setRaceOver(false);
     setTimeLeft(duration);
+    raceStartedAtRef.current = Date.now();
     // Always reset race-session state for a clean start (same as startPracticeRace)
     setStreak(0);
     setWpmHistory([]);

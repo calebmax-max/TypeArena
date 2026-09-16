@@ -331,10 +331,17 @@ export const submitRaceResult = async (raceData) => {
     });
     const result = await parseResponse(response);
 
-    const refreshedUser = await fetchCurrentUser();
-    if (refreshedUser) {
-      setStoredUser(refreshedUser);
-    }
+    // Refresh the cached user snapshot (wins/wpm/earnings totals) in the
+    // background - don't make the caller wait on a second round trip just
+    // to get the official wpm/accuracy this call already returned. Awaiting
+    // this here was adding 1-3s of pure delay between the race ending and
+    // the corrected numbers reaching the results screen.
+    fetchCurrentUser()
+      .then((refreshedUser) => {
+        if (refreshedUser) setStoredUser(refreshedUser);
+      })
+      .catch((err) => console.warn('Background user refresh failed (non-fatal):', err));
+
     return result;
   } catch (error) {
     console.error('Error submitting race result:', error);

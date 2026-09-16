@@ -13,11 +13,13 @@
 
 // --- Official WPM formula (mirrors backend _compute_official_wpm) ---
 //
-//   WPM = ((totalCharactersTyped / 5) - uncorrectedErrors) / minutesElapsed
+//   WPM = ((totalCharactersTyped / 5) - (uncorrectedErrors / 5)) / minutesElapsed
 //
-// "Every 5 characters (including spaces and symbols) counts as one word",
-// and each uncorrected error subtracts a full word-equivalent per the
-// error/time penalty in the spec.
+// "Every 5 characters (including spaces and symbols) counts as one word".
+// Errors are counted in CHARACTERS but must be converted to word-equivalents
+// (divided by 5) before being subtracted from grossWords, which is also in
+// words - otherwise every single wrong character subtracts a whole word,
+// and short/fast races (e.g. 30s) collapse to 0 WPM after a handful of typos.
 
 export const countUncorrectedErrors = (originalText, typedText) => {
   const original = originalText || '';
@@ -33,21 +35,33 @@ export const countUncorrectedErrors = (originalText, typedText) => {
   return errors;
 };
 
+// Returns the NET WPM (errors already folded in) - this is the number the
+// backend treats as authoritative. Do not additionally multiply this by
+// accuracy to get a "net" figure; that double-penalizes errors. If you want
+// a separate GROSS WPM for display, compute it as
+// ((typedText.length / 5) / minutesElapsed) with no error subtraction.
 export const calculateOfficialWPM = (originalText, typedText, timeElapsedSeconds) => {
   const totalCharacters = (typedText || '').length;
   const uncorrectedErrors = countUncorrectedErrors(originalText, typedText);
   const minutesElapsed = Math.max(0.5, timeElapsedSeconds || 0) / 60;
   const grossWords = totalCharacters / 5;
-  const wpm = (grossWords - uncorrectedErrors) / minutesElapsed;
+  const errorWords = uncorrectedErrors / 5;
+  const wpm = (grossWords - errorWords) / minutesElapsed;
   return Math.max(0, Math.round(wpm * 10) / 10);
 };
 
+// Accuracy is correct characters typed / characters TYPED, not / the length
+// of the full target passage - matches the backend's _score_typed_text,
+// which divides by total_characters = len(typed_text). Dividing by the
+// target passage's length instead made accuracy (and therefore netWPM,
+// wherever it's still derived from accuracy) collapse toward 0 for any
+// short race, since only a fraction of a long passage gets typed in 30s.
 export const calculateAccuracy = (originalText, typedText) => {
-  const totalChars = (originalText || '').length;
-  if (totalChars === 0) return 100;
+  const totalChars = (typedText || '').length;
+  if (totalChars === 0) return 0;
   const uncorrectedErrors = countUncorrectedErrors(originalText, typedText);
-  const correctChars = Math.max(0, (typedText || '').length - uncorrectedErrors);
-  return Math.round((correctChars / totalChars) * 1000) / 10;
+  const correctChars = Math.max(0, totalChars - uncorrectedErrors);
+  return Math.round(Math.min(100, (correctChars / totalChars) * 100) * 10) / 10;
 };
 
 // --- Deprecated, kept for backward compatibility with any existing

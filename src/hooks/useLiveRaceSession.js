@@ -153,19 +153,20 @@ export function useLiveRaceSession({
       currentTypingText
     );
 
+    const resolvedWpm = Number(myResult?.wpm ?? fallbackWpm);
+
     return {
       id: room.id || generateRaceId(),
-      wpm: Number(myResult?.wpm ?? fallbackWpm),
+      wpm: resolvedWpm,
       accuracy: Number(myResult?.accuracy ?? fallbackAccuracy),
       duration: Number(room.duration || duration),
       mode: room.mode || mode,
       language: room.language || language,
-      netWPM: Math.max(
-        0,
-        Math.round(
-          (Number(myResult?.wpm ?? fallbackWpm) * (Number(myResult?.accuracy ?? fallbackAccuracy) / 100)) * 10
-        ) / 10
-      ),
+      // resolvedWpm is already net-of-errors (server's official wpm, or the
+      // calculateOfficialWPM fallback) - multiplying by accuracy again here
+      // double-penalized errors, which is why Net WPM read near-zero on
+      // short/high-error races even after the WPM figure itself corrected.
+      netWPM: Math.max(0, Math.round(resolvedWpm * 10) / 10),
       coachTip:
         Number(myResult?.accuracy ?? fallbackAccuracy) < 92
           ? 'Accuracy dipped. Try smoother keystrokes and avoid forcing speed.'
@@ -603,9 +604,12 @@ export function useLiveRaceSession({
       }
 
       const freshPayload = updatedRoom?.id ? buildRoomResultPayload(updatedRoom) : null;
+      // wpm here is calculateOfficialWPM's return value, already net of
+      // errors - see the matching comment in buildRoomResultPayload for why
+      // this no longer multiplies by accuracy again.
       const fallbackPayload = freshPayload || {
         ...finalData,
-        netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+        netWPM: Math.max(0, Math.round(wpm * 10) / 10),
         coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
         replayFrames: replayFramesRef.current,
         shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
@@ -627,7 +631,7 @@ export function useLiveRaceSession({
         console.error('Live race submit error:', error);
         const fallbackPayload = {
           ...finalData,
-          netWPM: Math.max(0, Math.round((wpm * (accuracy / 100)) * 10) / 10),
+          netWPM: Math.max(0, Math.round(wpm * 10) / 10),
           coachTip: accuracy < 92 ? 'Accuracy dipped.' : 'Strong run.',
           replayFrames: replayFramesRef.current,
           shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,

@@ -3716,10 +3716,21 @@ def _score_typed_text(target_text: str, typed_text: str) -> Dict[str, Any]:
 
 
 def _compute_official_wpm(total_characters: int, uncorrected_errors: int, time_spent_seconds: float) -> float:
-    """WPM = ((characters typed / 5) - uncorrected errors) / minutes elapsed."""
+    """Net WPM = ((characters typed / 5) - (uncorrected errors / 5)) / minutes elapsed.
+
+    uncorrected_errors is a CHARACTER count, so it must be converted to
+    word-equivalents (divided by 5, same as total_characters) before being
+    subtracted from gross_words. Previously this subtracted raw character
+    errors from a word count, so every single wrong character cost a whole
+    word - on a 30s race that's enough to drive WPM to 0 after ~25 typos,
+    while a 60s race (double the gross-word headroom) looked fine. This is
+    net-of-errors already; do not additionally multiply the result by
+    accuracy elsewhere to get a "net" figure - that double-penalizes.
+    """
     time_minutes = max(float(time_spent_seconds), 0.5) / 60.0
     gross_words = total_characters / 5.0
-    wpm = (gross_words - uncorrected_errors) / time_minutes
+    error_words = uncorrected_errors / 5.0
+    wpm = (gross_words - error_words) / time_minutes
     return max(0.0, wpm)
 
 
@@ -3808,6 +3819,7 @@ def evaluate_race_submission(
     blur_events: Any = None,
     paste_attempted: bool = False,
     duration_limit_s: Optional[float] = None,
+    wall_elapsed_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Shared scoring + anti-cheat pipeline used by both the solo-practice
     and live-race submit paths, once each has independently established
@@ -3815,9 +3827,18 @@ def evaluate_race_submission(
     race token for solo races, or the live room's `startedAt`/`text` for
     multiplayer). Returns the official stats plus any anti-cheat flags;
     callers decide hard-reject vs. soft-flag based on their own policy.
+
+    `time_spent_seconds` is what WPM is scored against - callers may cap it
+    at the race's own duration limit so fixed network/RTT overhead doesn't
+    disproportionately drag down short races. `wall_elapsed_seconds`, if
+    given, is the UNCAPPED clock reading and is what the exceeded-duration
+    anti-cheat flag checks instead, so capping time_spent_seconds for
+    scoring never hides genuine overtime play. Defaults to
+    time_spent_seconds when omitted.
     """
     scored = _score_typed_text(target_text, typed_text)
     wpm = _compute_official_wpm(scored['totalCharacters'], scored['uncorrectedErrors'], time_spent_seconds)
+    wall_elapsed = wall_elapsed_seconds if wall_elapsed_seconds is not None else time_spent_seconds
 
     flags = []
     flags += _human_capability_flags(wpm, scored['totalCharacters'])
@@ -3825,8 +3846,8 @@ def evaluate_race_submission(
     flags += _context_switch_flags(blur_events)
     if paste_attempted:
         flags.append('paste_event_reported_by_client')
-    if duration_limit_s and time_spent_seconds > float(duration_limit_s) + 5:
-        flags.append(f'exceeded_allotted_duration(elapsed_s={time_spent_seconds:.1f},limit_s={duration_limit_s})')
+    if duration_limit_s and wall_elapsed > float(duration_limit_s) + 5:
+        flags.append(f'exceeded_allotted_duration(elapsed_s={wall_elapsed:.1f},limit_s={duration_limit_s})')
 
     return {
         'wpm': round(wpm, 1),
@@ -7268,9 +7289,25 @@ def submit_live_race(room_id: str):
         evidence = (player or {}).get('_antiCheat') or {}
         started_at = _parse_iso_datetime(room.get('startedAt'))
         # The room's own startedAt (set server-side when the countdown
-        # ends, see queue_live_race / start_live_race_room) is the time
-        # sync source of truth here - never anything the client reports.
-        elapsed_seconds = max(1.0, datetime.utcnow().timestamp() - started_at.timestamp()) if started_at else 1.0
+        # begins, see queue_live_race / start_live_race_room / syncRoomClock
+        # on the client) marks the START OF THE COUNTDOWN, not the start of
+        # typing - the client subtracts the countdown before computing its
+        # own timeLeft (see syncRoomClock's raceElapsed math). Previously
+        # this measured elapsed time from startedAt directly, so with the
+        # default ~10s countdown a 30s race was scored over ~40s (a ~25%
+        # WPM cut), while a 60s race only lost ~14% - exactly the
+        # duration-dependent discrepancy between client and server numbers.
+        # wall_elapsed (uncapped) still drives the exceeded-duration flag;
+        # elapsed_seconds (countdown-adjusted, capped at room duration) is
+        # what scoring uses, matching the client's own clock.
+        room_duration_s = float(room.get('duration') or 60)
+        if started_at:
+            countdown_s = float(room.get('countdown') or LIVE_RACE_COUNTDOWN_SECONDS)
+            wall_elapsed = datetime.utcnow().timestamp() - started_at.timestamp()
+            elapsed_seconds = max(1.0, min(wall_elapsed - countdown_s, room_duration_s))
+        else:
+            wall_elapsed = 1.0
+            elapsed_seconds = 1.0
         target_text = str(room.get('text') or '')
         typed_text = payload.get('typedText')
         anti_cheat_flags: list = []
@@ -7284,7 +7321,8 @@ def submit_live_race(room_id: str):
                 keystroke_log=payload.get('keystrokeLog'),
                 blur_events=evidence.get('blurEvents'),
                 paste_attempted=bool(evidence.get('pasteAttempted') or payload.get('pasteAttempted')),
-                duration_limit_s=room.get('duration'),
+                duration_limit_s=room_duration_s,
+                wall_elapsed_seconds=wall_elapsed,
             )
             wpm = evaluation['wpm']
             accuracy = evaluation['accuracy']
@@ -8652,7 +8690,18 @@ def submit_race():
             except ValueError as exc:
                 return jsonify({'message': str(exc)}), 400
 
-            time_spent_seconds = max(0.5, datetime.utcnow().timestamp() - float(token_body['ts']))
+            # wall_elapsed includes network/server overhead between /races/start
+            # and /races/submit (RTT twice, plus any cold start) on top of the
+            # player's actual typing time. That overhead is a near-fixed number
+            # of seconds, so it's a much bigger fraction of a 30s race than a
+            # 60s one - capping at the race's own duration limit keeps scoring
+            # consistent with what the client measured, while still using
+            # wall_elapsed (uncapped) for the exceeded-duration anti-cheat flag.
+            wall_elapsed = max(0.5, datetime.utcnow().timestamp() - float(token_body['ts']))
+            duration_limit_s = token_body.get('dl')
+            time_spent_seconds = (
+                min(wall_elapsed, float(duration_limit_s)) if duration_limit_s else wall_elapsed
+            )
             evaluation = evaluate_race_submission(
                 target_text=target_text,
                 typed_text=typed_text,
@@ -8660,7 +8709,8 @@ def submit_race():
                 keystroke_log=payload.get('keystrokeLog'),
                 blur_events=payload.get('blurEvents'),
                 paste_attempted=bool(payload.get('pasteAttempted')),
-                duration_limit_s=token_body.get('dl'),
+                duration_limit_s=duration_limit_s,
+                wall_elapsed_seconds=wall_elapsed,
             )
             wpm = evaluation['wpm']
             accuracy = evaluation['accuracy']
