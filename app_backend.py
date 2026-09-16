@@ -1890,17 +1890,17 @@ def _fetch_admin_content(mode: str, language: str, content_type: str, exclude_co
     canonical_mode = _canonical_mode(mode)
     normalized_language = str(language or 'english').strip().lower()
 
-    # Tiered lookup: prefer an exact mode+language match, but rather than
-    # returning nothing (which silently dumps the request into the
-    # template/AI fallback) fall back to any admin passage in that mode
-    # first, then any admin passage in that language, before finally
-    # giving up. This keeps a small admin library usable instead of
-    # requiring every mode/language combination to be filled in before any
-    # of it is ever served.
+    # Tiered lookup: prefer an exact mode+language match, and if that's
+    # empty, widen by dropping the language filter (any language, same
+    # mode) - never the reverse. Mode is the dimension that actually
+    # determines which lane the player is racing in, so it must never be
+    # bypassed: a Marathon passage must never surface in a Speed Burst
+    # room just because both happen to be tagged "english". A previous
+    # version of this also widened on language-only (any mode), which let
+    # admin content leak across modes; that tier has been removed.
     lookup_tiers = (
         ('AND mode=%s AND language=%s', (canonical_mode, normalized_language)),
         ('AND mode=%s', (canonical_mode,)),
-        ('AND language=%s', (normalized_language,)),
     )
 
     rows: list = []
@@ -3773,10 +3773,22 @@ def _keystroke_anti_cheat_flags(keystroke_log: Any, *, total_characters: int) ->
 
 
 def _human_capability_flags(wpm: float, total_characters: int) -> list:
-    """Hard ceiling guard: sustained speeds beyond realistic human typing."""
-    effective_cap = HUMAN_WPM_HARD_CAP if total_characters >= SHORT_TEXT_CHAR_THRESHOLD else HUMAN_WPM_SOFT_CAP_SHORT_TEXT
-    if wpm > effective_cap:
-        return [f'wpm_exceeds_human_ceiling(wpm={wpm:.1f},cap={effective_cap:.1f})']
+    """Ceiling guard for implausible typing speeds.
+
+    Short passages produce noisy WPM readings - a handful of characters
+    finished in under a second can look like several hundred WPM even for
+    a genuine, fast, honest typist - so the short-text ceiling is now its
+    own flag name ('wpm_exceeds_short_text_soft_cap') instead of reusing
+    'wpm_exceeds_human_ceiling'. Callers only hard-reject on the latter, so
+    a short admin-curated passage (very common - see typing_content.passage
+    entered by hand) no longer gets a legitimate result thrown out with a
+    422 and zero WPM recorded. The soft-cap case is still returned as a
+    flag for admin review; it just isn't grounds to discard the run.
+    """
+    if wpm > HUMAN_WPM_HARD_CAP:
+        return [f'wpm_exceeds_human_ceiling(wpm={wpm:.1f},cap={HUMAN_WPM_HARD_CAP:.1f})']
+    if total_characters < SHORT_TEXT_CHAR_THRESHOLD and wpm > HUMAN_WPM_SOFT_CAP_SHORT_TEXT:
+        return [f'wpm_exceeds_short_text_soft_cap(wpm={wpm:.1f},cap={HUMAN_WPM_SOFT_CAP_SHORT_TEXT:.1f})']
     return []
 
 
