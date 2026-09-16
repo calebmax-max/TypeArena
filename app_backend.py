@@ -1880,6 +1880,31 @@ def _fetch_admin_content(mode: str, language: str, content_type: str, exclude_co
     }
 
 
+# Player-facing labels for practice mode pool keys. Distinct from the raw
+# mode/pool key itself (e.g. 'standard' races are branded "1v1 Battle" in
+# the UI, not literally "Standard"). Anything not listed here falls back to
+# a generic underscore-stripped title-case of the pool key.
+MODE_DISPLAY_LABELS = {
+    'standard': '1v1 Battle',
+    'survival': 'Survival',
+    'speed_burst': 'Speed Burst',
+    'code': 'Code Syntax',
+    'coding': 'Code Syntax',
+    'memory': 'Memory',
+    'exam': 'Memory',
+    'quote': 'Quote',
+    'marathon': 'Marathon',
+}
+
+
+def _display_mode_label(pool_key: str) -> str:
+    """'speed_burst' -> 'Speed Burst'; known modes use their branded label."""
+    key = str(pool_key or '').strip().lower()
+    if key in MODE_DISPLAY_LABELS:
+        return MODE_DISPLAY_LABELS[key]
+    return key.replace('_', ' ').title() or 'Standard'
+
+
 def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None) -> Dict[str, Any]:
     normalized_mode = str(mode or 'standard').strip().lower()
     normalized_language = str(language or 'english').strip().lower()
@@ -1904,7 +1929,7 @@ def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None)
             'mode': normalized_mode,
             'language': normalized_language,
             **curated,
-            'title': f'{pool_key.title()} Admin Passage',
+            'title': f'{_display_mode_label(pool_key)} Admin Passage',
             'antiCheatHint': 'Admin-curated content is selected from the published content library.',
             'provider': 'admin-library',
             'model': 'database',
@@ -1926,7 +1951,12 @@ def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None)
         'contentId': selected['contentId'],
         'id': selected['id'],
         'totalContentCount': selected['totalContentCount'],
-        'title': f'{pool_key.title()} Marathon Paragraph',
+        # Was hardcoded to "{pool_key.title()} Marathon Paragraph" for every
+        # mode - a Speed Burst passage displayed as "Speed_Burst Marathon
+        # Paragraph" even though the passage text itself was correctly
+        # pulled from the speed_burst pool. Label now reflects the actual
+        # mode instead of always saying "Marathon".
+        'title': f'{_display_mode_label(pool_key)} Practice Paragraph',
         'antiCheatHint': 'Freshly generated content reduces memorization and replay abuse.',
         'provider': 'local',
         'model': 'template-bank',
@@ -2324,7 +2354,7 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     return {
         'mode': normalized_mode,
         'language': normalized_language,
-        'title': str(parsed.get('title') or f'{normalized_mode.title()} Sprint').strip(),
+        'title': str(parsed.get('title') or f'{_display_mode_label(normalized_mode)} Sprint').strip(),
         'passage': passage,
         'contentId': content_id,
         'id': content_id,
