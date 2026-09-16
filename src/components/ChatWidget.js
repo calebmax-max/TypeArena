@@ -711,13 +711,33 @@ function ChatWidget({ currentUser }) {
   useEffect(() => {
     if (!isLoggedIn) return;
     let debounceTimer = null;
-    const ping = () => apiFetch('/api/presence/ping', { method: 'POST' }).catch(() => {});
-    const onActivity = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(ping, 500); };
+    let stopped = false;
+    const ping = () => apiFetch('/api/presence/ping', { method: 'POST' }).catch((err) => {
+      // A 401/403 here means the cached token is dead - retrying on every
+      // mousemove/keydown forever just floods the backend and can starve
+      // out real requests (like login) behind a wall of rejected pings.
+      // Stop polling and clear the stale session so the app re-prompts
+      // for sign-in instead of silently hammering the server.
+      if (!stopped && (err?.status === 401 || err?.status === 403)) {
+        stopped = true;
+        clearInterval(intervalId);
+        clearTimeout(debounceTimer);
+        localStorage.removeItem('token');
+        localStorage.removeItem('typearena_user');
+        window.dispatchEvent(new Event('typearena-user-changed'));
+      }
+    });
+    const onActivity = () => {
+      if (stopped) return;
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(ping, 500);
+    };
     ping();
-    const intervalId = setInterval(ping, 30000);
+    const intervalId = setInterval(() => { if (!stopped) ping(); }, 30000);
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'focus'];
     events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
     return () => {
+      stopped = true;
       clearTimeout(debounceTimer); clearInterval(intervalId);
       events.forEach((e) => window.removeEventListener(e, onActivity));
     };
