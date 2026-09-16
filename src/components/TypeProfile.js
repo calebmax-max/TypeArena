@@ -324,6 +324,32 @@ export default function TypeProfile() {
     return () => { cancelled = true; };
   }, [applyFreshUserState, currentUser?.id, currentUser?.profileImage]);
 
+  // Loads wallet/race data for a user we already have (e.g. straight after
+  // login/signup, whose response already includes the full user object).
+  // Split out so sign-in doesn't have to pay for a redundant fetchCurrentUser().
+  const loadUserExtras = useCallback(async (user, requestId) => {
+    if (!user?.id) {
+      setWalletConfig({ topUpMethods: [], withdrawMethods: [] });
+      setRaceHistory([]);
+      setWalletHistory([]);
+      return;
+    }
+    try {
+      const [cfg, history, wallet] = await Promise.all([
+        fetchWalletConfig(),
+        fetchRaceHistory(user.id),
+        fetchWalletHistory(),
+      ]);
+      if (requestId !== profileRequestRef.current) return;
+      setWalletConfig(cfg || { topUpMethods: [], withdrawMethods: [] });
+      setRaceHistory(history || []);
+      setWalletHistory(wallet?.items || []);
+    } catch (err) {
+      if (requestId !== profileRequestRef.current) return;
+      console.error('Failed to load wallet/race data:', err);
+    }
+  }, []);
+
   const loadProfile = useCallback(async () => {
     const requestId = profileRequestRef.current + 1;
     profileRequestRef.current = requestId;
@@ -333,27 +359,13 @@ export default function TypeProfile() {
       if (requestId !== profileRequestRef.current) return;
       setCurrentUser(user);
       setLoading(false);
-      if (user?.id) {
-        const [cfg, history, wallet] = await Promise.all([
-          fetchWalletConfig(),
-          fetchRaceHistory(user.id),
-          fetchWalletHistory(),
-        ]);
-        if (requestId !== profileRequestRef.current) return;
-        setWalletConfig(cfg || { topUpMethods: [], withdrawMethods: [] });
-        setRaceHistory(history || []);
-        setWalletHistory(wallet?.items || []);
-      } else {
-        setWalletConfig({ topUpMethods: [], withdrawMethods: [] });
-        setRaceHistory([]);
-        setWalletHistory([]);
-      }
+      await loadUserExtras(user, requestId);
     } catch (err) {
       if (requestId !== profileRequestRef.current) return;
       console.error('Failed to load profile:', err);
       setLoading(false);
     }
-  }, []);
+  }, [loadUserExtras]);
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
   useEffect(() => {
@@ -453,7 +465,10 @@ export default function TypeProfile() {
 
       setShowAuthForm(false);
       setFormData({ email: '', password: '', username: '', phoneNumber: '' });
-      void loadProfile();
+      // user already came back from loginUser/signupUser — no need to
+      // re-fetch it, just load the wallet/race data that depends on it.
+      profileRequestRef.current += 1;
+      void loadUserExtras(user, profileRequestRef.current);
       const redirect = new URLSearchParams(window.location.search).get('redirect');
       if (redirect) navigate(redirect);
     } catch (err) {
