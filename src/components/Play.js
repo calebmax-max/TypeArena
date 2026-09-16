@@ -485,6 +485,25 @@ export default function Play({ practicePage = false }){
   // notice is now { message: string, type: 'info'|'error'|'success'|'warning' }
   const [notice, setNotice] = useState(null);
   const [raceResult, setRaceResult] = useState(null);
+  // Safety net: netWPM is computed explicitly in the solo/practice branch
+  // of finishRace (below), but the live/1v1/tournament path sets
+  // raceResult from inside useLiveRaceSession's submitFinalLiveResult,
+  // which has never included netWPM. Number(undefined).toFixed(1) renders
+  // as the literal string "NaN" on the results screen, which is almost
+  // certainly the "wpm/net wpm sometimes not displaying" symptom for live
+  // races. Backfilling it here means it's correct regardless of which
+  // code path produced raceResult, without needing every future caller of
+  // setRaceResult to remember to include it.
+  useEffect(() => {
+    if (!raceResult) return;
+    if (raceResult.netWPM != null) return;
+    const wpmValueForNet = Number(raceResult.wpm);
+    const accuracyValueForNet = Number(raceResult.accuracy);
+    if (!Number.isFinite(wpmValueForNet) || !Number.isFinite(accuracyValueForNet)) return;
+    setRaceResult((prev) => (prev && prev.netWPM == null
+      ? { ...prev, netWPM: Math.max(0, Math.round((wpmValueForNet * (accuracyValueForNet / 100)) * 10) / 10) }
+      : prev));
+  }, [raceResult]);
   const [generatedContent, setGeneratedContent] = useState(null);
   const [replayFrames, setReplayFrames] = useState([]);
   const replayFrameAtRef = useRef(0);
@@ -659,6 +678,18 @@ export default function Play({ practicePage = false }){
   // Signed receipt from POST /api/races/start - pins the passage hash and
   // server start time so submitRaceResult isn't scored as legacy/unverified.
   const raceTokenRef = useRef(null);
+  // Freezes the exact passage text a solo/practice race is using, set once
+  // in startPracticeRaceWithMode and read by both the live render (what the
+  // player actually types against) and finishRace (what it's scored
+  // against). Previously these were three independent computations with
+  // different fallback strings - the render-time one fell back to a
+  // generic placeholder while the race-start/finish ones fell back to the
+  // mode's description - so if generatedContent wasn't ready yet (e.g. the
+  // Enter-key shortcut skips the Play button's loading guard), the player
+  // could type against one string while the server signed/scored a
+  // completely different one, producing a near-total mismatch and a
+  // 0 WPM / 0 Net WPM result.
+  const practiceSourceTextRef = useRef('');
 
   // Typed notice helper Ã¯Â¿Â½?" keeps callsites clean
   const showNotice = useCallback((message, type = 'info') => {
@@ -968,6 +999,7 @@ export default function Play({ practicePage = false }){
         // daily challenge or custom text. Mirror the same sourceText priority chain
         // used by the component so WPM/accuracy are calculated against the correct passage.
         const sourceText = liveRoom?.text
+            || (practiceSourceTextRef.current || null)
             || (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
             || (useCustomText && customText ? customText : null)
             || generatedContent?.passage
@@ -1185,7 +1217,18 @@ export default function Play({ practicePage = false }){
       }
       if (e.key === 'Enter' && !e.target.closest('input, textarea, button')) {
         if (practicePage) {
-          startPracticeRace();
+          // Mirror the Play button's disabled condition exactly - the
+          // keyboard shortcut previously skipped this check entirely,
+          // letting a race start before generatedContent had loaded. That
+          // meant the player typed against a fallback placeholder string
+          // while the server signed/scored a different fallback (the
+          // mode's description), producing a near-total text mismatch and
+          // a 0 WPM / 0 Net WPM result.
+          const contentReady = !contentLoading && currentUser !== undefined
+            && (useCustomText || dailyChallenge || generatedContent?.passage);
+          if (contentReady) {
+            startPracticeRace();
+          }
         } else {
           startLiveRace();
         }
@@ -1360,6 +1403,11 @@ export default function Play({ practicePage = false }){
       || generatedContent?.passage
       || MODE_CONFIG.find((item) => item.id === resolvedMode)?.description
       || '';
+    // Freeze this immediately: everything that reads "the current passage"
+    // for the rest of this race (the live render, finishRace's scoring)
+    // must use this exact string, not a fresh recomputation that could
+    // pick up a since-changed generatedContent/dailyChallenge/customText.
+    practiceSourceTextRef.current = practicePassageText;
     startRace(practicePassageText, { mode: resolvedMode, durationLimit: duration })
       .then((receipt) => { raceTokenRef.current = receipt?.token || null; })
       .catch((err) => {
@@ -1666,9 +1714,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     ...skinPreset.style,
   };
   const sourceText = liveRoom?.text
+    || ((phase === 'racing' || phase === 'results') && practiceSourceTextRef.current ? practiceSourceTextRef.current : null)
     || (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
     || (useCustomText && customText ? customText : null)
     || generatedContent?.passage
+    || MODE_CONFIG.find((item) => item.id === mode)?.description
     || 'Type fast, type clean, and own the round.';
   // Covers controlled-input/IME updates that may bypass the direct onChange check.
   useEffect(() => {
@@ -2569,15 +2619,15 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <div className="results-grid">
             <div className="result-card">
               <span className="result-label">WPM</span>
-              <span className="result-value">{Number(raceResult.wpm).toFixed(1)}</span>
+              <span className="result-value">{Number.isFinite(Number(raceResult.wpm)) ? Number(raceResult.wpm).toFixed(1) : '0.0'}</span>
             </div>
             <div className="result-card">
               <span className="result-label">Net WPM</span>
-              <span className="result-value">{Number(raceResult.netWPM).toFixed(1)}</span>
+              <span className="result-value">{Number.isFinite(Number(raceResult.netWPM)) ? Number(raceResult.netWPM).toFixed(1) : '0.0'}</span>
             </div>
             <div className="result-card">
               <span className="result-label">Accuracy</span>
-              <span className="result-value">{Number(raceResult.accuracy).toFixed(1)}%</span>
+              <span className="result-value">{Number.isFinite(Number(raceResult.accuracy)) ? Number(raceResult.accuracy).toFixed(1) : '0.0'}%</span>
             </div>
           </div>
           {/* Live 1v1s and private rooms don't carry money (only tournaments
