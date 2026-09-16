@@ -58,6 +58,23 @@ const parseCommentatorPhrases = (text = '') => String(text || '')
   .map((line) => line.split('|').map((part) => part.trim()).filter(Boolean))
   .filter((line) => line.length > 0);
 
+const CONTENT_TYPE_TABS = [
+  { id: 'practice', label: 'Practice' },
+  { id: 'live', label: '1v1' },
+  { id: 'daily', label: 'Daily Passage' },
+  { id: 'tournament', label: 'Tournament' },
+];
+const PRACTICE_MODE_TABS = [
+  { id: 'all', label: 'All Modes' },
+  { id: 'standard', label: 'Standard' },
+  { id: 'survival', label: 'Survival' },
+  { id: 'speed_burst', label: 'Speed Burst' },
+  { id: 'marathon', label: 'Marathon' },
+  { id: 'code', label: 'Code' },
+  { id: 'memory', label: 'Memory' },
+  { id: 'quote', label: 'Quote' },
+];
+
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: 'OV' },
   { id: 'wallet', label: 'Wallet', icon: 'W' },
@@ -94,6 +111,8 @@ export default function AdminPanel() {
   const [aiSettings, setAiSettings] = useState(normalizeAiSettings());
   const [adminContent, setAdminContent] = useState([]);
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', dailyDate: '', publishAt: '', expiryAt: '', isActive: true });
+  const [contentTypeTab, setContentTypeTab] = useState('practice');
+  const [practiceModeTab, setPracticeModeTab] = useState('all');
   const [marketplaceItems, setMarketplaceItems] = useState([]);
   const [marketplaceForm, setMarketplaceForm] = useState({ id: '', name: '', category: 'typingThemes', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
   const [editingMarketplaceId, setEditingMarketplaceId] = useState(null);
@@ -934,6 +953,41 @@ export default function AdminPanel() {
         .ap-btn-danger:hover { background: rgba(224,123,90,0.1); border-color: var(--ap-warn); filter: none; transform: none; }
         .ap-btn-sm { padding: 7px 12px; font-size: 0.72rem; border-radius: 6px; }
         .ap-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+
+        /* ---- Tabs ---- */
+        .ap-tab-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+        .ap-tab-row.ap-tab-row-sub { margin-bottom: 16px; padding-left: 2px; }
+        .ap-tab {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: transparent;
+          border: 1px solid var(--ap-border2);
+          border-radius: 999px;
+          color: var(--ap-muted);
+          font-family: var(--ap-font-mono);
+          font-size: 0.72rem;
+          font-weight: 500;
+          padding: 7px 14px;
+          cursor: pointer;
+          letter-spacing: 0.03em;
+          transition: all 0.15s;
+        }
+        .ap-tab:hover { color: var(--ap-text); border-color: var(--ap-accent); }
+        .ap-tab.active {
+          color: #080a0f;
+          background: var(--ap-accent);
+          border-color: var(--ap-accent);
+          font-weight: 600;
+        }
+        .ap-tab-sub {
+          padding: 5px 12px;
+          font-size: 0.68rem;
+          border-radius: 999px;
+          border-style: dashed;
+        }
+        .ap-tab-sub.active { border-style: solid; }
+        .ap-tab-count { opacity: 0.65; font-size: 0.66rem; }
 
         /* ---- Wallet summary ---- */
         .ap-wallet-row {
@@ -1821,21 +1875,62 @@ export default function AdminPanel() {
                 </div>
                 <div className="ap-card">
                   <p className="ap-card-title">Managed Passages ({adminContent.length})</p>
-                  {adminContent.length ? adminContent.map((item) => (
-                    <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
-                        <div>
-                          <strong>{item.mode} / {item.language} / {item.content_type}</strong>
-                          <div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.passage}</div>{item.content_type === 'daily' && <div style={{ color: item.archived_at ? 'var(--ap-muted)' : 'var(--ap-accent)', fontSize: '0.72rem', marginTop: 5 }}>{item.archived_at ? `Archived ${item.archived_at} (Nairobi)` : `Publish ${item.publish_at || 'now'} ? Expire ${item.expiry_at || 'after 24 hours'} (Nairobi)`}</div>}
-                        </div>
-                        <span style={{ color: item.is_active ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.is_active ? 'Published' : 'Inactive'}</span>
-                      </div>
-                      <div className="ap-btn-row" style={{ marginTop: 8 }}>
-                        <button className="ap-btn ap-btn-sm" onClick={() => setContentForm({ id: item.id, contentType: item.content_type, mode: item.mode, language: item.language, passage: item.passage, dailyDate: String(item.scheduled_for || '').slice(0, 10), publishAt: String(item.publish_at || ''), expiryAt: String(item.expiry_at || ''), isActive: Boolean(item.is_active) })}>Edit</button>
-                        <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleContentDelete(item)}>Delete</button>
-                      </div>
+                  <div className="ap-tab-row">
+                    {CONTENT_TYPE_TABS.map(tab => {
+                      const count = adminContent.filter(i => i.content_type === tab.id).length;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          className={`ap-tab${contentTypeTab === tab.id ? ' active' : ''}`}
+                          onClick={() => { setContentTypeTab(tab.id); setPracticeModeTab('all'); setContentForm(p => ({ ...p, contentType: tab.id })); }}
+                        >
+                          {tab.label} <span className="ap-tab-count">({count})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {contentTypeTab === 'practice' && (
+                    <div className="ap-tab-row ap-tab-row-sub">
+                      {PRACTICE_MODE_TABS.map(tab => {
+                        const count = tab.id === 'all'
+                          ? adminContent.filter(i => i.content_type === 'practice').length
+                          : adminContent.filter(i => i.content_type === 'practice' && i.mode === tab.id).length;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            className={`ap-tab ap-tab-sub${practiceModeTab === tab.id ? ' active' : ''}`}
+                            onClick={() => { setPracticeModeTab(tab.id); if (tab.id !== 'all') setContentForm(p => ({ ...p, mode: tab.id })); }}
+                          >
+                            {tab.label} <span className="ap-tab-count">({count})</span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  )) : <div className="ap-empty">No admin passages yet. Add one above.</div>}
+                  )}
+                  {(() => {
+                    const visibleContent = adminContent.filter((item) => {
+                      if (item.content_type !== contentTypeTab) return false;
+                      if (contentTypeTab === 'practice' && practiceModeTab !== 'all' && item.mode !== practiceModeTab) return false;
+                      return true;
+                    });
+                    return visibleContent.length ? visibleContent.map((item) => (
+                      <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+                          <div>
+                            <strong>{item.mode} / {item.language} / {item.content_type}</strong>
+                            <div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.passage}</div>{item.content_type === 'daily' && <div style={{ color: item.archived_at ? 'var(--ap-muted)' : 'var(--ap-accent)', fontSize: '0.72rem', marginTop: 5 }}>{item.archived_at ? `Archived ${item.archived_at} (Nairobi)` : `Publish ${item.publish_at || 'now'} ? Expire ${item.expiry_at || 'after 24 hours'} (Nairobi)`}</div>}
+                          </div>
+                          <span style={{ color: item.is_active ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.is_active ? 'Published' : 'Inactive'}</span>
+                        </div>
+                        <div className="ap-btn-row" style={{ marginTop: 8 }}>
+                          <button className="ap-btn ap-btn-sm" onClick={() => setContentForm({ id: item.id, contentType: item.content_type, mode: item.mode, language: item.language, passage: item.passage, dailyDate: String(item.scheduled_for || '').slice(0, 10), publishAt: String(item.publish_at || ''), expiryAt: String(item.expiry_at || ''), isActive: Boolean(item.is_active) })}>Edit</button>
+                          <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleContentDelete(item)}>Delete</button>
+                        </div>
+                      </div>
+                    )) : <div className="ap-empty">No passages in this category yet.</div>;
+                  })()}
                 </div>
               </>
             )}
