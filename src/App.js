@@ -13,8 +13,7 @@ import './css/Loader.css';
 
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
-import { fetchSiteMarquee, updateUserProfile } from './utils/typingApi';
-import { buildApiUrl } from './utils/api';
+import { fetchSiteMarquee, fetchCurrentUser, updateUserProfile } from './utils/typingApi';
 import { arenaMusic } from './utils/arenaMusic';
 import { preloadPlayContent } from './utils/navigationPrefetch';
 import Play from './components/Play';
@@ -140,40 +139,37 @@ function AppLayout() {
     // Then validate the session with the server and get a fresh token.
     // This handles the case where the user is already logged in from a
     // previous session and never hits the login page.
+    //
+    // Delegates to the shared fetchCurrentUser() (typingApi.js) rather than
+    // hand-rolling this fetch: that helper already distinguishes "server
+    // unreachable" (keeps the cached session, since we can't tell if it's
+    // still valid) from an actual 401/403 (clears the stale token/user and
+    // dispatches USER_CHANGE_EVENT, which syncUser below picks up). Doing
+    // our own fetch here previously left a truly-invalid session sitting in
+    // localStorage forever, which meant every mount of ChatWidget kept
+    // treating the user as logged in and re-hitting the backend with a
+    // token it was going to reject every time.
     const refreshSession = async () => {
       const stored = readStoredUser();
       if (!stored?.id) return; // not logged in, nothing to refresh
 
       try {
-        const headers = {
-          'Content-Type': 'application/json',
-        };
-        const token = localStorage.getItem('token');
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch(buildApiUrl('/api/user/me'), { headers });
-        if (!res.ok) return; // server down or truly invalid — leave stored user as-is
-
-        const fresh = await res.json();
-
-        // Persist the fresh token so all subsequent API calls authenticate correctly
-        if (fresh.token) {
-          localStorage.setItem('token', fresh.token);
-        }
+        const fresh = await fetchCurrentUser();
+        if (!fresh) return; // fetchCurrentUser already cleared the stale session and
+                             // dispatched USER_CHANGE_EVENT; syncUser will pick it up.
 
         // Update stored user with latest server data (balance, wpm, etc.)
-        const updated = { ...stored, ...fresh };
         const legacyProfileImage = localStorage.getItem('typearena_badge_image') || '';
-        if (!updated.profileImage && legacyProfileImage.startsWith('data:image/')) {
+        if (!fresh.profileImage && legacyProfileImage.startsWith('data:image/')) {
           try {
-            const migratedUser = await updateUserProfile(updated.id, { profileImage: legacyProfileImage });
-            Object.assign(updated, migratedUser);
+            const migratedUser = await updateUserProfile(fresh.id, { profileImage: legacyProfileImage });
+            Object.assign(fresh, migratedUser);
           } catch (_) {
             // The profile page will retry migration and show any upload error.
           }
         }
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
-        setCurrentUser(updated);
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(fresh));
+        setCurrentUser(fresh);
       } catch (_) {
         // Network error — keep the locally stored user, app still works offline-ish
       }
