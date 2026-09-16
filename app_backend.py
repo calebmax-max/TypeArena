@@ -91,10 +91,10 @@ MPESA_BASE_URL = os.getenv('MPESA_BASE_URL', 'https://sandbox.safaricom.co.ke')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-5.2')
 OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-AI_SETTINGS: Dict[str, Any] = {
-    'provider': os.getenv('AI_CONTENT_PROVIDER', 'auto').strip().lower() or 'auto',
-    'model': OPENAI_MODEL,
-}
+# NOTE: AI provider/model settings now live in the persisted site_settings
+# store (see _default_ai_settings/_current_ai_settings/_save_ai_settings)
+# instead of a module-level dict, so they survive restarts and stay
+# consistent across multiple server workers.
 DEFAULT_SITE_MARQUEE_ITEMS = [
     'Product Update',
     'Private friend battles are live now.',
@@ -1846,26 +1846,85 @@ def _equip_field_for_category(category: str) -> str | None:
     return mapping.get(str(category or '').strip())
 
 
+# Every alias a client or an old admin row might use for one of the seven
+# canonical mode keys the admin dropdown writes (standard, survival,
+# speed_burst, code, memory, quote, marathon). Both admin content writes
+# and every content lookup normalize through this table so a passage saved
+# under "Standard" is still found when a client asks for "business" or
+# "1v1", and "speed burst"/"speedBurst" both resolve to "speed_burst"
+# instead of silently missing every admin row.
+CONTENT_MODE_ALIASES = {
+    'business': 'standard',
+    '1v1': 'standard',
+    '1v1 battle': 'standard',
+    'battle': 'standard',
+    'coding': 'code',
+    'code syntax': 'code',
+    'exam': 'memory',
+    'quote battle': 'quote',
+    'quote_battle': 'quote',
+    'speed burst': 'speed_burst',
+    'speedburst': 'speed_burst',
+    'burst': 'speed_burst',
+}
+
+
+def _canonical_mode(mode: str) -> str:
+    """Collapse any known alias/spacing/casing variant down to the one
+    canonical mode key that admin content rows and passage banks are keyed
+    on. Always call this before querying or writing typing_content.mode so
+    a passage entered as "Speed Burst" is never orphaned by a client that
+    asks for "speedBurst".
+    """
+    key = str(mode or 'standard').strip().lower().replace('-', '_')
+    if key in CONTENT_MODE_ALIASES:
+        return CONTENT_MODE_ALIASES[key]
+    spaced = key.replace('_', ' ')
+    if spaced in CONTENT_MODE_ALIASES:
+        return CONTENT_MODE_ALIASES[spaced]
+    return key or 'standard'
+
+
 def _fetch_admin_content(mode: str, language: str, content_type: str, exclude_content_ids: Any = None) -> Dict[str, Any] | None:
     excluded = _normalize_exclude_content_ids(exclude_content_ids)
+    canonical_mode = _canonical_mode(mode)
+    normalized_language = str(language or 'english').strip().lower()
+
+    # Tiered lookup: prefer an exact mode+language match, but rather than
+    # returning nothing (which silently dumps the request into the
+    # template/AI fallback) fall back to any admin passage in that mode
+    # first, then any admin passage in that language, before finally
+    # giving up. This keeps a small admin library usable instead of
+    # requiring every mode/language combination to be filled in before any
+    # of it is ever served.
+    lookup_tiers = (
+        ('AND mode=%s AND language=%s', (canonical_mode, normalized_language)),
+        ('AND mode=%s', (canonical_mode,)),
+        ('AND language=%s', (normalized_language,)),
+    )
+
+    rows: list = []
     try:
         conn = get_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    '''
-                    SELECT content_id, passage
-                    FROM typing_content
-                    WHERE content_type=%s AND mode=%s AND language=%s AND is_active=1
-                    ORDER BY id ASC
-                    ''',
-                    (content_type, mode, language),
-                )
-                rows = cur.fetchall()
+                for clause, params in lookup_tiers:
+                    cur.execute(
+                        f'''
+                        SELECT content_id, passage
+                        FROM typing_content
+                        WHERE content_type=%s {clause} AND is_active=1
+                        ORDER BY id ASC
+                        ''',
+                        (content_type, *params),
+                    )
+                    rows = cur.fetchall()
+                    if rows:
+                        break
         finally:
             _return_connection(conn)
     except Exception as exc:  # noqa: BLE001
-        app.logger.warning('Admin content lookup failed: %s', exc)
+        app.logger.warning('Admin content lookup failed for %s/%s/%s: %s', content_type, canonical_mode, normalized_language, exc)
         return None
 
     if not rows:
@@ -1906,7 +1965,7 @@ def _display_mode_label(pool_key: str) -> str:
 
 
 def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None) -> Dict[str, Any]:
-    normalized_mode = str(mode or 'standard').strip().lower()
+    normalized_mode = _canonical_mode(mode)
     normalized_language = str(language or 'english').strip().lower()
     if normalized_language == 'swahili':
         pool_key = 'swahili'
@@ -1923,6 +1982,10 @@ def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None)
     else:
         pool_key = normalized_mode if normalized_mode in AI_PASSAGE_BANK else 'standard'
 
+    # normalized_mode is already the canonical key (e.g. "coding" -> "code"),
+    # so this now matches exactly what the admin panel writes to
+    # typing_content.mode - previously this queried on the raw, unaliased
+    # mode string and could never find a row saved under its canonical form.
     curated = _fetch_admin_content(normalized_mode, normalized_language, 'practice', exclude_content_ids)
     if curated:
         return {
@@ -1964,7 +2027,7 @@ def _generate_passage(mode: str, language: str, exclude_content_ids: Any = None)
 
 
 def _generate_live_battle_passage(mode: str, language: str, is_private: bool = False, is_tournament: bool = False, exclude_content_ids: Any = None) -> Dict[str, Any]:
-    normalized_mode = str(mode or 'standard').strip().lower()
+    normalized_mode = _canonical_mode(mode)
     normalized_language = str(language or 'english').strip().lower()
 
     if normalized_language == 'swahili':
@@ -2016,11 +2079,13 @@ def _generate_live_battle_passage(mode: str, language: str, is_private: bool = F
 
 
 def _current_ai_settings() -> Dict[str, Any]:
-    provider = str(AI_SETTINGS.get('provider') or 'auto').strip().lower()
-    if provider not in {'auto', 'openai', 'local'}:
-        provider = 'auto'
-    model = str(AI_SETTINGS.get('model') or OPENAI_MODEL).strip() or OPENAI_MODEL
-    return {'provider': provider, 'model': model}
+    # Read the persisted value (DB-backed, shared across all workers)
+    # instead of the old module-level AI_SETTINGS dict, which was
+    # per-process and reset on every restart.
+    try:
+        return dict(_load_site_settings().get('aiSettings') or _default_ai_settings())
+    except Exception:  # noqa: BLE001
+        return _default_ai_settings()
 
 
 def _default_site_marquee_settings() -> Dict[str, Any]:
@@ -2145,6 +2210,24 @@ def _normalize_commentator_phrases(phrases: Any) -> Dict[str, list[list[str]]]:
     return normalized
 
 
+def _default_ai_settings() -> Dict[str, Any]:
+    return {
+        'provider': os.getenv('AI_CONTENT_PROVIDER', 'auto').strip().lower() or 'auto',
+        'model': OPENAI_MODEL,
+    }
+
+
+def _normalize_ai_settings(raw: Any) -> Dict[str, Any]:
+    defaults = _default_ai_settings()
+    if not isinstance(raw, dict):
+        return defaults
+    provider = str(raw.get('provider') or defaults['provider']).strip().lower()
+    if provider not in {'auto', 'openai', 'local'}:
+        provider = defaults['provider']
+    model = str(raw.get('model') or defaults['model']).strip() or defaults['model']
+    return {'provider': provider, 'model': model}
+
+
 def _site_settings_defaults() -> Dict[str, Any]:
     return {
         'items': list(DEFAULT_SITE_MARQUEE_ITEMS),
@@ -2153,6 +2236,7 @@ def _site_settings_defaults() -> Dict[str, Any]:
         'commentatorConfig': _default_commentator_config(),
         'leaderboardTiers': _default_leaderboard_tiers(),
         'commentatorPhrases': _default_commentator_phrases(),
+        'aiSettings': _default_ai_settings(),
     }
 
 
@@ -2172,6 +2256,7 @@ def _normalize_site_settings(raw: Any) -> Dict[str, Any]:
         'commentatorConfig': _normalize_commentator_config(raw.get('commentatorConfig')),
         'leaderboardTiers': _normalize_leaderboard_tiers(raw.get('leaderboardTiers')),
         'commentatorPhrases': _normalize_commentator_phrases(raw.get('commentatorPhrases')),
+        'aiSettings': _normalize_ai_settings(raw.get('aiSettings')),
     }
 
 
@@ -2287,6 +2372,20 @@ def _save_leaderboard_settings(tiers: Any) -> Dict[str, int]:
     return settings['leaderboardTiers']
 
 
+def _save_ai_settings(provider: Any, model: Any) -> Dict[str, Any]:
+    # Previously AI_SETTINGS was a plain module-level dict: under a
+    # multi-worker server each worker had its own copy, so flipping the
+    # provider in the admin panel only ever changed the one worker that
+    # handled that request, and the change was lost on restart. Routing it
+    # through _persist_site_settings/_load_site_settings (same DB-backed
+    # store as the marquee and leaderboard tiers) makes it durable and
+    # consistent across workers.
+    current = _load_site_settings()
+    settings = {**current, 'aiSettings': _normalize_ai_settings({'provider': provider, 'model': model})}
+    _persist_site_settings(settings)
+    return dict(settings['aiSettings'])
+
+
 def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     if not OPENAI_API_KEY:
         raise ValueError('OPENAI_API_KEY is not configured.')
@@ -2302,6 +2401,13 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     response = _http_json(
         'POST',
         f'{OPENAI_BASE_URL}/chat/completions',
+        # Admin content is now checked first (see generate_race_content),
+        # so this only runs when there's no curated passage to serve.
+        # Kept well under the client's CONTENT_LOAD_TIMEOUT_MS so a slow
+        # completion fails over to the local template bank instead of the
+        # client silently discarding the response and showing one of the
+        # four hardcoded FALLBACK_PASSAGES.
+        timeout=8,
         payload={
             'model': model_name,
             'max_tokens': 400,
@@ -2740,7 +2846,7 @@ def _http_form(method: str, url: str, payload: Dict[str, Any], headers: Optional
         raise ValueError(f'Request failed: {exc}') from exc
 
 
-def _http_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def _http_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, timeout: int = 20) -> Dict[str, Any]:
     request_headers = {'Content-Type': 'application/json'}
     if headers:
         request_headers.update(headers)
@@ -2749,7 +2855,7 @@ def _http_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None, 
     req = urlrequest.Request(url, data=data, headers=request_headers, method=method)
 
     try:
-        with urlrequest.urlopen(req, timeout=20) as response:
+        with urlrequest.urlopen(req, timeout=timeout) as response:
             body = response.read().decode('utf-8')
             return json.loads(body) if body else {}
     except urlerror.HTTPError as exc:
@@ -5212,7 +5318,12 @@ def _parse_nairobi_datetime(raw_value: Any, default: datetime | None = None) -> 
 
 def _validate_admin_content_payload(payload: Dict[str, Any]) -> tuple[Any, ...]:
     content_type = str(payload.get('contentType') or 'practice').strip().lower()
-    mode = str(payload.get('mode') or 'standard').strip().lower()
+    # Canonicalize on write, not just on read, so every row in typing_content
+    # ends up under the same seven mode keys the admin dropdown offers -
+    # otherwise a client sending "coding" or "speed burst" through some
+    # other path could create a row that _fetch_admin_content's exact match
+    # would never find again.
+    mode = _canonical_mode(payload.get('mode'))
     language = str(payload.get('language') or 'english').strip().lower()
     passage = str(payload.get('passage') or '').strip()
     if content_type not in {'practice', 'live', 'tournament', 'daily'} or not mode or not language or not passage or len(passage) > 10000:
@@ -5321,17 +5432,16 @@ def admin_update_ai_settings():
         return jsonify({'message': 'Unauthorized admin request'}), 401
 
     payload = request.get_json(silent=True) or {}
-    provider = str(payload.get('provider') or AI_SETTINGS.get('provider') or 'auto').strip().lower()
-    model = str(payload.get('model') or AI_SETTINGS.get('model') or OPENAI_MODEL).strip()
+    current = _current_ai_settings()
+    provider = str(payload.get('provider') or current.get('provider') or 'auto').strip().lower()
+    model = str(payload.get('model') or current.get('model') or OPENAI_MODEL).strip()
 
     if provider not in {'auto', 'openai', 'local'}:
         return jsonify({'message': 'Invalid AI provider. Use auto, openai, or local.'}), 400
     if not model:
         return jsonify({'message': 'Model is required.'}), 400
 
-    AI_SETTINGS['provider'] = provider
-    AI_SETTINGS['model'] = model
-    settings = _current_ai_settings()
+    settings = _save_ai_settings(provider, model)
     settings['hasApiKey'] = bool(OPENAI_API_KEY)
     return jsonify({'message': 'AI content settings updated.', 'settings': settings})
 
@@ -7222,12 +7332,32 @@ def daily_content():
 
 @app.get('/api/race-content/generate')
 def generate_race_content():
-    mode = request.args.get('mode', 'business')
+    mode = _canonical_mode(request.args.get('mode', 'standard'))
     language = request.args.get('language', 'english')
     exclude_content_ids = request.args.getlist('excludeContentIds')
     if len(exclude_content_ids) == 1 and ',' in exclude_content_ids[0]:
         exclude_content_ids = [item.strip() for item in exclude_content_ids[0].split(',') if item.strip()]
     excluded_set = _normalize_exclude_content_ids(exclude_content_ids)
+
+    # Admin-curated passages are checked first, ahead of any AI call. This
+    # is a fast, local DB read (milliseconds), so it always beats the
+    # client's CONTENT_LOAD_TIMEOUT_MS abort window - previously the admin
+    # library was only ever consulted from inside _generate_passage, which
+    # sat behind the (much slower, often-timing-out) OpenAI attempt, so
+    # admin content was effectively unreachable whenever an API key was
+    # configured.
+    curated = _fetch_admin_content(mode, language, 'practice', exclude_content_ids)
+    if curated:
+        return jsonify({
+            'mode': mode,
+            'language': language,
+            **curated,
+            'title': f'{_display_mode_label(mode)} Admin Passage',
+            'antiCheatHint': 'Admin-curated content is selected from the published content library.',
+            'provider': 'admin-library',
+            'model': 'database',
+        })
+
     settings = _current_ai_settings()
     if settings['provider'] == 'local':
         content = _generate_passage(mode, language, exclude_content_ids=exclude_content_ids)

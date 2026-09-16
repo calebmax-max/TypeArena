@@ -1832,7 +1832,17 @@ export default function AdminPanel() {
                       </div>
                       <div className="ap-field">
                         <label className="ap-label">Language</label>
-                        <input className="ap-input" value={contentForm.language} onChange={e => setContentForm(p => ({ ...p, language: e.target.value.toLowerCase() }))} placeholder="english" />
+                        {/* Was a free-text input: a stray value like "English " or "eng"
+                            saved a row that _fetch_admin_content could never match again,
+                            since the lookup is an exact string comparison. Constraining
+                            this to the values the typing client actually sends keeps every
+                            saved passage reachable. */}
+                        <select className="ap-select" value={contentForm.language} onChange={e => setContentForm(p => ({ ...p, language: e.target.value }))}>
+                          <option value="english">English</option>
+                          <option value="swahili">Swahili</option>
+                          <option value="french">French</option>
+                          <option value="code">Code</option>
+                        </select>
                       </div>
                       {contentForm.contentType === 'daily' && <>
                         <div className="ap-field">

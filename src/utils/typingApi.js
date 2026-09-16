@@ -1004,6 +1004,16 @@ export const submitLiveRaceResult = async (roomId, payload) => {
   return data;
 };
 
+// Last-resort passages only. These used to get served on almost every
+// request because CONTENT_LOAD_TIMEOUT_MS (5000ms) was shorter than the
+// backend's own OpenAI budget (20000ms), so a real response - including
+// any admin-curated passage - routinely lost the race and was discarded
+// after already being generated server-side. The backend now checks the
+// admin library first (fast, local DB read) and caps its own OpenAI call
+// at 8s, so raising this timeout to 12s gives real responses room to win
+// instead of these four strings being what most players actually see.
+// `provider: 'client-fallback'` marks these so they're never confused with
+// real content in logs, UI, or debugging.
 const FALLBACK_PASSAGES = [
   {
     id: 'fallback_business_sprint',
@@ -1011,6 +1021,7 @@ const FALLBACK_PASSAGES = [
     title: 'Business Sprint',
     passage: 'Premium typing rooms reward accuracy, focus, and consistency across every high-pressure round.',
     antiCheatHint: 'Fresh passages reduce repetition.',
+    provider: 'client-fallback',
   },
   {
     id: 'fallback_digital_age',
@@ -1018,6 +1029,7 @@ const FALLBACK_PASSAGES = [
     title: 'Digital Age',
     passage: 'Technology transforms how we communicate, collaborate, and compete in an increasingly connected world.',
     antiCheatHint: 'Stay focused on each word.',
+    provider: 'client-fallback',
   },
   {
     id: 'fallback_sharp_focus',
@@ -1025,6 +1037,7 @@ const FALLBACK_PASSAGES = [
     title: 'Sharp Focus',
     passage: 'Speed and precision define the best typists. Train daily, track your progress, and push your limits.',
     antiCheatHint: 'Accuracy beats raw speed.',
+    provider: 'client-fallback',
   },
   {
     id: 'fallback_code_runner',
@@ -1032,11 +1045,14 @@ const FALLBACK_PASSAGES = [
     title: 'Code Runner',
     passage: 'Clean code is easy to read, simple to maintain, and efficient to run across every modern platform.',
     antiCheatHint: 'Consistency is key.',
+    provider: 'client-fallback',
   },
 ];
-// Keep content loading bounded on slow backends.
-// Adjust here if your Render instance regularly needs more warm-up time.
-const CONTENT_LOAD_TIMEOUT_MS = 5000;
+// Keep content loading bounded on slow backends, but no longer shorter
+// than the backend's own worst-case generation time - see note above.
+const CONTENT_LOAD_TIMEOUT_MS = 12000;
+
+const pickFallbackPassage = () => FALLBACK_PASSAGES[Math.floor(Math.random() * FALLBACK_PASSAGES.length)];
 
 export const fetchDailyContent = async (language = 'english') => {
   const query = new URLSearchParams({ language: String(language || 'english') });
@@ -1075,7 +1091,7 @@ export const generateRaceContent = async (mode, language, options = {}) => {
     }
     // Guaranteed fallback: this function NEVER rejects, so contentLoading
     // always clears in the caller's finally block.
-    return FALLBACK_PASSAGES[Math.floor(Math.random() * FALLBACK_PASSAGES.length)];
+    return pickFallbackPassage();
   }
 };
 
@@ -1087,18 +1103,20 @@ export const generateRaceContent = async (mode, language, options = {}) => {
  * never get permanently stuck even if an unexpected synchronous throw occurs.
  *
  * Usage (in your component):
- *   const content = await loadGeneratedContentSafe(mode, language);
+ *   const content = await loadGeneratedContentSafe(mode, language, options);
+ *
+ * `options.excludeContentIds` is forwarded to generateRaceContent - it used
+ * to be silently dropped here, which meant the backend never knew which
+ * passages a player had just seen and could hand back the same admin
+ * passage or template-bank entry again immediately.
  */
-export const loadGeneratedContentSafe = (mode, language) =>
+export const loadGeneratedContentSafe = (mode, language, options = {}) =>
   Promise.race([
-    generateRaceContent(mode, language),
+    generateRaceContent(mode, language, options),
     // Hard-stop safety net: resolves to a fallback slightly after the inner
     // abort fires, ensuring the Promise always settles.
     new Promise((resolve) =>
-      setTimeout(
-        () => resolve(FALLBACK_PASSAGES[Math.floor(Math.random() * FALLBACK_PASSAGES.length)]),
-        CONTENT_LOAD_TIMEOUT_MS + 500
-      )
+      setTimeout(() => resolve(pickFallbackPassage()), CONTENT_LOAD_TIMEOUT_MS + 500)
     ),
   ]);
 
