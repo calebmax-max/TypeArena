@@ -485,27 +485,7 @@ export default function Play({ practicePage = false }){
   // notice is now { message: string, type: 'info'|'error'|'success'|'warning' }
   const [notice, setNotice] = useState(null);
   const [raceResult, setRaceResult] = useState(null);
-  // Safety net: netWPM is computed explicitly in the solo/practice branch
-  // of finishRace (below), but the live/1v1/tournament path sets
-  // raceResult from inside useLiveRaceSession's submitFinalLiveResult,
-  // which has never included netWPM. Number(undefined).toFixed(1) renders
-  // as the literal string "NaN" on the results screen, which is almost
-  // certainly the "wpm/net wpm sometimes not displaying" symptom for live
-  // races. Backfilling it here means it's correct regardless of which
-  // code path produced raceResult, without needing every future caller of
-  // setRaceResult to remember to include it.
-  useEffect(() => {
-    if (!raceResult) return;
-    if (raceResult.netWPM != null) return;
-    const wpmValueForNet = Number(raceResult.wpm);
-    if (!Number.isFinite(wpmValueForNet)) return;
-    // wpm is already net-of-errors (calculateOfficialWPM / server's
-    // _compute_official_wpm both subtract the error penalty already), so
-    // this just mirrors it rather than multiplying by accuracy again.
-    setRaceResult((prev) => (prev && prev.netWPM == null
-      ? { ...prev, netWPM: Math.max(0, Math.round(wpmValueForNet * 10) / 10) }
-      : prev));
-  }, [raceResult]);
+
   const [generatedContent, setGeneratedContent] = useState(null);
   const [replayFrames, setReplayFrames] = useState([]);
   const replayFrameAtRef = useRef(0);
@@ -690,7 +670,7 @@ export default function Play({ practicePage = false }){
   // Enter-key shortcut skips the Play button's loading guard), the player
   // could type against one string while the server signed/scored a
   // completely different one, producing a near-total mismatch and a
-  // 0 WPM / 0 Net WPM result.
+  // 0 WPM result.
   const practiceSourceTextRef = useRef('');
 
   // Typed notice helper Ã¯Â¿Â½?" keeps callsites clean
@@ -1097,12 +1077,6 @@ export default function Play({ practicePage = false }){
                 ...prev,
                 wpm: nextWpm,
                 accuracy: nextAccuracy,
-                // calculateOfficialWPM (client) and _compute_official_wpm
-                // (server) both already subtract the error penalty, so
-                // nextWpm IS the net figure - multiplying by accuracy again
-                // here double-penalizes errors and was the other half of
-                // the "netWPM collapses to ~0" symptom.
-                netWPM: Math.max(0, Math.round(nextWpm * 10) / 10),
                 shareText: `I typed ${Math.round(nextWpm)} WPM on TypeArena.`,
                 antiCheatFlags: serverResult.flags || prev.antiCheatFlags,
               };
@@ -1148,10 +1122,6 @@ export default function Play({ practicePage = false }){
 
         const resultPayload = {
             ...finalData,
-            // wpm is already net-of-errors (calculateOfficialWPM) - see the
-            // reconciliation comment above for why this no longer multiplies
-            // by accuracy again.
-            netWPM: Math.max(0, Math.round(wpm * 10) / 10),
             coachTip: accuracy < 92 ? 'Accuracy dipped. Try smoother keystrokes.' : 'Strong run. Keep your rhythm.',
             replayFrames: currentReplayFrames,
             shareText: `I typed ${Math.round(wpm)} WPM on TypeArena.`,
@@ -1250,7 +1220,7 @@ export default function Play({ practicePage = false }){
           // meant the player typed against a fallback placeholder string
           // while the server signed/scored a different fallback (the
           // mode's description), producing a near-total text mismatch and
-          // a 0 WPM / 0 Net WPM result.
+          // a 0 WPM result.
           const contentReady = !contentLoading && currentUser !== undefined
             && (useCustomText || dailyChallenge || generatedContent?.passage);
           if (contentReady) {
@@ -1545,7 +1515,7 @@ export default function Play({ practicePage = false }){
     const prompt = `You are a concise typing coach. A player just finished a ${raceResult.duration}s ${raceResult.mode} race.
 
 Stats:
-- WPM: ${raceResult.wpm.toFixed(1)}, Net WPM: ${raceResult.netWPM?.toFixed(1) || 'N/A'}, Accuracy: ${raceResult.accuracy.toFixed(1)}%
+- WPM: ${raceResult.wpm.toFixed(1)}, Accuracy: ${raceResult.accuracy.toFixed(1)}%
 - WPM trend (start Ã¯Â¿Â½?' mid Ã¯Â¿Â½?' end): ${wpmTrend}
 - Most-missed characters: ${topMistakes}
 
@@ -2685,10 +2655,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             <div className="result-card">
               <span className="result-label">WPM</span>
               <span className="result-value">{Number.isFinite(Number(raceResult.wpm)) ? Number(raceResult.wpm).toFixed(1) : '0.0'}</span>
-            </div>
-            <div className="result-card">
-              <span className="result-label">Net WPM</span>
-              <span className="result-value">{Number.isFinite(Number(raceResult.netWPM)) ? Number(raceResult.netWPM).toFixed(1) : '0.0'}</span>
             </div>
             <div className="result-card">
               <span className="result-label">Accuracy</span>
