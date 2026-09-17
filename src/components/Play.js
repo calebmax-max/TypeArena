@@ -1358,9 +1358,10 @@ export default function Play({ practicePage = false }){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duration, liveRoom?.id, phase, syncRoomClock]);
 
-  const startPracticeRaceWithMode = useCallback((nextMode) => {
+  const startPracticeRaceWithMode = useCallback(async (nextMode) => {
     const resolvedMode = nextMode || mode;
-    if (nextMode && nextMode !== mode) {
+    const switchingMode = Boolean(nextMode && nextMode !== mode);
+    if (switchingMode) {
       setMode(nextMode);
     }
     setShowPracticeModes(false);
@@ -1369,6 +1370,34 @@ export default function Play({ practicePage = false }){
     if (!currentUser?.id) {
       redirectToProfile();
       return;
+    }
+
+    // Bug fix: generatedContent in state was fetched for the PREVIOUS mode
+    // by the lobby useEffect (keyed on `mode`), which hasn't had a chance
+    // to re-run yet — setMode above only takes effect on the next render.
+    // Starting the race immediately with the stale generatedContent meant
+    // the passage shown (and the content ID recorded into the new mode's
+    // rotation bucket) belonged to whatever mode was previously active,
+    // not resolvedMode. When switching modes, fetch fresh content for
+    // resolvedMode and wait for it before starting the race.
+    let raceContent = generatedContent;
+    if (switchingMode) {
+      contentLoadingRef.current = true;
+      setContentLoading(true);
+      try {
+        const excludeContentIds = getUsedContentIds(resolvedMode, language);
+        raceContent = await getRaceContent(resolvedMode, language, { excludeContentIds });
+        setGeneratedContent(raceContent);
+        loadedForRef.current = `${resolvedMode}__${language}`;
+      } catch (err) {
+        console.error('Failed to load race content for mode switch:', err);
+        showNotice('Could not load race content. Check your connection and try again.', 'error');
+        contentLoadingRef.current = false;
+        setContentLoading(false);
+        return; // Don't start a race with mismatched/missing content.
+      }
+      contentLoadingRef.current = false;
+      setContentLoading(false);
     }
 
     resetLiveSession();
@@ -1394,14 +1423,17 @@ export default function Play({ practicePage = false }){
     setGhostIndex(0);
     window.clearInterval(ghostIntervalRef.current);
 
-    // The lobby useEffect already pre-loads generatedContent; reuse it and
-    // just record the ID so the rotation pool advances correctly.
-    if (generatedContent?.id || generatedContent?.contentId) {
+    // The lobby useEffect pre-loads generatedContent for the mode that was
+    // active at fetch time; raceContent is that same value when we didn't
+    // switch modes, or the freshly-fetched match for resolvedMode when we
+    // did. Either way it's now guaranteed to correspond to resolvedMode, so
+    // recording its ID into resolvedMode's rotation bucket is correct.
+    if (raceContent?.id || raceContent?.contentId) {
       recordUsedContentId(
-        generatedContent.id ?? generatedContent.contentId,
+        raceContent.id ?? raceContent.contentId,
         resolvedMode,
         language,
-        generatedContent.totalContentCount || 0
+        raceContent.totalContentCount || 0
       );
     }
 
@@ -1428,7 +1460,7 @@ export default function Play({ practicePage = false }){
     raceTokenRef.current = null;
     const practicePassageText = (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
       || (useCustomText && customText ? customText : null)
-      || generatedContent?.passage
+      || raceContent?.passage
       || MODE_CONFIG.find((item) => item.id === resolvedMode)?.description
       || '';
     // Freeze this immediately: everything that reads "the current passage"
@@ -1446,6 +1478,10 @@ export default function Play({ practicePage = false }){
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
   }, [commentatorEnabled, currentUser, customText, dailyChallenge, duration, generatedContent, isLeavingRef, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showDailyChallenge, showNotice, useCustomText]);
+  // Note: getUsedContentIds/getRaceContent/recordUsedContentId are stable
+  // module-level imports (not component state/props), so they're
+  // intentionally omitted here — same convention already used by the
+  // lobby content-fetch effect and useLiveRaceSession wiring above.
 
   // startPracticeRace is a convenience wrapper that starts in the current mode.
   const startPracticeRace = useCallback(() => {
@@ -1923,6 +1959,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                       key={item.id}
                       type="button"
                       className={`practice-menu__item ${mode === item.id ? 'active' : ''}`}
+                      disabled={contentLoading}
                       onClick={() => startPracticeRaceWithMode(item.id)}
                     >
                       <strong>{item.label}</strong>
