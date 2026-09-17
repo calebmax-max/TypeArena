@@ -1890,18 +1890,24 @@ def _fetch_admin_content(mode: str, language: str, content_type: str, exclude_co
     canonical_mode = _canonical_mode(mode)
     normalized_language = str(language or 'english').strip().lower()
 
-    # Tiered lookup: prefer an exact mode+language match, and if that's
-    # empty, widen by dropping the language filter (any language, same
-    # mode) - never the reverse. Mode is the dimension that actually
-    # determines which lane the player is racing in, so it must never be
-    # bypassed: a Marathon passage must never surface in a Speed Burst
-    # room just because both happen to be tagged "english". A previous
-    # version of this also widened on language-only (any mode), which let
-    # admin content leak across modes; that tier has been removed.
-    lookup_tiers = (
-        ('AND mode=%s AND language=%s', (canonical_mode, normalized_language)),
-        ('AND mode=%s', (canonical_mode,)),
-    )
+    # Live and Tournament passages are one shared pool, not filtered by
+    # mode/language: whatever is published under that content type is fair
+    # game for any 1v1 room or tournament match. Only Practice (and, via
+    # _fetch_daily_content, Daily) narrow by mode/language - a Marathon
+    # passage must never surface in a Speed Burst practice session, but a
+    # tournament match doesn't have that same per-mode lane to protect.
+    if content_type in ('live', 'tournament'):
+        lookup_tiers = (('', ()),)
+    else:
+        # Tiered lookup: prefer an exact mode+language match, and if that's
+        # empty, widen by dropping the language filter (any language, same
+        # mode) - never the reverse. A previous version of this also widened
+        # on language-only (any mode), which let admin content leak across
+        # modes; that tier has been removed.
+        lookup_tiers = (
+            ('AND mode=%s AND language=%s', (canonical_mode, normalized_language)),
+            ('AND mode=%s', (canonical_mode,)),
+        )
 
     rows: list = []
     try:
@@ -6825,7 +6831,15 @@ def queue_live_race():
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
         with conn.cursor() as cur:
-            mode = str(payload.get('mode') or 'standard').strip().lower()
+            # Canonicalize here, not just inside _generate_live_battle_passage,
+            # so the room itself - matchmaking comparisons, the stored
+            # mode/language fields, and the LIVE_RACE_TEXTS fallback lookup
+            # below - all agree with the same key admin content and PB
+            # tracking use. Previously this was only lower-cased, so a
+            # client sending an alias (e.g. "1v1", "speedBurst") could tag a
+            # room with a key that never matched anything else in the system
+            # even though passage selection itself resolved it correctly.
+            mode = _canonical_mode(payload.get('mode'))
             language = str(payload.get('language') or 'english').strip().lower()
             duration = int(payload.get('duration') or 60)
             tournament_id = payload.get('tournamentId')
@@ -7796,6 +7810,11 @@ def join_tournament(tournament_id: int):
 
             # One tournament means one shared, pre-populated race. Creating it
             # now freezes the exact paid roster for the whole countdown.
+            # 'standard'/'english' here are just the generic fallback-bank
+            # keys if no admin passage exists at all - they no longer gate
+            # which admin content can be picked, since _fetch_admin_content
+            # treats 'tournament' content as one shared pool regardless of
+            # the mode/language tag a passage was saved under.
             content = _generate_live_battle_passage('standard', 'english', is_tournament=True)
             room_id = f'tournament_{tournament_id}_{int(datetime.utcnow().timestamp() * 1000)}'
             room = {

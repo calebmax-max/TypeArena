@@ -1830,20 +1830,22 @@ export default function AdminPanel() {
                           <option value="daily">Daily Challenge</option>
                         </select>
                       </div>
-                      <div className="ap-field">
-                        <label className="ap-label">Language</label>
-                        {/* Was a free-text input: a stray value like "English " or "eng"
-                            saved a row that _fetch_admin_content could never match again,
-                            since the lookup is an exact string comparison. Constraining
-                            this to the values the typing client actually sends keeps every
-                            saved passage reachable. */}
-                        <select className="ap-select" value={contentForm.language} onChange={e => setContentForm(p => ({ ...p, language: e.target.value }))}>
-                          <option value="english">English</option>
-                          <option value="swahili">Swahili</option>
-                          <option value="french">French</option>
-                          <option value="code">Code</option>
-                        </select>
-                      </div>
+                      {!['live', 'tournament'].includes(contentForm.contentType) && (
+                        <div className="ap-field">
+                          <label className="ap-label">Language</label>
+                          {/* Was a free-text input: a stray value like "English " or "eng"
+                              saved a row that _fetch_admin_content could never match again,
+                              since the lookup is an exact string comparison. Constraining
+                              this to the values the typing client actually sends keeps every
+                              saved passage reachable. */}
+                          <select className="ap-select" value={contentForm.language} onChange={e => setContentForm(p => ({ ...p, language: e.target.value }))}>
+                            <option value="english">English</option>
+                            <option value="swahili">Swahili</option>
+                            <option value="french">French</option>
+                            <option value="code">Code</option>
+                          </select>
+                        </div>
+                      )}
                       {contentForm.contentType === 'daily' && <>
                         <div className="ap-field">
                           <label className="ap-label">Publish time (Nairobi)</label>
@@ -1856,18 +1858,28 @@ export default function AdminPanel() {
                           <small style={{ color: 'var(--ap-muted)' }}>Leave blank for 24 hours after publishing.</small>
                         </div>
                       </>}
-                      <div className="ap-field">
-                        <label className="ap-label">Mode</label>
-                        <select className="ap-select" value={contentForm.mode} onChange={e => setContentForm(p => ({ ...p, mode: e.target.value }))}>
-                          <option value="standard">Standard</option>
-                          <option value="survival">Survival</option>
-                          <option value="speed_burst">Speed Burst</option>
-                          <option value="code">Code</option>
-                          <option value="memory">Memory</option>
-                          <option value="quote">Quote</option>
-                          <option value="marathon">Marathon</option>
-                        </select>
-                      </div>
+                      {!['live', 'tournament'].includes(contentForm.contentType) && (
+                        <div className="ap-field">
+                          <label className="ap-label">Mode</label>
+                          <select className="ap-select" value={contentForm.mode} onChange={e => setContentForm(p => ({ ...p, mode: e.target.value }))}>
+                            <option value="standard">Standard</option>
+                            <option value="survival">Survival</option>
+                            <option value="speed_burst">Speed Burst</option>
+                            <option value="code">Code</option>
+                            <option value="memory">Memory</option>
+                            <option value="quote">Quote</option>
+                            <option value="marathon">Marathon</option>
+                          </select>
+                        </div>
+                      )}
+                      {['live', 'tournament'].includes(contentForm.contentType) && (
+                        <div className="ap-field">
+                          <label className="ap-label">&nbsp;</label>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', margin: 0 }}>
+                            {contentForm.contentType === 'live' ? '1v1 / Live' : 'Tournament'} passages are one shared pool - any active room or match can draw from any passage here, regardless of mode or language.
+                          </p>
+                        </div>
+                      )}
                       <div className="ap-field" style={{ justifyContent: 'end' }}>
                         <label className="ap-label">Status</label>
                         <label style={{ color: 'var(--ap-muted)', fontSize: '0.78rem' }}><input type="checkbox" checked={contentForm.isActive} onChange={e => setContentForm(p => ({ ...p, isActive: e.target.checked }))} /> Published</label>
@@ -1929,7 +1941,7 @@ export default function AdminPanel() {
                       <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
                           <div>
-                            <strong>{item.mode} / {item.language} / {item.content_type}</strong>
+                            <strong>{['live', 'tournament'].includes(item.content_type) ? item.content_type : `${item.mode} / ${item.language} / ${item.content_type}`}</strong>
                             <div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.passage}</div>{item.content_type === 'daily' && <div style={{ color: item.archived_at ? 'var(--ap-muted)' : 'var(--ap-accent)', fontSize: '0.72rem', marginTop: 5 }}>{item.archived_at ? `Archived ${item.archived_at} (Nairobi)` : `Publish ${item.publish_at || 'now'} ? Expire ${item.expiry_at || 'after 24 hours'} (Nairobi)`}</div>}
                           </div>
                           <span style={{ color: item.is_active ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.is_active ? 'Published' : 'Inactive'}</span>

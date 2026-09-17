@@ -32,7 +32,18 @@ export const getRaceContent = async (mode = 'standard', language = 'english', op
     : [];
   const key = `${mode}__${language}__${excludeContentIds.join(',')}`;
   if (!contentPromises.has(key)) {
+    // Only dedupe truly concurrent, in-flight requests for the same
+    // mode/language/excludeIds combo (e.g. React StrictMode double-invoking
+    // an effect). Once the request settles - success or failure - the entry
+    // is removed so the next call always reaches the backend again, instead
+    // of permanently replaying whatever was fetched the first time this key
+    // was ever requested (which made freshly-added/edited admin content
+    // invisible for the rest of the tab's session).
     const request = generateRaceContent(mode, language, { excludeContentIds })
+      .then((result) => {
+        contentPromises.delete(key);
+        return result;
+      })
       .catch(() => {
         contentPromises.delete(key);
         return null;
