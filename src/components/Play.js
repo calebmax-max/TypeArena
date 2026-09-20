@@ -2296,8 +2296,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </strong>
               <p className="results-challenge">
                 {liveRoom.players.length <= 2
-                  ? 'Winner takes 85% of the pot, 15% platform fee.'
-                  : 'Podium split: 1st 50% · 2nd 20% · 3rd 10%, 20% platform fee.'}
+                  ? 'Winner takes 95% of the pot, 5% platform fee.'
+                  : 'Podium split: 1st 50% · 2nd 25% · 3rd 15%, 10% platform fee.'}
               </p>
             </div>
           )}

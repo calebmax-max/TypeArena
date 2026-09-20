@@ -130,8 +130,11 @@ ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS = 5
 ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
 TOURNAMENT_MATCH_SIZE = 3
 TOURNAMENT_START_DELAY_SECONDS = 30
-TOURNAMENT_PODIUM_SHARES = (0.50, 0.20, 0.10)
-TOURNAMENT_ADMIN_SHARE = 0.20
+TOURNAMENT_PODIUM_SHARES = (0.50, 0.25, 0.15)
+TOURNAMENT_ADMIN_SHARE = 0.10
+# Guard: podium shares plus the platform share must add up to the whole pool,
+# otherwise money would be created or lost when a tournament settles.
+assert abs(sum(TOURNAMENT_PODIUM_SHARES) + TOURNAMENT_ADMIN_SHARE - 1.0) < 1e-9, 'Tournament shares must add up to 100%'
 WINNER_PRIZE_SHARE = TOURNAMENT_PODIUM_SHARES[0]
 # Payout split for staked private rooms (see queue_live_race / stakeAmount).
 # A heads-up room (exactly 2 players) has no podium to split, so the winner
@@ -139,9 +142,13 @@ WINNER_PRIZE_SHARE = TOURNAMENT_PODIUM_SHARES[0]
 # same house-percentage idea as tournaments. A private room with 3+ players
 # behaves exactly like a tournament of that size and reuses
 # TOURNAMENT_PODIUM_SHARES / TOURNAMENT_ADMIN_SHARE instead of its own split.
-PRIVATE_ROOM_HEADS_UP_WINNER_SHARE = 0.85
+PRIVATE_ROOM_HEADS_UP_WINNER_SHARE = 0.95
 PRIVATE_ROOM_HEADS_UP_ADMIN_SHARE = round(1 - PRIVATE_ROOM_HEADS_UP_WINNER_SHARE, 2)
 WITHDRAWAL_FEE = 50.0
+# Upper limit for a single admin -> user transfer (KES). A typo like an extra
+# zero should be rejected instead of moving real money. Override with the
+# TYPEARENA_ADMIN_TRANSFER_MAX_KES environment variable.
+ADMIN_TRANSFER_MAX_AMOUNT = float(max(1, _env_int('TYPEARENA_ADMIN_TRANSFER_MAX_KES', 1_000_000)))
 LIVE_RACE_COUNTDOWN_SECONDS = 10
 LIVE_RACE_MIN_DURATION_SECONDS = 15
 LIVE_RACE_MAX_DURATION_SECONDS = 300
@@ -3230,7 +3237,7 @@ def _serialize_tournament(row: Dict[str, Any], user_owned_items: list[str] | set
         'totalPlayerStake': total_player_stake,
         'winnerPrize': round(total_player_stake * winner_share, 2),
         'winnerShare': winner_share,
-        'podiumShares': [int(share * 100) for share in TOURNAMENT_PODIUM_SHARES],
+        'podiumShares': [round(share * 100) for share in TOURNAMENT_PODIUM_SHARES],
         'firstPrize': round(total_player_stake * TOURNAMENT_PODIUM_SHARES[0], 2),
         'secondPrize': round(total_player_stake * TOURNAMENT_PODIUM_SHARES[1], 2),
         'thirdPrize': round(total_player_stake * TOURNAMENT_PODIUM_SHARES[2], 2),
@@ -3399,8 +3406,13 @@ def _record_admin_wallet_transaction(
     source: str,
     note: str = '',
     related_purchase_id: int | None = None,
+    ensure_table: bool = True,
 ) -> Dict[str, Any]:
-    _ensure_admin_wallet_transactions_table(cur)
+    # ensure_table=False lets callers that already hold row locks skip the
+    # CREATE TABLE IF NOT EXISTS check. In MySQL, DDL commits the open
+    # transaction, which would split a multi-step money movement in two.
+    if ensure_table:
+        _ensure_admin_wallet_transactions_table(cur)
     tx_code = f'adminwallet_{transaction_type}_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(3)}'
     cur.execute(
         '''
@@ -3451,6 +3463,103 @@ def _get_admin_wallet_history(cur, admin_user_id: int) -> Dict[str, Any]:
             for row in rows
         ]
     }
+
+
+_ADMIN_TRANSFERS_TABLE_READY = False
+
+
+def _ensure_admin_user_transfers_table(cur) -> None:
+    """Ledger of every admin -> user money transfer (one row per transfer)."""
+    global _ADMIN_TRANSFERS_TABLE_READY
+    if _ADMIN_TRANSFERS_TABLE_READY:
+        return
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_user_transfers (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            transfer_code VARCHAR(100) NOT NULL,
+            idempotency_key VARCHAR(100) NULL,
+            admin_user_id INT NOT NULL,
+            recipient_user_id INT NULL,
+            recipient_username VARCHAR(100) NULL,
+            recipient_email VARCHAR(255) NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            note VARCHAR(255) NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            admin_balance_before DECIMAL(12,2) NOT NULL,
+            admin_balance_after DECIMAL(12,2) NOT NULL,
+            recipient_balance_before DECIMAL(12,2) NOT NULL,
+            recipient_balance_after DECIMAL(12,2) NOT NULL,
+            admin_transaction_code VARCHAR(100) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_admin_transfer_code (transfer_code),
+            UNIQUE KEY uniq_admin_transfer_idem (admin_user_id, idempotency_key),
+            KEY idx_admin_transfer_recipient (recipient_user_id),
+            KEY idx_admin_transfer_created (created_at),
+            CONSTRAINT fk_admin_transfer_admin FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            CONSTRAINT fk_admin_transfer_recipient FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+    )
+    _ADMIN_TRANSFERS_TABLE_READY = True
+
+
+def _iso_or_none(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    if hasattr(value, 'isoformat'):
+        return value.isoformat() + 'Z'
+    return str(value)
+
+
+def _serialize_admin_transfer(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        'code': str(row.get('transfer_code') or ''),
+        'recipientUserId': row.get('recipient_user_id'),
+        'recipientUsername': str(row.get('recipient_username') or ''),
+        'recipientEmail': str(row.get('recipient_email') or ''),
+        'amount': float(row.get('amount') or 0),
+        'note': str(row.get('note') or ''),
+        'status': str(row.get('status') or 'completed'),
+        'adminBalanceAfter': float(row.get('admin_balance_after') or 0),
+        'recipientBalanceAfter': float(row.get('recipient_balance_after') or 0),
+        'adminTransactionCode': str(row.get('admin_transaction_code') or ''),
+        'createdAt': _iso_or_none(row.get('created_at')),
+    }
+
+
+_IMPERSONATION_LOG_TABLE_READY = False
+
+
+def _ensure_admin_impersonation_log_table(cur) -> None:
+    """One row every time the admin uses "Sign in as" on a player."""
+    global _IMPERSONATION_LOG_TABLE_READY
+    if _IMPERSONATION_LOG_TABLE_READY:
+        return
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_impersonation_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            admin_user_id INT NOT NULL,
+            target_user_id INT NULL,
+            target_username VARCHAR(100) NULL,
+            target_email VARCHAR(255) NULL,
+            ip_address VARCHAR(64) NULL,
+            user_agent VARCHAR(255) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_impersonation_target (target_user_id),
+            KEY idx_impersonation_created (created_at),
+            CONSTRAINT fk_impersonation_admin FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            CONSTRAINT fk_impersonation_target FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+    )
+    _IMPERSONATION_LOG_TABLE_READY = True
+
+
+def _request_client_ip() -> str:
+    forwarded = str(request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+    return (forwarded or request.remote_addr or '')[:64]
 
 
 def _record_marketplace_revenue(
@@ -3975,7 +4084,7 @@ def _settle_tournament_podium(room: Dict[str, Any], ranked_player_ids: list[int]
         admin_user = _get_admin_user(cur)
         if admin_user and admin_share > 0:
             cur.execute('UPDATE users SET balance=balance+%s WHERE id=%s', (admin_share, admin_user['id']))
-            _record_admin_wallet_transaction(cur, admin_user_id=int(admin_user['id']), transaction_type='tournament_profit', amount=admin_share, direction='in', source='tournament', note=f'20% tournament share: {tournament.get("name") or tournament_id}')
+            _record_admin_wallet_transaction(cur, admin_user_id=int(admin_user['id']), transaction_type='tournament_profit', amount=admin_share, direction='in', source='tournament', note=f'{round(TOURNAMENT_ADMIN_SHARE * 100)}% tournament share: {tournament.get("name") or tournament_id}')
         cur.execute("UPDATE tournaments SET status='completed' WHERE id=%s", (tournament_id,))
     room['podium'] = podium
     room['winnerPrize'] = podium[0]['prize'] if podium else 0
@@ -3991,12 +4100,12 @@ def _settle_private_room_stakes(room: Dict[str, Any], ranked_player_ids: list[in
 
     Payout structure:
       - Heads-up (exactly 2 players): there is no podium to split, so the
-        winner takes PRIVATE_ROOM_HEADS_UP_WINNER_SHARE (85%) of the pool
-        and the remaining PRIVATE_ROOM_HEADS_UP_ADMIN_SHARE (15%) goes to
+        winner takes PRIVATE_ROOM_HEADS_UP_WINNER_SHARE (95%) of the pool
+        and the remaining PRIVATE_ROOM_HEADS_UP_ADMIN_SHARE (5%) goes to
         the platform - the same "house percentage" idea tournaments use.
       - 3+ players: the room behaves exactly like a tournament bracket of
-        that size, so it reuses TOURNAMENT_PODIUM_SHARES (50/20/10 for
-        1st/2nd/3rd) and TOURNAMENT_ADMIN_SHARE (20%) rather than having
+        that size, so it reuses TOURNAMENT_PODIUM_SHARES (50/25/15 for
+        1st/2nd/3rd) and TOURNAMENT_ADMIN_SHARE (10%) rather than having
         its own separate split to maintain.
     """
     if room.get('stakesSettled'):
@@ -4242,6 +4351,36 @@ def _get_recent_wallet_history(cur, user_id: int) -> Dict[str, Any]:
                 'completedAt': row['completed_at'].isoformat() + 'Z' if row.get('completed_at') else None,
             }
         )
+
+    # Money the admin sent straight to this user's wallet. The admin's own
+    # note is internal, so it is deliberately not included here.
+    try:
+        _ensure_admin_user_transfers_table(cur)
+        cur.execute(
+            '''
+            SELECT transfer_code AS code, amount, status, created_at
+            FROM admin_user_transfers
+            WHERE recipient_user_id=%s
+            ORDER BY id DESC
+            LIMIT 20
+            ''',
+            (user_id,),
+        )
+        for row in cur.fetchall():
+            created_at = _iso_or_none(row.get('created_at'))
+            history.append(
+                {
+                    'code': str(row.get('code') or ''),
+                    'type': 'admin_credit',
+                    'amount': float(row.get('amount') or 0),
+                    'status': row.get('status') or 'completed',
+                    'mode': 'admin credit',
+                    'createdAt': created_at,
+                    'completedAt': created_at,
+                }
+            )
+    except Exception as exc:  # noqa: BLE001 - never let this break the wallet screen
+        app.logger.warning('Could not load admin credits for wallet history: %s', exc)
 
     history.sort(key=lambda item: item.get('createdAt') or '', reverse=True)
     return {'items': history[:20]}
@@ -5095,6 +5234,225 @@ def admin_wallet_withdraw():
         _return_connection(conn)
 
 
+@app.get('/api/admin/users/search')
+def admin_search_users():
+    """Find users to send money to (by username, email, phone or id)."""
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    query = str(request.args.get('q') or '').strip()
+    if len(query) < 2:
+        return jsonify({'items': []})
+    limit = min(max(_safe_int(request.args.get('limit'), 8), 1), 20)
+    like = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT id, username, email, phone_number, balance
+                FROM users
+                WHERE LOWER(email) <> LOWER(%s)
+                  AND (username LIKE %s OR email LIKE %s OR phone_number LIKE %s OR CAST(id AS CHAR) = %s)
+                ORDER BY username ASC
+                LIMIT %s
+                ''',
+                (ADMIN_EMAIL, like, like, like, query, limit),
+            )
+            rows = cur.fetchall()
+        return jsonify(
+            {
+                'items': [
+                    {
+                        'id': int(row['id']),
+                        'username': str(row.get('username') or ''),
+                        'email': str(row.get('email') or ''),
+                        'phoneNumber': str(row.get('phone_number') or ''),
+                        'balance': float(row.get('balance') or 0),
+                    }
+                    for row in rows
+                ]
+            }
+        )
+    finally:
+        _return_connection(conn)
+
+
+@app.post('/api/admin/wallet/send')
+def admin_wallet_send_to_user():
+    """Move money from the admin wallet into a user's wallet, and record it.
+
+    Body: {userId | email, amount, note?, idempotencyKey?}
+
+    Everything happens in one database transaction: both wallet rows are
+    locked, the admin balance is checked, both balances are updated, and the
+    transfer is written to admin_user_transfers and admin_wallet_transactions.
+    If any step fails nothing is saved. Sending the same idempotencyKey again
+    returns the original transfer instead of paying twice (double clicks,
+    retries after a timeout).
+    """
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        amount_value = round(float(payload.get('amount')), 2)
+    except (TypeError, ValueError):
+        return jsonify({'message': 'Invalid amount'}), 400
+    if not math.isfinite(amount_value) or amount_value <= 0:
+        return jsonify({'message': 'Amount must be greater than zero'}), 400
+    if amount_value > ADMIN_TRANSFER_MAX_AMOUNT:
+        return jsonify({'message': f'A single transfer cannot be more than KES {ADMIN_TRANSFER_MAX_AMOUNT:,.0f}.'}), 400
+
+    recipient_id = _safe_int(payload.get('userId'), 0)
+    recipient_email = str(payload.get('email') or '').strip().lower()
+    if recipient_id <= 0 and not recipient_email:
+        return jsonify({'message': 'Choose the user you want to send money to.'}), 400
+    note = str(payload.get('note') or '').strip()[:200]
+    idempotency_key = str(payload.get('idempotencyKey') or '').strip()[:100] or None
+
+    conn = get_connection()
+
+    def fail(message: str, status: int):
+        conn.rollback()
+        return jsonify({'message': message}), status
+
+    try:
+        with conn.cursor() as cur:
+            # DDL first: MySQL commits the open transaction on CREATE TABLE, which
+            # would release the row locks taken below, so it must not run later.
+            _ensure_admin_wallet_transactions_table(cur)
+            _ensure_admin_user_transfers_table(cur)
+
+            admin_user = _get_admin_user(cur)
+            if not admin_user:
+                return fail('Admin wallet user was not found. Make sure the admin email also exists in users.', 404)
+            admin_id = int(admin_user['id'])
+
+            if recipient_id <= 0:
+                cur.execute('SELECT id FROM users WHERE LOWER(email)=LOWER(%s)', (recipient_email,))
+                found = cur.fetchone()
+                if not found:
+                    return fail('No user found with that email.', 404)
+                recipient_id = int(found['id'])
+            if recipient_id == admin_id:
+                return fail('You cannot send money from the admin wallet to itself.', 400)
+
+            # Lock both wallets, always lowest id first, so two transfers running
+            # at once cannot deadlock or spend the same balance twice.
+            first_id, second_id = sorted((admin_id, recipient_id))
+            cur.execute('SELECT * FROM users WHERE id IN (%s, %s) ORDER BY id FOR UPDATE', (first_id, second_id))
+            locked_rows = {int(row['id']): row for row in cur.fetchall()}
+            admin_row = locked_rows.get(admin_id)
+            recipient_row = locked_rows.get(recipient_id)
+            if not admin_row:
+                return fail('Admin wallet user was not found.', 404)
+            if not recipient_row:
+                return fail('That user was not found.', 404)
+
+            if idempotency_key:
+                cur.execute(
+                    'SELECT * FROM admin_user_transfers WHERE admin_user_id=%s AND idempotency_key=%s',
+                    (admin_id, idempotency_key),
+                )
+                existing = cur.fetchone()
+                if existing:
+                    conn.rollback()
+                    return jsonify(
+                        {
+                            'message': 'This transfer was already sent. Nothing was charged twice.',
+                            'duplicate': True,
+                            'transfer': _serialize_admin_transfer(existing),
+                            'wallet': {'balance': float(existing.get('admin_balance_after') or 0)},
+                        }
+                    )
+
+            admin_before = round(float(admin_row.get('balance') or 0), 2)
+            recipient_before = round(float(recipient_row.get('balance') or 0), 2)
+            if admin_before < amount_value:
+                return fail(f'Insufficient admin wallet balance. Available balance is KES {admin_before:,.2f}.', 400)
+            admin_after = round(admin_before - amount_value, 2)
+            recipient_after = round(recipient_before + amount_value, 2)
+
+            recipient_username = str(recipient_row.get('username') or '')
+            recipient_email_value = str(recipient_row.get('email') or '')
+
+            cur.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (amount_value, admin_id))
+            cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, recipient_id))
+
+            log_note = f'Sent to {recipient_username} (#{recipient_id})' + (f': {note}' if note else '')
+            tx_info = _record_admin_wallet_transaction(
+                cur,
+                admin_user_id=admin_id,
+                transaction_type='user_transfer',
+                amount=amount_value,
+                direction='out',
+                source='admin_panel',
+                note=log_note,
+                ensure_table=False,
+            )
+
+            transfer_code = f'adminsend_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(3)}'
+            cur.execute(
+                '''
+                INSERT INTO admin_user_transfers
+                (transfer_code, idempotency_key, admin_user_id, recipient_user_id, recipient_username,
+                 recipient_email, amount, note, status, admin_balance_before, admin_balance_after,
+                 recipient_balance_before, recipient_balance_after, admin_transaction_code)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'completed', %s, %s, %s, %s, %s)
+                ''',
+                (
+                    transfer_code, idempotency_key, admin_id, recipient_id, recipient_username,
+                    recipient_email_value, amount_value, note or None, admin_before, admin_after,
+                    recipient_before, recipient_after, tx_info['code'],
+                ),
+            )
+            cur.execute('SELECT * FROM admin_user_transfers WHERE transfer_code=%s', (transfer_code,))
+            transfer_row = cur.fetchone()
+        conn.commit()
+        return jsonify(
+            {
+                'message': f'Sent KES {amount_value:,.2f} to {recipient_username}.',
+                'duplicate': False,
+                'transfer': _serialize_admin_transfer(transfer_row),
+                'wallet': {'balance': admin_after},
+                'recipient': {'id': recipient_id, 'username': recipient_username, 'balance': recipient_after},
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        app.logger.exception('Admin wallet transfer failed: %s', exc)
+        return jsonify({'message': 'The transfer failed and no money was moved. Please try again.'}), 500
+    finally:
+        _return_connection(conn)
+
+
+@app.get('/api/admin/wallet/transfers')
+def admin_wallet_transfers():
+    """Stored history of admin -> user transfers (newest first)."""
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    limit = min(max(_safe_int(request.args.get('limit'), 50), 1), 200)
+    user_id = _safe_int(request.args.get('userId'), 0)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_admin_user_transfers_table(cur)
+            if user_id > 0:
+                cur.execute(
+                    'SELECT * FROM admin_user_transfers WHERE recipient_user_id=%s ORDER BY id DESC LIMIT %s',
+                    (user_id, limit),
+                )
+            else:
+                cur.execute('SELECT * FROM admin_user_transfers ORDER BY id DESC LIMIT %s', (limit,))
+            rows = cur.fetchall()
+        return jsonify({'items': [_serialize_admin_transfer(row) for row in rows]})
+    finally:
+        _return_connection(conn)
+
+
 @app.get('/api/admin/analytics')
 def admin_analytics():
     if not _is_admin_request():
@@ -5514,13 +5872,74 @@ def admin_impersonate_user():
             if not target_user:
                 return jsonify({'message': 'User not found'}), 404
 
+            # DDL first (MySQL commits on CREATE/ALTER), then the token change and
+            # the audit row are written together and saved by the single commit below.
+            _ensure_admin_impersonation_log_table(cur)
             _ensure_auth_token_column(cur)
+            admin_user = _get_admin_user(cur)
+            if not admin_user:
+                return jsonify({'message': 'Admin user was not found, so this sign-in could not be recorded.'}), 404
             token = _issue_user_token(cur, int(target_user['id']))
+            cur.execute(
+                '''
+                INSERT INTO admin_impersonation_log
+                (admin_user_id, target_user_id, target_username, target_email, ip_address, user_agent)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ''',
+                (
+                    int(admin_user['id']),
+                    int(target_user['id']),
+                    str(target_user.get('username') or '')[:100],
+                    str(target_user.get('email') or '')[:255],
+                    _request_client_ip(),
+                    str(request.headers.get('User-Agent') or '')[:255],
+                ),
+            )
         conn.commit()
         response = _safe_user(target_user, conn)
         response['token'] = token
         message = f"Signed in as {response.get('username') or 'player'}."
         return jsonify({'user': response, 'message': message})
+    finally:
+        _return_connection(conn)
+
+
+@app.get('/api/admin/impersonation-log')
+def admin_impersonation_log():
+    """Who the admin signed in as, and when (newest first)."""
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+
+    limit = min(max(_safe_int(request.args.get('limit'), 50), 1), 200)
+    user_id = _safe_int(request.args.get('userId'), 0)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_admin_impersonation_log_table(cur)
+            if user_id > 0:
+                cur.execute(
+                    'SELECT * FROM admin_impersonation_log WHERE target_user_id=%s ORDER BY id DESC LIMIT %s',
+                    (user_id, limit),
+                )
+            else:
+                cur.execute('SELECT * FROM admin_impersonation_log ORDER BY id DESC LIMIT %s', (limit,))
+            rows = cur.fetchall()
+        return jsonify(
+            {
+                'items': [
+                    {
+                        'id': int(row['id']),
+                        'targetUserId': row.get('target_user_id'),
+                        'targetUsername': str(row.get('target_username') or ''),
+                        'targetEmail': str(row.get('target_email') or ''),
+                        'ipAddress': str(row.get('ip_address') or ''),
+                        'userAgent': str(row.get('user_agent') or ''),
+                        'createdAt': _iso_or_none(row.get('created_at')),
+                    }
+                    for row in rows
+                ]
+            }
+        )
     finally:
         _return_connection(conn)
 
@@ -8975,6 +9394,8 @@ def _bootstrap_db() -> None:
                 _ensure_store_purchase_table(cur)
                 _ensure_marketplace_revenue_table(cur)
                 _ensure_admin_wallet_transactions_table(cur)
+                _ensure_admin_user_transfers_table(cur)
+                _ensure_admin_impersonation_log_table(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_user_equipped_columns(cur)
                 _ensure_season_tables(cur)

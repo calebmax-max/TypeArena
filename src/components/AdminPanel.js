@@ -31,6 +31,9 @@ import {
   uploadAdminMusicTrack,
   deleteAdminMusicFile,
   withdrawFromAdminWallet,
+  searchAdminUsers,
+  sendAdminWalletTransfer,
+  fetchAdminImpersonationLog,
 } from '../utils/typingApi';
 import { arenaMusic, useMusicState } from '../utils/arenaMusic';
 
@@ -123,6 +126,38 @@ export default function AdminPanel() {
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
+  // Send money from the admin wallet to a user's wallet
+  const [sendForm, setSendForm] = useState({ query: '', amount: '', note: '' });
+  const [sendResults, setSendResults] = useState([]);
+  const [sendRecipient, setSendRecipient] = useState(null);
+  const [sendingMoney, setSendingMoney] = useState(false);
+  // One key per transfer attempt: if the request times out and the admin clicks
+  // again, the server sees the same key and does not pay twice.
+  const sendKeyRef = React.useRef(null);
+
+  useEffect(() => {
+    const q = sendForm.query.trim();
+    if (sendRecipient || q.length < 2) { setSendResults([]); return undefined; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const data = await searchAdminUsers(q);
+        if (!cancelled) setSendResults(Array.isArray(data?.items) ? data.items : []);
+      } catch { if (!cancelled) setSendResults([]); }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [sendForm.query, sendRecipient]);
+
+  // Record of "Sign in as" uses, shown under the Top Players table
+  const [impersonationLog, setImpersonationLog] = useState([]);
+  useEffect(() => {
+    if (activeSection !== 'players') return undefined;
+    let cancelled = false;
+    fetchAdminImpersonationLog(20)
+      .then((data) => { if (!cancelled) setImpersonationLog(Array.isArray(data?.items) ? data.items : []); })
+      .catch(() => { if (!cancelled) setImpersonationLog([]); });
+    return () => { cancelled = true; };
+  }, [activeSection]);
   const [deletingTournamentId, setDeletingTournamentId] = useState(null);
   const [clearingTournaments, setClearingTournaments] = useState(false);
   const [editingTournament, setEditingTournament] = useState(null);
@@ -387,6 +422,36 @@ export default function AdminPanel() {
       setWalletForm(p => ({ ...p, withdrawAmount: '', withdrawNote: '' }));
       await loadAdminData();
     } catch (err) { showNotice(err.message || 'Could not withdraw.'); }
+  };
+
+  const handleSendMoneyToUser = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (sendingMoney) return;
+    if (!sendRecipient) { showNotice('Choose a user to send money to.'); return; }
+    const amount = Number(sendForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) { showNotice('Enter an amount greater than zero.'); return; }
+    if (!window.confirm(`Send KES ${amount.toLocaleString()} from the admin wallet to ${sendRecipient.username} (${sendRecipient.email})?`)) return;
+    if (!sendKeyRef.current) {
+      sendKeyRef.current = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : `send-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+    setSendingMoney(true);
+    try {
+      const result = await sendAdminWalletTransfer({
+        userId: sendRecipient.id,
+        amount,
+        note: sendForm.note,
+        idempotencyKey: sendKeyRef.current,
+      });
+      showNotice(result.message || 'Money sent.');
+      setSendForm({ query: '', amount: '', note: '' });
+      setSendRecipient(null);
+      setSendResults([]);
+      sendKeyRef.current = null;
+      await loadAdminData();
+    } catch (err) { showNotice(err.message || 'Could not send money.'); }
+    finally { setSendingMoney(false); }
   };
 
   const handleDeleteTournament = async (t) => {
@@ -1391,6 +1456,56 @@ export default function AdminPanel() {
                 </div>
 
                 <div className="ap-card">
+                  <p className="ap-card-title">Send Money to a User</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', margin: '0 0 12px' }}>
+                    Moves money from the admin wallet (KES {Number(adminWallet.balance || 0).toLocaleString()}) into the user's wallet. Every transfer is saved in the database and shows in the activity log.
+                  </p>
+                  {sendRecipient ? (
+                    <div className="ap-field">
+                      <label className="ap-label">Send to</label>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: '1px solid var(--ap-border, rgba(255,255,255,0.15))', borderRadius: 8 }}>
+                        <span>
+                          <strong>{sendRecipient.username}</strong>
+                          <span style={{ color: 'var(--ap-muted)', fontSize: '0.75rem' }}> · {sendRecipient.email} · balance KES {Number(sendRecipient.balance || 0).toLocaleString()}</span>
+                        </span>
+                        <button type="button" className="ap-btn ap-btn-ghost" onClick={() => { setSendRecipient(null); setSendForm(p => ({ ...p, query: '' })); sendKeyRef.current = null; }}>Change</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="ap-field">
+                      <label className="ap-label">Find user (username, email, phone or ID)</label>
+                      <input className="ap-input" type="text" placeholder="Start typing..." value={sendForm.query} onChange={e => setSendForm(p => ({ ...p, query: e.target.value }))} />
+                      {sendResults.length > 0 && (
+                        <div style={{ marginTop: 6, border: '1px solid var(--ap-border, rgba(255,255,255,0.15))', borderRadius: 8, overflow: 'hidden' }}>
+                          {sendResults.map(u => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => { setSendRecipient(u); setSendResults([]); sendKeyRef.current = null; }}
+                              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--ap-border, rgba(255,255,255,0.08))', color: 'inherit', cursor: 'pointer' }}
+                            >
+                              <strong>{u.username}</strong>
+                              <span style={{ color: 'var(--ap-muted)', fontSize: '0.75rem' }}> · {u.email}{u.phoneNumber ? ` · ${u.phoneNumber}` : ''} · KES {Number(u.balance || 0).toLocaleString()}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="ap-two-col">
+                    <div className="ap-field">
+                      <label className="ap-label">Amount (KES)</label>
+                      <input className="ap-input" type="number" min="1" step="0.01" placeholder="0" value={sendForm.amount} onChange={e => { sendKeyRef.current = null; setSendForm(p => ({ ...p, amount: e.target.value })); }} />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Note (kept in the log)</label>
+                      <input className="ap-input" type="text" maxLength={200} placeholder="Reason, e.g. refund for failed top-up" value={sendForm.note} onChange={e => { sendKeyRef.current = null; setSendForm(p => ({ ...p, note: e.target.value })); }} />
+                    </div>
+                  </div>
+                  <button className="ap-btn" onClick={handleSendMoneyToUser} disabled={sendingMoney || !sendRecipient || !sendForm.amount}>{sendingMoney ? 'Sending...' : 'Send Money'}</button>
+                </div>
+
+                <div className="ap-card">
                   <p className="ap-card-title">Activity Log</p>
                   {(adminWallet.history?.items || []).length ? (
                     <div className="ap-tx-list">
@@ -1635,6 +1750,32 @@ export default function AdminPanel() {
                       </tbody>
                     </table>
                   ) : <div className="ap-empty">No player data available.</div>}
+                </div>
+                <div className="ap-card">
+                  <p className="ap-card-title">Sign-in-as Log</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', margin: '0 0 12px' }}>
+                    Every use of "Sign in as" is saved here. Signing in as a player also signs that player out on their own device.
+                  </p>
+                  {impersonationLog.length ? (
+                    <table className="ap-players-table">
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Signed in as</th>
+                          <th>IP address</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {impersonationLog.map((entry) => (
+                          <tr key={entry.id}>
+                            <td>{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '-'}</td>
+                            <td style={{ fontWeight: 700 }}>{entry.targetUsername || `User #${entry.targetUserId || '?'}`}</td>
+                            <td style={{ color: 'var(--ap-muted)' }}>{entry.ipAddress || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : <div className="ap-empty">No sign-ins recorded yet.</div>}
                 </div>
               </>
             )}

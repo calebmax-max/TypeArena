@@ -912,6 +912,46 @@ export const withdrawFromAdminWallet = async (amount, note = '') => {
   return await parseResponse(response);
 };
 
+// Admin: find a user to send money to (username, email, phone or id).
+// Returns { items: [{ id, username, email, phoneNumber, balance }] }.
+export const searchAdminUsers = async (query) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/users/search?q=${encodeURIComponent(query)}`), {
+    headers: buildAdminHeaders(),
+  });
+  return await parseResponse(response);
+};
+
+// Admin: move money from the admin wallet into a user's wallet. The backend
+// stores every transfer; idempotencyKey makes a retried request safe (the
+// same key never pays twice).
+export const sendAdminWalletTransfer = async ({ userId, amount, note = '', idempotencyKey = '' }) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/wallet/send'), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify({ userId, amount: Number(amount), note, idempotencyKey }),
+  });
+  return await parseResponse(response);
+};
+
+// Admin: stored history of admin -> user transfers (optionally for one user).
+export const fetchAdminWalletTransfers = async (userId = null) => {
+  const query = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+  const response = await apiFetch(buildApiUrl(`/api/admin/wallet/transfers${query}`), {
+    headers: buildAdminHeaders(),
+  });
+  return await parseResponse(response);
+};
+
+// Admin: record of every "Sign in as" (who was accessed, when, from which IP).
+export const fetchAdminImpersonationLog = async (limit = 20, userId = null) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (userId) params.set('userId', String(userId));
+  const response = await apiFetch(buildApiUrl(`/api/admin/impersonation-log?${params.toString()}`), {
+    headers: buildAdminHeaders(),
+  });
+  return await parseResponse(response);
+};
+
 // --- Live Race Mechanics & System APIs ---
 
 export const queueLiveRace = async (payload) => {
