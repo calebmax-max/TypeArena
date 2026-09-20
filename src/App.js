@@ -26,6 +26,7 @@ import Marketplace from './components/Marketplace';
 import Results from './components/Results';
 import Spectate from './components/Spectate';
 import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
+import OnboardingTour from './OnboardingTour';
 
 
 
@@ -129,6 +130,7 @@ function AppLayout() {
   const [currentUser, setCurrentUser] = useState(null);
   const [siteMarqueeItems, setSiteMarqueeItems] = useState(DEFAULT_SITE_MARQUEE_ITEMS);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [tourActive, setTourActive] = useState(false);
 
   useEffect(() => {
     void arenaMusic.loadRemoteSettings();
@@ -245,12 +247,12 @@ function AppLayout() {
             <span /><span /><span />
           </button>
           <nav id="arena-primary-nav" className={`arena-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
-            <NavLink to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
-            <NavLink to="/training" className={navLinkClassName}>Training</NavLink>
-            <NavLink to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
-            <NavLink to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
+            <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
+            <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}>Training</NavLink>
+            <NavLink data-tour="nav-tournaments" to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
+            <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
             <NavLink to="/marketplace" className={navLinkClassName}>Marketplace</NavLink>
-            <NavLink to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
+            <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
             {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout">Sign Out</button>}
           </nav>
         </div>
@@ -291,7 +293,13 @@ function AppLayout() {
         <p className="arena-footer__bottom">&copy; 2026 TypeArena. Compete. Type. Win.</p>
       </footer>
 
-      <InstallButton />
+      <OnboardingTour
+        currentUser={currentUser}
+        menuOpen={menuOpen}
+        setMenuOpen={setMenuOpen}
+        onActiveChange={setTourActive}
+      />
+      <InstallButton forceHidden={tourActive} />
       <UpdateBanner />
     </div>
   );

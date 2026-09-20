@@ -1,0 +1,136 @@
+/* OnboardingTour.css — matches the TypeArena arena palette
+   (same green as InstallButton/PwaPrompts.js and the Play page's
+   --arena-accent, dark panels like the navbar) rather than introducing a
+   new theme. */
+
+.tour-root {
+  --tour-accent: #22c55e;
+  --tour-accent-soft: rgba(34, 197, 94, 0.18);
+  --tour-panel: #0b1b38;
+  --tour-panel-border: rgba(255, 255, 255, 0.14);
+  --tour-text: #f2f2f2;
+  --tour-muted: rgba(255, 255, 255, 0.62);
+}
+
+.tour-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  background: rgba(5, 10, 20, 0.55);
+}
+
+.tour-spotlight {
+  position: fixed;
+  z-index: 2101;
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px var(--tour-accent), 0 0 0 9999px rgba(5, 10, 20, 0.55);
+  pointer-events: none;
+  transition: top 0.15s ease, left 0.15s ease, width 0.15s ease, height 0.15s ease;
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 2102;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  background: var(--tour-panel);
+  border: 1px solid var(--tour-panel-border);
+  border-radius: 16px;
+  padding: 1.1rem 1.2rem 1rem;
+  color: var(--tour-text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.tour-card--centered {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.tour-card--tooltip {
+  /* top/left set inline per target position */
+}
+
+.tour-card--sheet {
+  left: 12px;
+  right: 12px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: auto;
+  max-width: none;
+  padding: 1.25rem 1.25rem calc(1.1rem + env(safe-area-inset-bottom, 0px));
+}
+
+.tour-body {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--tour-text);
+}
+
+.tour-body--large {
+  font-size: 1.05rem;
+}
+
+.tour-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tour-counter {
+  font-size: 0.78rem;
+  color: var(--tour-muted);
+  white-space: nowrap;
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.tour-btn {
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.5rem 0.95rem;
+}
+
+.tour-btn--ghost {
+  background: transparent;
+  color: var(--tour-muted);
+}
+
+.tour-btn--ghost:hover {
+  color: var(--tour-text);
+}
+
+.tour-btn--primary {
+  background: var(--tour-accent);
+  color: #04130a;
+}
+
+.tour-btn--primary:hover {
+  filter: brightness(1.06);
+}
+
+@media (max-width: 820px) {
+  .tour-card--centered {
+    width: calc(100vw - 32px);
+  }
+  .tour-btn {
+    padding: 0.7rem 1.1rem;
+    font-size: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-spotlight {
+    transition: none;
+  }
+}

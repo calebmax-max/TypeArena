@@ -46,8 +46,11 @@ const buttonStyle = {
  *  - iPhone/iPad Safari: shows a short "Share, then Add to Home Screen" tip.
  *  - Shows nothing when the app is already installed / opened as an app, or
  *    when the browser doesn't offer installing.
+ *  - Pass `forceHidden` to keep it out of the way while something else (the
+ *    onboarding tour, say) is on screen. It reappears on its own once
+ *    `forceHidden` goes back to false.
  */
-export function InstallButton({ className = '' }) {
+export function InstallButton({ className = '', forceHidden = false }) {
   const [installEvent, setInstallEvent] = useState(null);
   const [installed, setInstalled] = useState(() => isStandalone());
   const [hidden, setHidden] = useState(false); // hidden with the x, until the page is reloaded
@@ -70,7 +73,7 @@ export function InstallButton({ className = '' }) {
     };
   }, []);
 
-  if (installed || hidden) return null;
+  if (installed || hidden || forceHidden) return null;
 
   const floatingStyle = {
     position: 'fixed',
