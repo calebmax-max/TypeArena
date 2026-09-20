@@ -181,7 +181,14 @@ export function setCurrentLesson(lessonId) {
 
 export function getCurrentLessonId(lessonSequence) {
   const progress = loadProgress();
-  if (progress.currentLessonId) return progress.currentLessonId;
+  const saved = progress.currentLessonId;
+  if (saved && lessonSequence.some((lesson) => lesson.id === saved)) return saved;
+  if (saved) {
+    // The saved lesson no longer exists (the curriculum changed). Carry on from
+    // the first lesson not yet passed, or the last lesson if everything is passed.
+    const firstOpen = lessonSequence.find((lesson) => !isLessonPassed(progress, lesson));
+    return (firstOpen || lessonSequence[lessonSequence.length - 1])?.id || null;
+  }
   return lessonSequence[0]?.id || null;
 }
 

@@ -1,14 +1,7 @@
-// The Training curriculum: 7 units, each a straight line of lessons.
+// The Training curriculum: 6 units, each a straight line of lessons.
 // Nothing is skippable except via the placement test (see placementTest.js) -
 // that's what keeps a fast-but-sloppy typist from breezing past fundamentals.
 //
-// IMPORTANT: PRO_CERT_LESSON_ID must match the backend's
-// TRAINING_PRO_CERT_LESSON_ID env var (app_backend.py defaults to
-// 'pro-cert' too, so this lines up out of the box). If you ever rename
-// this lesson's id, update the backend env var to match, or the
-// time-to-Pro analytics will quietly stop finding any data.
-export const PRO_CERT_LESSON_ID = 'pro-cert';
-export const PRO_CERT_REQUIRED_PASSES = 3;
 
 // --- Practice text generation --------------------------------------------
 // Early lessons (kind: 'keys') generate pseudo-word drills from an allowed
@@ -178,54 +171,6 @@ const SPEED_BURST_BANK = [
   'Finish the sentence, do not just survive it — commit to every word.',
 ];
 
-const PRO_CERT_BANK = [
-  'Professional typing certification requires more than a single lucky run; ' +
-    'it requires consistency across three separate, unassisted attempts, each ' +
-    'meeting the same demanding bar for speed and accuracy without exception.',
-  'A certified typist can sustain a high words-per-minute rate over a full ' +
-    'passage of varied sentence structure, correct punctuation, and mixed case, ' +
-    'without a meaningful drop in accuracy from the first line to the last.',
-  'This final assessment mirrors real working conditions: unpredictable text, ' +
-    'no practice runs immediately beforehand, and a pass bar that does not bend ' +
-    'just because the passage happened to be a difficult one this time.',
-  'Subject: Q3 numbers — quick summary before the board call. Revenue held ' +
-    'steady against forecast, churn dipped slightly in the enterprise tier, ' +
-    'and the two open roles on support should be filled by the end of the month.',
-  'Per our conversation this morning, attached is the revised proposal with ' +
-    'the updated timeline and pricing. Please review before Friday so we can ' +
-    'finalize the contract ahead of the client\'s internal deadline next week.',
-  'To reset the device, hold the power button for ten seconds, wait for the ' +
-    'indicator light to flash twice, then release. If the light stays solid ' +
-    'red, disconnect the cable and try the process again from the beginning.',
-  'Thank you for reaching out, and I am sorry for the trouble this has ' +
-    'caused. I have escalated your case to our specialist team, and you ' +
-    'should hear back within one business day with a resolution.',
-  'MEMO: Effective next Monday, badge access to the third floor will ' +
-    'require the updated key card. Please stop by security before Friday ' +
-    'if you have not already picked up your replacement.',
-  'The candidate demonstrated strong technical judgment throughout the ' +
-    'exercise, though communication under pressure is an area worth ' +
-    'developing further before the next review cycle.',
-  'Introducing a faster, lighter way to manage your team\'s schedule. Set ' +
-    'up takes under five minutes, and the first month is free for every ' +
-    'new workspace that signs up before the end of the quarter.',
-  'System specification: maximum load of two hundred concurrent users, ' +
-    'response time under three hundred milliseconds at peak, and automatic ' +
-    'failover to the secondary region within ten seconds of an outage.',
-  'The quarterly report shows steady growth across every region except ' +
-    'the southeast, where a delayed product launch pushed several key ' +
-    'accounts into the following quarter instead.',
-  'All new hires must complete the compliance training module within ' +
-    'their first thirty days. Managers will receive a reminder email one ' +
-    'week before each employee\'s deadline.',
-  'We regret to inform you that the shipment has been delayed due to a ' +
-    'customs inspection. A revised delivery estimate will be sent within ' +
-    'twenty-four hours, along with a partial refund for the inconvenience.',
-  'Agenda for Thursday: review open action items from last sprint, walk ' +
-    'through the updated design mockups, and confirm the launch date with ' +
-    'both engineering and marketing before the call ends.',
-];
-
 export function generateLessonText(lesson) {
   switch (lesson.kind) {
     case 'keys':
@@ -243,7 +188,7 @@ export function generateLessonText(lesson) {
 // --- The curriculum itself -------------------------------------------------
 // Each lesson: id (unique, sent to the backend as lessonId), unitId, title,
 // a text-generation spec, and a pass bar (minWpm / minAccuracy, 0-100).
-// requiredPasses defaults to 1; only Pro Certification asks for more than one.
+// requiredPasses defaults to 1; a lesson can set a higher number to ask for several passes.
 
 export const UNITS = [
   {
@@ -374,18 +319,6 @@ export const UNITS = [
         id: 'sp3', unitId: 'u6', title: 'Speed Burst — 60 WPM',
         kind: 'sentences', bank: SPEED_BURST_BANK, targetLength: 240,
         minWpm: 60, minAccuracy: 95,
-      },
-    ],
-  },
-  {
-    id: 'u7',
-    title: 'Pro Certification',
-    lessons: [
-      {
-        id: PRO_CERT_LESSON_ID, unitId: 'u7', title: 'Pro Certification',
-        kind: 'text', bank: PRO_CERT_BANK, targetLength: 280,
-        minWpm: 65, minAccuracy: 97,
-        requiredPasses: PRO_CERT_REQUIRED_PASSES,
       },
     ],
   },

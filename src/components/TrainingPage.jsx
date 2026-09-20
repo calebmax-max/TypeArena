@@ -51,9 +51,9 @@ export default function TrainingPage() {
       setActiveLessonId(nextId);
     } else {
       // Passed the very last lesson in the sequence (all required passes
-      // of Pro Certification complete). Nowhere further to advance to, so
-      // stay on this lesson but show a dedicated certified screen instead
-      // of silently returning to "Select a lesson to begin."
+      // complete). Nowhere further to advance to, so stay on this lesson
+      // but show a dedicated finished screen instead of silently returning
+      // to "Select a lesson to begin."
       setCurrentLesson(lessonId);
       setJustCertified(true);
     }
@@ -77,17 +77,16 @@ export default function TrainingPage() {
         <CurriculumMap
           progress={progress}
           currentLessonId={currentLessonId}
-          activeLessonId={activeLessonId}
           onSelectLesson={handleSelectLesson}
         />
       </aside>
       <main className="training-page__main">
         {justCertified ? (
           <div className="training-certified">
-            <h2>You're Pro Certified</h2>
+            <h2>Training complete</h2>
             <p>
-              You cleared every required pass of {activeLesson?.title || 'Pro Certification'} at
-              the full bar. That's the whole curriculum, start to finish.
+              You cleared every lesson in the curriculum, finishing with{' '}
+              {activeLesson?.title || 'the final lesson'}.
             </p>
             <button
               type="button"
