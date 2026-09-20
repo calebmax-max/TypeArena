@@ -328,7 +328,6 @@ export default function Tournaments() {
         <div className="loading-state">Loading tournaments...</div>
       ) : filtered.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-icon">â¬¡</span>
           <p>No {filter !== 'all' ? filter : ''} tournaments right now.</p>
           <p>Check back soon.</p>
         </div>
@@ -373,4 +372,3 @@ export default function Tournaments() {
     </div>
   );
 }
-

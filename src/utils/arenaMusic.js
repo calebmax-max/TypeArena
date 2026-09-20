@@ -18,6 +18,9 @@
 // navigating to Profile does not stop it — and it only actually stops when
 // the visitor leaves the site entirely (tab/browser closed, or navigates
 // off-site), which the engine handles internally via `pagehide`.
+// It also pauses while the page is hidden (switching to another tab or app,
+// pressing the phone's home button, locking the screen) and resumes when the
+// visitor comes back - see PAUSE_WHEN_HIDDEN in the init section below.
 //
 // Usage from any other component (control an already-running player):
 //   import { arenaMusic } from '../utils/arenaMusic';
@@ -527,16 +530,36 @@ const createMusicEngine = () => {
     loadRemoteSettings();
     startAdminSync();
 
-    // Stop playback when the visitor actually leaves the site — closes the
-    // tab, closes the browser, or navigates to another domain — as opposed
-    // to merely switching to a different browser tab (which should NOT
-    // stop the music; that's what `visibilitychange` above is for, and it
-    // only pauses the *admin-sync* polling, not playback). `pagehide` is
-    // the reliable cross-browser signal for "this page is going away" and,
-    // unlike `beforeunload`, doesn't block the page from being cached for
-    // instant back/forward navigation.
+    // Stop playback when the visitor actually leaves the site (closes the tab
+    // or browser, or navigates to another domain). `pagehide` is the reliable
+    // cross-browser signal for "this page is going away" and, unlike
+    // `beforeunload`, doesn't block the page from being cached for instant
+    // back/forward navigation.
     window.addEventListener('pagehide', () => {
       if (playing) pause();
+    });
+
+    // Also pause while the page is merely hidden: the visitor switched to
+    // another tab or app, pressed the home button, or locked the phone. In
+    // those cases the page is NOT unloaded, so `pagehide` never fires and the
+    // <audio> element would keep playing in the background (browsers allow
+    // that for media). Music is resumed on return only if this code paused it,
+    // so a visitor who paused it themselves stays paused, and it is never
+    // restarted in the middle of a race pause (enterRace/exitRace own that).
+    // Set PAUSE_WHEN_HIDDEN to false to go back to background playback.
+    const PAUSE_WHEN_HIDDEN = true;
+    let pausedBecauseHidden = false;
+    document.addEventListener('visibilitychange', () => {
+      if (!PAUSE_WHEN_HIDDEN) return;
+      if (document.visibilityState === 'hidden') {
+        if (playing) {
+          pausedBecauseHidden = true;
+          pause();
+        }
+      } else if (pausedBecauseHidden) {
+        pausedBecauseHidden = false;
+        if (raceDepth === 0) play();
+      }
     });
   }
 

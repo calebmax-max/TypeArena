@@ -448,7 +448,7 @@ export default function Leaderboard({ currentUserUsername }) {
             LIVE
           </span>
           <span className="season-badge" style={{ marginLeft: '0.75rem', fontSize: '0.78rem', padding: '0.25rem 0.75rem', borderRadius: '999px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)', fontWeight: 500, letterSpacing: '0.02em' }}>
-            ?? {seasonName} Season
+            {seasonName} Season
           </span>
         </div>
         <p>Real-time typing ladder. Season resets at end of month.</p>
