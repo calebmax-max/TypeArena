@@ -24,6 +24,7 @@
     "start:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
     "start:web": "react-scripts start",
     "build": "react-scripts build",
+    "postbuild": "node scripts/stamp-sw.js",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

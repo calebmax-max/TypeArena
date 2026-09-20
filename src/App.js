@@ -25,7 +25,7 @@ import AdminPanel from './components/AdminPanel';
 import Marketplace from './components/Marketplace';
 import Results from './components/Results';
 import Spectate from './components/Spectate';
-import { InstallButton, UpdateBanner } from './PwaPrompts';
+import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 
 
 
@@ -73,6 +73,13 @@ class AppErrorBoundary extends React.Component {
   }
 
   handleUnhandledRejection(event) {
+    // Failed requests while the phone has no internet are expected, so they
+    // must not replace the whole app with the runtime-error screen.
+    if (!navigator.onLine) {
+      console.warn('TypeArena: request failed while offline:', event?.reason);
+      return;
+    }
+
     const rejectionError =
       event?.reason instanceof Error
         ? event.reason
@@ -227,6 +234,7 @@ function AppLayout() {
 
   return (
     <div className="App">
+      <OfflineBanner />
       <header className="arena-navbar">
         <div className="arena-navbar__inner">
           <Link to="/" className="arena-brand" aria-label="TypeArena home">

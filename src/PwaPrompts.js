@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
 const IOS_HINT_KEY = 'typearena:ios-hint-dismissed';
 
@@ -171,6 +172,70 @@ export function UpdateBanner() {
       <button type="button" style={buttonStyle} onClick={refresh}>
         Refresh
       </button>
+    </div>
+  );
+}
+
+/**
+ * Shown at the top of the page while the phone has no internet, and briefly
+ * confirms when the connection comes back.
+ */
+export function OfflineBanner() {
+  const [online, setOnline] = useState(() => window.navigator.onLine);
+  const [justReconnected, setJustReconnected] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    let timer = null;
+    const goOffline = () => {
+      window.clearTimeout(timer);
+      setJustReconnected(false);
+      setOnline(false);
+    };
+    const goOnline = () => {
+      setOnline(true);
+      setJustReconnected(true);
+      timer = window.setTimeout(() => setJustReconnected(false), 3000);
+    };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, []);
+
+  if (online && !justReconnected) return null;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        padding: '8px 14px',
+        textAlign: 'center',
+        fontSize: 14,
+        fontWeight: 600,
+        background: online ? '#22c55e' : '#f59e0b',
+        color: '#111',
+      }}
+    >
+      {online ? (
+        "You're back online."
+      ) : (
+        <>
+          You're offline. Reconnect to race, use your wallet or join tournaments.
+          {location.pathname !== '/training' && (
+            <>
+              {' '}
+              <Link to="/training" style={{ color: '#111', textDecoration: 'underline' }}>
+                Practice offline in Training
+              </Link>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
