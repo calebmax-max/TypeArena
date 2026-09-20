@@ -77,6 +77,7 @@ export default function TrainingPage() {
         <CurriculumMap
           progress={progress}
           currentLessonId={currentLessonId}
+          activeLessonId={activeLessonId}
           onSelectLesson={handleSelectLesson}
         />
       </aside>
