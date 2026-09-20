@@ -39,13 +39,18 @@ const buttonStyle = {
 };
 
 /**
- * Shows "Install TypeArena" when the browser allows installing (Android
- * Chrome and most desktop browsers), or a short how-to on iPhone/iPad.
- * Shows nothing when the app is already installed or installing isn't possible.
+ * A floating "Install app" button on the left side of the screen.
+ *  - Android Chrome and most desktop browsers: tapping it opens the browser's
+ *    install prompt. The button disappears as soon as the app is installed
+ *    (whether from this button or from the browser menu).
+ *  - iPhone/iPad Safari: shows a short "Share, then Add to Home Screen" tip.
+ *  - Shows nothing when the app is already installed / opened as an app, or
+ *    when the browser doesn't offer installing.
  */
 export function InstallButton({ className = '' }) {
   const [installEvent, setInstallEvent] = useState(null);
   const [installed, setInstalled] = useState(() => isStandalone());
+  const [hidden, setHidden] = useState(false); // hidden with the x, until the page is reloaded
   const [iosHintDismissed, setIosHintDismissed] = useState(() => readDismissed());
 
   useEffect(() => {
@@ -65,18 +70,78 @@ export function InstallButton({ className = '' }) {
     };
   }, []);
 
-  if (installed) return null;
+  if (installed || hidden) return null;
+
+  const floatingStyle = {
+    position: 'fixed',
+    left: 'calc(12px + env(safe-area-inset-left, 0px))',
+    bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
+    zIndex: 1000,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: 'calc(100vw - 24px)',
+  };
 
   if (installEvent) {
     const install = async () => {
       installEvent.prompt();
-      await installEvent.userChoice;
+      const choice = await installEvent.userChoice;
       setInstallEvent(null); // the event can only be used once
+      if (choice && choice.outcome === 'accepted') setInstalled(true);
     };
     return (
-      <button type="button" className={className} style={buttonStyle} onClick={install}>
-        Install TypeArena
-      </button>
+      <div className={className} style={floatingStyle}>
+        <button
+          type="button"
+          onClick={install}
+          style={{
+            ...buttonStyle,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            borderRadius: 999,
+            padding: '10px 16px',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
+          }}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 3v12" />
+            <polyline points="7 11 12 16 17 11" />
+            <path d="M5 20h14" />
+          </svg>
+          Install app
+        </button>
+        <button
+          type="button"
+          onClick={() => setHidden(true)}
+          aria-label="Hide install button"
+          style={{
+            width: 28,
+            height: 28,
+            padding: 0,
+            border: 'none',
+            borderRadius: '50%',
+            background: 'rgba(0, 0, 0, 0.65)',
+            color: '#f2f2f2',
+            fontSize: 16,
+            lineHeight: 1,
+            cursor: 'pointer',
+          }}
+        >
+          &times;
+        </button>
+      </div>
     );
   }
 
@@ -94,14 +159,14 @@ export function InstallButton({ className = '' }) {
         className={className}
         role="note"
         style={{
-          display: 'flex',
-          alignItems: 'center',
+          ...floatingStyle,
           gap: 12,
           padding: '10px 14px',
-          borderRadius: 8,
+          borderRadius: 12,
           background: '#1c1c1c',
           color: '#f2f2f2',
           fontSize: 14,
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
         }}
       >
         <span>

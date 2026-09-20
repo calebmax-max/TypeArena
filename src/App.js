@@ -285,12 +285,13 @@ function AppLayout() {
 
       <footer className="arena-footer">
         <div className="arena-footer__inner">
-          <div><strong>TypeArena</strong><p>Skill-based typing races for people who like a little pressure.</p><InstallButton className="mt-2" /></div>
+          <div><strong>TypeArena</strong><p>Skill-based typing races for people who like a little pressure.</p></div>
           <div className="arena-footer__links"><Link to="/play">Play a race</Link><Link to="/tournaments">Tournaments</Link><Link to="/leaderboard">Leaderboard</Link><Link to="/profile">Your profile</Link></div>
         </div>
         <p className="arena-footer__bottom">&copy; 2026 TypeArena. Compete. Type. Win.</p>
       </footer>
 
+      <InstallButton />
       <UpdateBanner />
     </div>
   );
