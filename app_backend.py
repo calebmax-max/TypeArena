@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 import os
 import math
@@ -129,6 +128,10 @@ ADMIN_EMAIL = os.getenv('TYPEARENA_ADMIN_EMAIL', '').strip()
 ADMIN_PASSWORD = os.getenv('TYPEARENA_ADMIN_PASSWORD', '')
 ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS = 5
 ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
+# Version of the Terms of Service & Policy Pack users accept at signup. Keep in
+# sync with TERMS_VERSION in the frontend's termsContent.js and bump it whenever
+# the legal text changes.
+TERMS_VERSION = '2026-09-10'
 TOURNAMENT_MATCH_SIZE = 3
 TOURNAMENT_START_DELAY_SECONDS = 30
 TOURNAMENT_PODIUM_SHARES = (0.50, 0.25, 0.15)
@@ -3316,9 +3319,30 @@ def _safe_user_with_owned_items(
     }
 
 
+def _terms_status_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Terms acceptance info for the signed-in user's own responses.
+
+    termsCurrent: True  = accepted the current TERMS_VERSION (admins always count)
+                  False = must (re-)accept, the frontend shows the prompt
+                  None  = unknown (the columns don't exist yet), never prompts
+    """
+    if 'terms_accepted_at' not in user:
+        return {'termsAcceptedAt': None, 'termsVersion': '', 'termsCurrent': None}
+    accepted_at = user.get('terms_accepted_at')
+    version = str(user.get('terms_version') or '')
+    is_admin = _is_admin_email(user.get('email') or '')
+    return {
+        'termsAcceptedAt': (accepted_at.isoformat() + 'Z') if hasattr(accepted_at, 'isoformat') else None,
+        'termsVersion': version,
+        'termsCurrent': bool(is_admin or (accepted_at and version == TERMS_VERSION)),
+    }
+
+
 def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
     owned_items = _owned_store_items_for_user(conn, _safe_int(user.get('id') or 0)) if conn else []
-    return _safe_user_with_owned_items(user, owned_items)
+    result = _safe_user_with_owned_items(user, owned_items)
+    result.update(_terms_status_for_user(user))
+    return result
 
 
 def _serialize_tournament(row: Dict[str, Any], user_owned_items: list[str] | set[str] | tuple[str, ...] | None = None) -> Dict[str, Any]:
@@ -4682,6 +4706,46 @@ def _ensure_auth_token_column(cur) -> None:
         )
 
 
+_TERMS_COLUMNS_READY = False
+
+
+def _ensure_terms_acceptance_columns(cur) -> None:
+    """Record when (and which version of) the Terms a user accepted at signup.
+
+    NULL means the account predates the checkbox or never accepted the Terms.
+    """
+    global _TERMS_COLUMNS_READY
+    if _TERMS_COLUMNS_READY:
+        return
+    cur.execute("SHOW COLUMNS FROM users LIKE 'terms_accepted_at'")
+    if not cur.fetchone():
+        cur.execute('ALTER TABLE users ADD COLUMN terms_accepted_at DATETIME NULL')
+    cur.execute("SHOW COLUMNS FROM users LIKE 'terms_version'")
+    if not cur.fetchone():
+        cur.execute('ALTER TABLE users ADD COLUMN terms_version VARCHAR(20) NULL')
+    _TERMS_COLUMNS_READY = True
+
+
+# Tokens handed out by "Sign in as" (admin impersonation). Best-effort, in-memory
+# (the app runs as a single process): lets the API refuse to record Terms
+# acceptance on a player's behalf while an admin is signed in as them.
+_IMPERSONATED_TOKENS: Dict[str, float] = {}
+_IMPERSONATED_TOKEN_TTL_SECONDS = 24 * 60 * 60
+
+
+def _remember_impersonated_token(token: str) -> None:
+    now = time.time()
+    for old_token, issued_at in list(_IMPERSONATED_TOKENS.items()):
+        if now - issued_at > _IMPERSONATED_TOKEN_TTL_SECONDS:
+            _IMPERSONATED_TOKENS.pop(old_token, None)
+    _IMPERSONATED_TOKENS[token] = now
+
+
+def _is_impersonated_token(token: str) -> bool:
+    issued_at = _IMPERSONATED_TOKENS.get(token)
+    return issued_at is not None and time.time() - issued_at <= _IMPERSONATED_TOKEN_TTL_SECONDS
+
+
 def _issue_user_token(cur, user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     cur.execute('UPDATE users SET auth_token=%s WHERE id=%s', (token, user_id))
@@ -5995,6 +6059,7 @@ def admin_impersonate_user():
             if not admin_user:
                 return jsonify({'message': 'Admin user was not found, so this sign-in could not be recorded.'}), 404
             token = _issue_user_token(cur, int(target_user['id']))
+            _remember_impersonated_token(token)
             cur.execute(
                 '''
                 INSERT INTO admin_impersonation_log
@@ -6309,10 +6374,19 @@ def auth_signup():
     if not username or not email or not password:
         return jsonify({'message': 'username, email, and password are required'}), 400
 
+    # Accepting the Terms of Service / Privacy Policy is mandatory. It is checked
+    # here as well as in the signup form so it can't be skipped by calling the
+    # API directly.
+    if payload.get('termsAccepted') is not True:
+        return jsonify({'message': 'You must accept the Terms of Service and Privacy Policy to create an account.'}), 400
+    terms_version = str(payload.get('termsVersion') or TERMS_VERSION).strip()[:20]
+
     conn = get_connection()
     try:
         hashed_password = generate_password_hash(password)
         with conn.cursor() as cur:
+            # Runs before the INSERT: ALTER TABLE commits implicitly in MySQL.
+            _ensure_terms_acceptance_columns(cur)
             cur.execute('SELECT id FROM users WHERE LOWER(email)=LOWER(%s)', (email,))
             if cur.fetchone():
                 return jsonify({'message': 'An account with this email already exists'}), 409
@@ -6320,10 +6394,11 @@ def auth_signup():
             cur.execute(
                 '''
                 INSERT INTO users
-                (username, email, password, phone_number, wpm, accuracy, total_races, wins, balance)
-                VALUES (%s, %s, %s, %s, 0, 0, 0, 0, 0)
+                (username, email, password, phone_number, wpm, accuracy, total_races, wins, balance,
+                 terms_accepted_at, terms_version)
+                VALUES (%s, %s, %s, %s, 0, 0, 0, 0, 0, UTC_TIMESTAMP(), %s)
                 ''',
-                (username, email, hashed_password, phone_number),
+                (username, email, hashed_password, phone_number, terms_version),
             )
             user_id = cur.lastrowid
             _ensure_auth_token_column(cur)
@@ -6395,10 +6470,58 @@ def auth_login():
         _return_connection(conn)
 
 
+@app.post('/api/user/accept-terms')
+def user_accept_terms():
+    """Record that the signed-in user accepted the current Terms (existing accounts)."""
+    payload = request.get_json(silent=True) or {}
+    if payload.get('termsAccepted') is not True:
+        return jsonify({'message': 'You must accept the Terms of Service and Privacy Policy to continue.'}), 400
+    if str(payload.get('termsVersion') or '').strip() != TERMS_VERSION:
+        return jsonify({'message': 'The Terms have been updated. Please refresh the page and review them again.'}), 409
+    if not _has_bearer_token():
+        return jsonify({'message': 'Unauthorized'}), 401
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_terms_acceptance_columns(cur)  # DDL first (implicit commit in MySQL)
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        token = request.headers.get('Authorization', '')[7:].strip()
+        if _is_impersonated_token(token):
+            return jsonify({'message': "Terms can't be accepted while an admin is signed in as this player."}), 403
+
+        already_current = bool(user.get('terms_accepted_at')) and str(user.get('terms_version') or '') == TERMS_VERSION
+        if not already_current:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'UPDATE users SET terms_accepted_at=UTC_TIMESTAMP(), terms_version=%s WHERE id=%s',
+                    (TERMS_VERSION, user['id']),
+                )
+                cur.execute('SELECT * FROM users WHERE id = %s', (user['id'],))
+                user = cur.fetchone()
+            conn.commit()
+        response = _safe_user(user, conn)
+        response['token'] = token
+        return jsonify(response)
+    finally:
+        _return_connection(conn)
+
+
 @app.get('/api/user/me')
 def user_me():
     conn = get_connection()
     try:
+        if not _TERMS_COLUMNS_READY:
+            # One-time, best-effort: makes sure the Terms columns exist before the
+            # SELECT * below so existing users get a correct termsCurrent value.
+            try:
+                with conn.cursor() as cur:
+                    _ensure_terms_acceptance_columns(cur)
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                app.logger.warning('Could not ensure Terms columns in /api/user/me', exc_info=True)
         try:
             user = _get_user_from_header(conn)
             if not user:
@@ -9659,6 +9782,7 @@ def _bootstrap_db() -> None:
                 _ensure_admin_user_transfers_table(cur)
                 _ensure_admin_impersonation_log_table(cur)
                 _ensure_auth_token_column(cur)
+                _ensure_terms_acceptance_columns(cur)
                 _ensure_user_equipped_columns(cur)
                 _ensure_season_tables(cur)
                 _ensure_race_history_audit_columns(cur)

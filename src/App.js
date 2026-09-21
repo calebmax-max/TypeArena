@@ -27,6 +27,7 @@ import Results from './components/Results';
 import Spectate from './components/Spectate';
 import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 import OnboardingTour from './OnboardingTour';
+import TermsUpdateGate from './components/TermsUpdateGate';
 
 
 
@@ -320,6 +321,7 @@ function AppLayout() {
         setMenuOpen={setMenuOpen}
         onActiveChange={setTourActive}
       />
+      <TermsUpdateGate currentUser={currentUser} suspended={tourActive} />
       <InstallButton forceHidden={tourActive} />
       <UpdateBanner />
     </div>

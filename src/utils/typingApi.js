@@ -211,13 +211,20 @@ export const loginUser = async (email, password) => {
   }
 };
 
-export const signupUser = async (username, email, password, phoneNumber) => {
+export const signupUser = async (username, email, password, phoneNumber, terms = {}) => {
   authGeneration += 1;
   try {
     const response = await apiFetch(buildApiUrl('/api/auth/signup'), {
       method: 'POST',
       headers: buildHeaders(),
-      body: JSON.stringify({ username, email, password, phoneNumber }),
+      body: JSON.stringify({
+        username,
+        email,
+        password,
+        phoneNumber,
+        termsAccepted: terms.accepted === true,
+        termsVersion: terms.version,
+      }),
     });
     const user = await parseResponse(response);
     setStoredUser(user);
@@ -229,6 +236,19 @@ export const signupUser = async (username, email, password, phoneNumber) => {
     }
     throw error;
   }
+};
+
+// Records that the signed-in user accepted the current Terms (existing accounts).
+export const acceptTerms = async (version) => {
+  const response = await apiFetch(buildApiUrl('/api/user/accept-terms'), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ termsAccepted: true, termsVersion: version }),
+  });
+  const user = await parseResponse(response);
+  setStoredUser(user);
+  window.dispatchEvent(new Event('typearena-user-changed'));
+  return user;
 };
 
 // --- Tournament APIs ---

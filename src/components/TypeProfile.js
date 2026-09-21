@@ -42,6 +42,7 @@ import {
 } from '../utils/typingApi';
 import '../styles/TypeProfile.css';
 import TermsConsent from './TermsConsent';
+import { TERMS_VERSION } from './termsContent';
 
 // ──────────────────────────────────────── Constants ────────────────────────────────────────
 const USER_CHANGE_EVENT                  = 'typearena-user-changed';
@@ -477,7 +478,10 @@ export default function TypeProfile() {
     try {
       const user = authMode === 'login'
         ? await loginUser(formData.email, formData.password)
-        : await signupUser(formData.username, formData.email, formData.password, formData.phoneNumber);
+        : await signupUser(
+            formData.username, formData.email, formData.password, formData.phoneNumber,
+            { accepted: termsAccepted, version: TERMS_VERSION },
+          );
 
       applyFreshUserState(user);
 

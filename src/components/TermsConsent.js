@@ -46,7 +46,16 @@ function Block({ block }) {
   );
 }
 
-function TermsModal({ initialDoc, onClose, onAgree, alreadyAgreed }) {
+export function TermsModal({
+  initialDoc,
+  onClose,
+  onAgree,
+  alreadyAgreed,
+  notice = '',
+  closeLabel = 'Close',
+  busy = false,
+  error = '',
+}) {
   const [activeId, setActiveId] = useState(initialDoc);
   const dialogRef = useRef(null);
   const bodyRef = useRef(null);
@@ -126,6 +135,7 @@ function TermsModal({ initialDoc, onClose, onAgree, alreadyAgreed }) {
         </div>
 
         <div className="ta-terms__body" ref={bodyRef} tabIndex={0}>
+          {notice && <p className="ta-terms__notice">{notice}</p>}
           <h3 className="ta-terms__doc-title">{doc.title}</h3>
           <p className="ta-terms__meta">
             Effective {doc.effective}{doc.updated ? ` · Last updated ${doc.updated}` : ''}
@@ -139,13 +149,14 @@ function TermsModal({ initialDoc, onClose, onAgree, alreadyAgreed }) {
           ))}
         </div>
 
+        {error && <p className="ta-terms__error" role="alert">{error}</p>}
         <footer className="ta-terms__footer">
-          <button type="button" className="tp-btn tp-btn--ghost" onClick={onClose}>
-            Close
+          <button type="button" className="tp-btn tp-btn--ghost" onClick={onClose} disabled={busy}>
+            {closeLabel}
           </button>
           {!alreadyAgreed && (
-            <button type="button" className="tp-btn tp-btn--primary" onClick={onAgree}>
-              I agree
+            <button type="button" className="tp-btn tp-btn--primary" onClick={onAgree} disabled={busy}>
+              {busy ? 'Saving...' : 'I agree'}
             </button>
           )}
         </footer>

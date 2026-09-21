@@ -252,7 +252,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
   const goNext = () => {
     if (isLast) {
       endTour();
-      navigate('/login?signup=1');
+      navigate('/profile?signup=1');
       return;
     }
     setStepIndex((i) => i + 1);
