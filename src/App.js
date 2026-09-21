@@ -40,6 +40,25 @@ const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Wallet top-up, tournaments, and marketplace are active.',
 ];
 
+// Network failures and API error responses are expected on flaky connections
+// (DNS drops, HTTP/2 pings failing, a 500 from an overloaded backend). They are
+// not runtime crashes, so they must never replace the whole app with the
+// "runtime error" screen. parseResponse() in typingApi.js throws Errors that
+// carry a numeric `status`, which is how API errors are recognised here.
+const isTransientRequestError = (reason) => {
+  if (!reason) return false;
+  if (reason.name === 'AbortError') return true;
+  if (typeof reason.status === 'number') return true;
+  const message = String(reason.message || reason).toLowerCase();
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('load failed') ||
+    message.includes('networkerror') ||
+    message.includes('network request failed') ||
+    message.includes('cannot reach the backend')
+  );
+};
+
 class AppErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -67,17 +86,19 @@ class AppErrorBoundary extends React.Component {
   }
 
   handleWindowError(event) {
-    if (event?.error) {
+    if (event?.error && !isTransientRequestError(event.error)) {
       console.error('TypeArena uncaught window error:', event.error);
       this.setState({ error: event.error });
     }
   }
 
   handleUnhandledRejection(event) {
-    // Failed requests while the phone has no internet are expected, so they
-    // must not replace the whole app with the runtime-error screen.
-    if (!navigator.onLine) {
-      console.warn('TypeArena: request failed while offline:', event?.reason);
+    // Failed requests while the phone has no internet (or while the network /
+    // backend is flaking) are expected, so they must not replace the whole
+    // app with the runtime-error screen. navigator.onLine stays true during
+    // DNS failures and dropped connections, so check the error itself too.
+    if (!navigator.onLine || isTransientRequestError(event?.reason)) {
+      console.warn('TypeArena: request failed (offline or network/API error):', event?.reason);
       return;
     }
 

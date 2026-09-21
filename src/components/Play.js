@@ -11,6 +11,7 @@ import {
   handlePasteAttempt,
 } from '../utils/typingEngine';
 import {
+  buildHeaders,
   fetchCurrentUser,
   fetchDailyContent,
   fetchLiveRaceRoom,
@@ -223,9 +224,9 @@ const SCRIPT = {
   ],
   featureTour: () => [
     `Here's what's waiting for you.`,
-    `Jump into a live one-versus-one battle Ã¯Â¿Â½?" real opponent, real prize money!`,
+    `Jump into a live one-versus-one battle - real opponent, real prize money!`,
     `Create a private match and challenge your friends directly.`,
-    `Compete in tournaments Ã¯Â¿Â½?" multiple rounds, one champion.`,
+    `Compete in tournaments - multiple rounds, one champion.`,
     `Or sharpen your skills in solo practice mode, any time you want.`,
     `The arena is yours.`,
     `Now let's race!`,
@@ -251,7 +252,7 @@ const SCRIPT = {
   ],
 
   milestone75: [
-    [`Seventy-five percent!`, `In the HOME STRETCH now!`, `Don't let up Ã¯Â¿Â½?" the finish is RIGHT THERE!`],
+    [`Seventy-five percent!`, `In the HOME STRETCH now!`, `Don't let up - the finish is RIGHT THERE!`],
     [`Three quarters done!`, `The crowd is DEAFENING!`, `One final push!`],
     [`Almost there!`, `This is where LEGENDS separate from the rest!`, `COME ON!`],
   ],
@@ -267,15 +268,15 @@ const SCRIPT = {
   ],
 
   error: [
-    [`Ohhh!`, `A slip!`, `Shake it off Ã¯Â¿Â½?" champions recover!`],
+    [`Ohhh!`, `A slip!`, `Shake it off - champions recover!`],
     [`Mistake!`, `But there's still time!`, `Dig in and push through!`],
-    [`Oh no!`, `A rare error!`, `Back on track Ã¯Â¿Â½?" NOW!`],
+    [`Oh no!`, `A rare error!`, `Back on track - NOW!`],
   ],
 
   finish: [
     [`AND IT'S OVER!`, `What a performance!`, `The crowd is absolutely ELECTRIC!`],
     [`THE RACE IS COMPLETE!`, `An outstanding display of speed and accuracy!`, `Give it up for this racer!`],
-    [`DONE!`, `Breathtaking!`, `Ladies and gentlemen Ã¯Â¿Â½?" that was TypeArena at its finest!`],
+    [`DONE!`, `Breathtaking!`, `Ladies and gentlemen - that was TypeArena at its finest!`],
   ],
 
   waiting: [
@@ -1505,18 +1506,18 @@ export default function Play({ practicePage = false }){
     const topMistakes = Object.entries(mistakeMap)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6)
-      .map(([ch, n]) => `'${ch === ' ' ? 'space' : ch}' (${n}Ã¯Â¿Â½-)`)
+      .map(([ch, n]) => `'${ch === ' ' ? 'space' : ch}' (${n}x)`)
       .join(', ') || 'none';
 
     const wpmTrend = wpmHistory.length >= 3
-      ? `${wpmHistory[0].wpm.toFixed(0)} Ã¯Â¿Â½?' ${wpmHistory[Math.floor(wpmHistory.length / 2)].wpm.toFixed(0)} Ã¯Â¿Â½?' ${wpmHistory[wpmHistory.length - 1].wpm.toFixed(0)} WPM`
+      ? `${wpmHistory[0].wpm.toFixed(0)} -> ${wpmHistory[Math.floor(wpmHistory.length / 2)].wpm.toFixed(0)} -> ${wpmHistory[wpmHistory.length - 1].wpm.toFixed(0)} WPM`
       : `${raceResult.wpm.toFixed(0)} WPM`;
 
     const prompt = `You are a concise typing coach. A player just finished a ${raceResult.duration}s ${raceResult.mode} race.
 
 Stats:
 - WPM: ${raceResult.wpm.toFixed(1)}, Accuracy: ${raceResult.accuracy.toFixed(1)}%
-- WPM trend (start Ã¯Â¿Â½?' mid Ã¯Â¿Â½?' end): ${wpmTrend}
+- WPM trend (start -> mid -> end): ${wpmTrend}
 - Most-missed characters: ${topMistakes}
 
 Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name specific words or patterns to practise. Format as a short numbered list. No preamble, no sign-off. Plain text only, no markdown.`;
@@ -1525,7 +1526,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     // would be visible to every user. Route through your own backend proxy instead.
     fetch(buildApiUrl('/api/ai-coaching'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // /api/ai-coaching is authenticated: buildHeaders() adds the Bearer token.
+      headers: buildHeaders(),
       body: JSON.stringify({ prompt }),
       signal: controller.signal,
     })
