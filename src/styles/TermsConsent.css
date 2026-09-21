@@ -191,6 +191,49 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* FIX: the dialog is rendered via createPortal into document.body, so it
+   sits outside the signup form's DOM subtree. If .tp-btn / .tp-btn--primary
+   / .tp-btn--ghost are defined elsewhere as descendant selectors scoped to
+   the form (e.g. `.signup-card .tp-btn--primary`), those rules stop
+   matching once the button is portaled out — the "I agree" button then
+   renders as plain unstyled text with no background, which is nearly
+   invisible against the dialog's dark background. Scope button styling to
+   the dialog itself so it doesn't depend on where in the DOM it ends up. */
+.ta-terms__footer .tp-btn {
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.ta-terms__footer .tp-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ta-terms__footer .tp-btn--ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.ta-terms__footer .tp-btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ta-terms__footer .tp-btn--primary {
+  background: var(--tp-accent, #7c5cff);
+  border-color: var(--tp-accent, #7c5cff);
+  color: #fff;
+}
+
+.ta-terms__footer .tp-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
 @media (max-width: 520px) {
   .ta-terms__backdrop { padding: 0; align-items: flex-end; }
   .ta-terms__dialog { max-height: 94vh; border-radius: 16px 16px 0 0; }
