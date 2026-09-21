@@ -252,7 +252,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
   const goNext = () => {
     if (isLast) {
       endTour();
-      navigate('/training');
+      navigate('/login?signup=1');
       return;
     }
     setStepIndex((i) => i + 1);
@@ -353,7 +353,7 @@ function TourBody({ step, stepIndex, total, isFirst, isLast, onNext, onBack, onS
             </button>
           )}
           <button type="button" className="tour-btn tour-btn--primary" onClick={onNext}>
-            {step.finish ? 'Start with Training' : isFirst ? 'Start' : 'Next'}
+            {step.finish ? 'Create Account' : isFirst ? 'Start' : 'Next'}
           </button>
         </div>
       </div>
