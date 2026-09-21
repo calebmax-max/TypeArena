@@ -154,6 +154,12 @@ WITHDRAWAL_FEE = 50.0
 # TYPEARENA_ADMIN_TRANSFER_MAX_KES environment variable.
 ADMIN_TRANSFER_MAX_AMOUNT = float(max(1, _env_int('TYPEARENA_ADMIN_TRANSFER_MAX_KES', 1_000_000)))
 LIVE_RACE_COUNTDOWN_SECONDS = 10
+# Public 1v1: once two players are matched, both see a "versus" screen for this
+# many seconds BEFORE the countdown starts. The room's startedAt (= the moment
+# the countdown begins) is set this far in the future, so it is one shared
+# server-side timestamp both clients count down to, whenever each of them
+# happens to learn about the match.
+LIVE_RACE_REVEAL_SECONDS = 5
 # Public 1v1 matchmaking tuning.
 # A waiting room only counts as "open" while its owner keeps polling it (each
 # poll refreshes live_race_rooms.updated_at, see get_live_race). If the owner
@@ -2514,6 +2520,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
                 'progress': int(player.get('progress') or 0),
                 'currentWpm': float(player.get('currentWpm') or 0),
                 'currentAccuracy': float(player.get('currentAccuracy') or 100),
+                'averageWpm': float(player.get('averageWpm') or 0),
                 'submitted': bool(result),
                 'result': result or None,
             }
@@ -7518,6 +7525,11 @@ def list_live_races():
         _return_connection(conn)
 
 
+def _live_match_start_iso() -> str:
+    """startedAt for a freshly matched public room: reveal window, then countdown."""
+    return (datetime.utcnow() + timedelta(seconds=LIVE_RACE_REVEAL_SECONDS)).isoformat() + 'Z'
+
+
 def _parse_wpm_bound(value: Any) -> Optional[int]:
     """Parse a client-supplied WPM filter bound. Returns None when unset/invalid."""
     if value is None or value == '':
@@ -7630,6 +7642,7 @@ def queue_live_race():
                 'progress': 0,
                 'currentWpm': 0,
                 'currentAccuracy': 100,
+                'averageWpm': round(my_wpm, 1),
             }
 
             if invite_code:
@@ -7667,7 +7680,7 @@ def queue_live_race():
                     # duration and explicitly starts the shared race.
                     if not room.get('isPrivate'):
                         room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
-                        room['startedAt'] = _now_iso() if room['status'] == 'countdown' else room.get('startedAt')
+                        room['startedAt'] = _live_match_start_iso() if room['status'] == 'countdown' else room.get('startedAt')
                     _save_live_room(cur, room)
                     conn.commit()
                     return jsonify(
@@ -7768,7 +7781,7 @@ def queue_live_race():
                     # matchmaking is effectively 1v1.
                     room['players'].append(player_snapshot)
                     room['status'] = 'countdown'
-                    room['startedAt'] = _now_iso()
+                    room['startedAt'] = _live_match_start_iso()
                     _save_live_room(cur, room)
                     conn.commit()
                     return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True})

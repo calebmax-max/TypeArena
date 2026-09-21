@@ -14,7 +14,7 @@ import {
 } from '../utils/typingApi';
 
 const LIVE_RACE_COUNTDOWN_FALLBACK = 10;
-const LIVE_CLOCK_SYNC_INTERVAL_MS = 250;
+const LIVE_CLOCK_SYNC_INTERVAL_MS = 50;
 const LIVE_ROOM_POLL_QUEUED_MS = 500;
 const LIVE_ROOM_POLL_ACTIVE_MS = 4000;
 const LIVE_ROOM_POLL_RESULTS_MS = 2500;
@@ -58,6 +58,8 @@ export function useLiveRaceSession({
   const [liveAction, setLiveAction] = useState(null);
   const [countdownRemaining, setCountdownRemaining] = useState(LIVE_RACE_COUNTDOWN_FALLBACK);
   const [queueElapsed, setQueueElapsed] = useState(0);
+  // Seconds left in the pre-countdown "versus" reveal (0 = no reveal / over).
+  const [revealRemaining, setRevealRemaining] = useState(0);
 
   const heartbeatTimerRef = useRef(null);
   const heartbeatPayloadRef = useRef(null);
@@ -73,6 +75,8 @@ export function useLiveRaceSession({
   // only recompute the offset when a genuinely fresh server timestamp arrives
   // (see syncRoomClock below).
   const lastSyncedServerNowRef = useRef(null);
+  // Best (lowest round-trip) server-clock sample seen so far. See recordClockSample.
+  const clockSampleRef = useRef({ bestRtt: Infinity, at: 0 });
 
   const clearTransientLiveState = useCallback(() => {
     setTypingText('');
@@ -195,9 +199,36 @@ export function useLiveRaceSession({
     typingTextRef,
   ]);
 
+  // NTP-style clock calibration. room.serverNow was stamped by the server
+  // somewhere between when we sent the request and when the reply arrived, so
+  // the best estimate of "server time at the moment we sent it" is the
+  // midpoint. Comparing serverNow to the RECEIVE time instead (what this used
+  // to do) bakes the full one-way latency into the offset, and that error
+  // differs per player - which is exactly what made two countdowns disagree.
+  // We keep the sample with the smallest round-trip (least uncertainty) and
+  // only let a slower one replace it after 30s, to follow real clock drift.
+  const recordClockSample = useCallback((room, sentAt, receivedAt) => {
+    if (!room?.serverNow) {
+      return;
+    }
+    const serverNowMs = Date.parse(room.serverNow);
+    const rtt = receivedAt - sentAt;
+    if (!Number.isFinite(serverNowMs) || !Number.isFinite(rtt) || rtt < 0) {
+      return;
+    }
+    const sample = clockSampleRef.current;
+    if (rtt <= sample.bestRtt || receivedAt - sample.at > 30000) {
+      serverClockOffsetRef.current = serverNowMs - (sentAt + rtt / 2);
+      sample.bestRtt = rtt;
+      sample.at = receivedAt;
+      lastSyncedServerNowRef.current = room.serverNow;
+    }
+  }, []);
+
   const syncRoomClock = useCallback((room) => {
     if (!room?.startedAt) {
       setCountdownRemaining(Number(room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
+      setRevealRemaining(0);
       return;
     }
 
@@ -211,7 +242,7 @@ export function useLiveRaceSession({
     // a sawtooth that differs per-client, so the two players' countdowns visibly
     // disagreed. Now we only re-derive the offset when a genuinely new serverNow
     // shows up (i.e. this room object came from a fresh server response).
-    if (room.serverNow && room.serverNow !== lastSyncedServerNowRef.current) {
+    if (clockSampleRef.current.bestRtt === Infinity && room.serverNow && room.serverNow !== lastSyncedServerNowRef.current) {
       const serverNowMs = Date.parse(room.serverNow);
       if (Number.isFinite(serverNowMs)) {
         serverClockOffsetRef.current = serverNowMs - Date.now();
@@ -222,10 +253,18 @@ export function useLiveRaceSession({
     const startedAtMs = new Date(room.startedAt).getTime();
     if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) {
       setCountdownRemaining(countdownSeconds);
+      setRevealRemaining(0);
       return;
     }
 
-    const elapsedSeconds = Math.max(0, (Date.now() + serverClockOffsetRef.current - startedAtMs) / 1000);
+    // startedAt is the moment the COUNTDOWN begins. For a freshly matched public
+    // room the server sets it a few seconds in the future, leaving a window
+    // where both players just see each other ("versus" reveal).
+    const serverNowEstimateMs = Date.now() + serverClockOffsetRef.current;
+    const msUntilCountdown = startedAtMs - serverNowEstimateMs;
+    setRevealRemaining(msUntilCountdown > 0 ? Math.ceil(msUntilCountdown / 1000) : 0);
+
+    const elapsedSeconds = Math.max(0, (serverNowEstimateMs - startedAtMs) / 1000);
     const remainingCountdown = Math.max(0, Math.ceil(countdownSeconds - elapsedSeconds));
     const raceElapsed = Math.max(0, Math.floor(elapsedSeconds - countdownSeconds));
 
@@ -271,7 +310,9 @@ export function useLiveRaceSession({
     }
 
     try {
+      const heartbeatSentAt = Date.now();
       const room = await updateLiveRaceHeartbeat(liveRoomRef.current.id, payload);
+      recordClockSample(room, heartbeatSentAt, Date.now());
       if (isLeavingRef.current) {
         return;
       }
@@ -288,7 +329,7 @@ export function useLiveRaceSession({
         }, 120);
       }
     }
-  }, [finalizeRoomIfCompleted]);
+  }, [finalizeRoomIfCompleted, recordClockSample]);
 
   const startQueuedRoom = useCallback((room, nextNotice, nextMode = mode, nextLanguage = language) => {
     setLiveRoom(room);
@@ -305,6 +346,7 @@ export function useLiveRaceSession({
     setQueueElapsed(0);
     setCountdownRemaining(Number(room?.countdown || LIVE_RACE_COUNTDOWN_FALLBACK));
     setTimeLeft(Number(room?.duration || duration));
+    syncRoomClock(room);
     showNotice(nextNotice.message, nextNotice.type);
   }, [
     clearTransientLiveState,
@@ -315,6 +357,7 @@ export function useLiveRaceSession({
     setPhase,
     setTimeLeft,
     showNotice,
+    syncRoomClock,
   ]);
 
   const startLiveRace = useCallback(async () => {
@@ -331,6 +374,7 @@ export function useLiveRaceSession({
     showNotice(null);
 
     try {
+      const queueSentAt = Date.now();
       const response = await queueLiveRace({
         mode,
         language,
@@ -341,13 +385,15 @@ export function useLiveRaceSession({
         wpmMax: wpmFilter.max < 300 ? wpmFilter.max : undefined,
       });
 
+      recordClockSample(response.room, queueSentAt, Date.now());
+
       startQueuedRoom(
         {
           ...response.room,
           totalContentCount: response.totalContentCount || 0,
         },
         {
-          message: response.matched ? 'Opponent found. Countdown started.' : 'Waiting for another player�?�',
+          message: response.matched ? 'Opponent found!' : 'Waiting for another player�?�',
           type: response.matched ? 'success' : 'info',
         }
       );
@@ -365,6 +411,7 @@ export function useLiveRaceSession({
     language,
     mode,
     redirectToProfile,
+    recordClockSample,
     refreshFeed,
     showNotice,
     startQueuedRoom,
@@ -688,6 +735,7 @@ export function useLiveRaceSession({
     setLiveRoom(null);
     setLoadingLive(false);
     setCountdownRemaining(LIVE_RACE_COUNTDOWN_FALLBACK);
+    setRevealRemaining(0);
     setQueueElapsed(0);
     queuedAtRef.current = null;
     sentBlurEventCountRef.current = 0;
@@ -723,7 +771,9 @@ export function useLiveRaceSession({
 
       roomPollInFlightRef.current = true;
       try {
+        const pollSentAt = Date.now();
         const room = await fetchLiveRaceRoom(roomId);
+        recordClockSample(room, pollSentAt, Date.now());
         if (isLeavingRef.current) {
           return;
         }
@@ -762,14 +812,20 @@ export function useLiveRaceSession({
   }, [finalizeRoomIfCompleted, inputRef, liveRoom?.id, phase, setPhase, syncRoomClock]);
 
   useEffect(() => {
-    if (phase === 'queued' && liveRoom?.status === 'countdown') {
+    if (phase === 'queued' && liveRoom?.status === 'countdown' && revealRemaining > 0) {
+      showNotice('Opponent found!', 'success');
+    }
+  }, [liveRoom?.status, phase, revealRemaining, showNotice]);
+
+  useEffect(() => {
+    if (phase === 'queued' && liveRoom?.status === 'countdown' && revealRemaining <= 0) {
       showNotice(`Race starts in ${Math.max(0, countdownRemaining)} seconds�?�`, 'info');
       if (countdownRemaining <= 0) {
         setPhase('racing');
         window.setTimeout(() => inputRef.current?.focus(), 150);
       }
     }
-  }, [countdownRemaining, inputRef, liveRoom?.status, phase, setPhase, showNotice]);
+  }, [countdownRemaining, inputRef, liveRoom?.status, phase, revealRemaining, setPhase, showNotice]);
 
   useEffect(() => {
     if (phase !== 'queued') {
@@ -829,6 +885,7 @@ export function useLiveRaceSession({
     loadingLive,
     liveAction,
     countdownRemaining,
+    revealRemaining,
     queueElapsed,
     isSubmittingRef,
     isLeavingRef,

@@ -918,6 +918,7 @@ export default function Play({ practicePage = false }){
     loadingLive,
     liveAction,
     countdownRemaining,
+    revealRemaining,
     queueElapsed,
     isSubmittingRef,
     isLeavingRef,
@@ -1317,7 +1318,7 @@ export default function Play({ practicePage = false }){
         }
         return current - 1;
       });
-    }, liveRoom?.startedAt ? 250 : LOCAL_RACE_TICK_INTERVAL_MS);
+    }, liveRoom?.startedAt ? 100 : LOCAL_RACE_TICK_INTERVAL_MS);
 
     return () => window.clearInterval(timerRef.current);
   // Bug 2 fix: liveRoom?.startedAt removed from deps Ã¯Â¿Â½?" every heartbeat returned a new room
@@ -2215,7 +2216,51 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
       {phase === 'queued' && (
         <div className="race-results">
-          {liveRoom?.status === 'countdown' || liveRoom?.status === 'racing' ? (
+          {(liveRoom?.status === 'countdown' || liveRoom?.status === 'racing') && revealRemaining > 0 ? (
+            <>
+              <h1>Opponent found!</h1>
+              <div
+                className="versus-reveal"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap', margin: '1.5rem 0' }}
+              >
+                {(liveRoom?.players || []).map((player, index) => {
+                  const isMe = String(player.userId) === String(currentUser?.id);
+                  return (
+                    <React.Fragment key={player.userId}>
+                      {index > 0 && (
+                        <span style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--arena-accent, #22c55e)' }}>VS</span>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', minWidth: '120px' }}>
+                        {player.profileImage ? (
+                          <img
+                            src={player.profileImage}
+                            alt=""
+                            className="room-roster__avatar"
+                            style={{ width: '80px', height: '80px' }}
+                          />
+                        ) : (
+                          <span
+                            className="room-roster__avatar room-roster__avatar--fallback"
+                            aria-hidden="true"
+                            style={{ width: '80px', height: '80px', fontSize: '2rem' }}
+                          >
+                            {(player.username || 'P').slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <strong style={{ color: 'var(--arena-text)' }}>{isMe ? 'You' : player.username}</strong>
+                        {Number(player.averageWpm) > 0 && (
+                          <span style={{ fontSize: '0.8rem', color: 'var(--arena-muted)' }}>
+                            {Math.round(player.averageWpm)} avg WPM
+                          </span>
+                        )}
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+              <p className="results-challenge">Countdown starts in {revealRemaining}...</p>
+            </>
+          ) : (liveRoom?.status === 'countdown' || liveRoom?.status === 'racing') ? (
             <>
               <h1>Race Starting!</h1>
               <div className="countdown-display" style={{ fontSize: '5rem', fontWeight: 700, color: 'var(--arena-accent, #22c55e)', margin: '1rem 0' }}>
