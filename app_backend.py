@@ -119,6 +119,16 @@ _leaderboard_cache: Dict[str, Any] = {
     'payload': None,
 }
 _leaderboard_cache_lock = _threading.Lock()
+# PERF: idempotent "ensure this table/column exists" checks (CREATE TABLE IF
+# NOT EXISTS, SHOW COLUMNS ...) only need to succeed once per process - after
+# that the schema is guaranteed to already be there. Several of them were
+# being re-run on every single request (e.g. every /api/leaderboard load),
+# each adding a full DB round-trip for a check that can never change the
+# outcome after the first successful run. _schema_ready tracks which of
+# these have already been confirmed this process so later calls can skip
+# straight past them.
+_schema_ready_lock = _threading.Lock()
+_schema_ready: set[str] = set()
 _public_stats_cache: Dict[str, Any] = {
     'expires_at': 0,
     'payload': None,
@@ -1027,6 +1037,8 @@ def _season_points_delta_for_race(
     placement: int = 1,
     total_players: int = 2,
     owned_items: list[str] | set[str] | tuple[str, ...] | None = None,
+    verification_method: str = 'server_verified',
+    anti_cheat_flags: Optional[list] = None,
 ) -> int:
     """
     Points earned or lost from a single just-completed race, meant to be
@@ -1047,12 +1059,33 @@ def _season_points_delta_for_race(
     accuracy = max(0.0, _safe_float(accuracy))
     perks = _store_perks_from_owned_items(owned_items or [])
     multiplier = float(perks.get('seasonPointsMultiplier') or 1.0)
+    # A race that made it here but is still flagged - an outdated client,
+    # or a soft anti-cheat signal too mild to hard-reject outright (see
+    # hard_reject_prefixes in submit_race/submit_live_race) - is scored at
+    # half weight. race_history.anti_cheat_flags alone only helps an admin
+    # after the fact; it doesn't stop a race we're not fully sure about
+    # from moving the leaderboard/tier standings exactly as much as a
+    # clean, server-verified one would.
+    is_flagged = str(verification_method or '') != 'server_verified' or bool(anti_cheat_flags)
+    confidence_scale = 0.5 if is_flagged else 1.0
 
     if race_category == 'practice':
         # Small, gentle, hard-capped ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â grinding practice should never be
-        # able to substitute for playing real matches.
-        delta = min(PRACTICE_SEASON_POINTS_CAP, max(2, round(wpm / 15)))
-        return int(round(delta * multiplier))
+        # able to substitute for playing real matches. The cap has to be
+        # the LAST thing applied: capping delta and only then multiplying
+        # let the season-points-booster perk push a practice run's award
+        # above PRACTICE_SEASON_POINTS_CAP (10 * 1.08 -> 11), which broke
+        # the "never more than this, regardless" guarantee below.
+        delta = max(2, round(wpm / 15))
+        return int(min(PRACTICE_SEASON_POINTS_CAP, round(delta * multiplier * confidence_scale)))
+
+    if total_players < 2:
+        # A "race" that never actually had a real opponent (e.g. an
+        # abandoned bracket slot resolving alone) is void: it should not
+        # register as a win OR a loss. Previously this fell through to the
+        # loss branch below, which clamps total_players/placement up to 2
+        # and charges a full loss to someone who never faced anyone.
+        return 0
 
     tier_points = SEASON_RACE_POINTS.get(race_category, SEASON_RACE_POINTS['versus'])
 
@@ -1065,7 +1098,7 @@ def _season_points_delta_for_race(
         total_players = max(2, total_players)
         placement = min(max(placement, 2), total_players)
         scale = (placement - 1) / (total_players - 1)
-        return int(round(tier_points['loss'] * scale))
+        return int(round(tier_points['loss'] * scale * confidence_scale))
 
     skill_bonus = 0
     if accuracy >= 98:
@@ -1078,7 +1111,7 @@ def _season_points_delta_for_race(
         skill_bonus += 4
 
     delta = tier_points['win'] + skill_bonus
-    return int(round(delta * multiplier))
+    return int(round(delta * multiplier * confidence_scale))
 
 
 def _apply_season_points_delta(cur, *, user_id: int, delta: int) -> int:
@@ -1162,20 +1195,28 @@ def _sync_tournament_statuses(cur) -> None:
 
 
 def _ensure_store_purchase_table(cur) -> None:
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS store_purchases (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            item_id VARCHAR(80) NOT NULL,
-            item_name VARCHAR(150) NOT NULL,
-            price_paid DECIMAL(12,2) NOT NULL,
-            purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_store_purchase (user_id, item_id),
-            CONSTRAINT fk_sp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-    )
+    # PERF: see _schema_ready - this table/schema never changes after the
+    # first successful check, so skip the round-trip on later calls.
+    if 'store_purchases' in _schema_ready:
+        return
+    with _schema_ready_lock:
+        if 'store_purchases' in _schema_ready:
+            return
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS store_purchases (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                item_id VARCHAR(80) NOT NULL,
+                item_name VARCHAR(150) NOT NULL,
+                price_paid DECIMAL(12,2) NOT NULL,
+                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_store_purchase (user_id, item_id),
+                CONSTRAINT fk_sp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+        )
+        _schema_ready.add('store_purchases')
 
 
 def _ensure_typing_content_table(cur) -> None:
@@ -1514,6 +1555,113 @@ def _owned_store_items_for_users(conn, user_ids: list[int] | tuple[int, ...]) ->
     return owned_map
 
 
+def _ensure_indexed(cur, table: str, index_name: str, column: str) -> None:
+    """
+    Idempotently add an index if it's missing. Guarded by _schema_ready like
+    the other _ensure_* checks, but also called once up front from
+    _bootstrap_db (not lazily from a request) so that if the index genuinely
+    needs to be created on a large existing table, that one-time cost is
+    paid at server startup instead of stalling whichever user's request
+    happens to hit it first.
+    """
+    cache_key = f'index:{table}.{index_name}'
+    if cache_key in _schema_ready:
+        return
+    with _schema_ready_lock:
+        if cache_key in _schema_ready:
+            return
+        cur.execute(f"SHOW INDEX FROM {table} WHERE Key_name = %s", (index_name,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE INDEX {index_name} ON {table} ({column})")
+        _schema_ready.add(cache_key)
+
+
+def _ensure_race_history_lookup_indexes(cur) -> None:
+    _ensure_indexed(cur, 'race_history', 'idx_race_history_user_id', 'user_id')
+
+
+def _ensure_tournament_joins_lookup_index(cur) -> None:
+    _ensure_indexed(cur, 'tournament_joins', 'idx_tournament_joins_user_id', 'user_id')
+
+
+def _ensure_prize_payouts_lookup_index(cur) -> None:
+    _ensure_indexed(cur, 'prize_payouts', 'idx_prize_payouts_user_id', 'user_id')
+
+
+def _race_tournament_stats_for_users(conn, user_ids: list[int] | tuple[int, ...]) -> Dict[int, Dict[str, Any]]:
+    """
+    PERF: the leaderboard used to get these numbers via three LEFT JOIN
+    subqueries that each grouped by user_id over the *entire*
+    race_history / tournament_joins / prize_payouts table before the
+    LIMIT was applied - so the cost scaled with total historical rows,
+    not with how many users are actually shown. Restricting each
+    aggregate to only the candidate users (same IN-clause pattern as
+    _owned_store_items_for_users above) keeps this fast as history grows.
+    """
+    ids = [int(user_id) for user_id in user_ids if int(user_id or 0) > 0]
+    stats: Dict[int, Dict[str, Any]] = {
+        user_id: {
+            'live_races': 0,
+            'live_earnings': 0.0,
+            'tournament_entries': 0,
+            'tournament_payouts': 0.0,
+        }
+        for user_id in ids
+    }
+    if not ids:
+        return stats
+
+    placeholders = ', '.join(['%s'] * len(ids))
+    with conn.cursor() as cur:
+        _ensure_race_history_lookup_indexes(cur)
+        cur.execute(
+            f'''
+            SELECT user_id, COUNT(*) AS live_races, COALESCE(SUM(earnings), 0) AS live_earnings
+            FROM race_history
+            WHERE user_id IN ({placeholders})
+            GROUP BY user_id
+            ''',
+            tuple(ids),
+        )
+        for row in cur.fetchall():
+            user_id = int(row.get('user_id') or 0)
+            if user_id in stats:
+                stats[user_id]['live_races'] = int(row.get('live_races') or 0)
+                stats[user_id]['live_earnings'] = float(row.get('live_earnings') or 0)
+
+        _ensure_tournament_joins_lookup_index(cur)
+        cur.execute(
+            f'''
+            SELECT user_id, COUNT(*) AS tournament_entries
+            FROM tournament_joins
+            WHERE paid_amount > 0 AND user_id IN ({placeholders})
+            GROUP BY user_id
+            ''',
+            tuple(ids),
+        )
+        for row in cur.fetchall():
+            user_id = int(row.get('user_id') or 0)
+            if user_id in stats:
+                stats[user_id]['tournament_entries'] = int(row.get('tournament_entries') or 0)
+
+        _ensure_prize_payouts_lookup_index(cur)
+        cur.execute(
+            f'''
+            SELECT user_id, COALESCE(SUM(amount), 0) AS tournament_payouts
+            FROM prize_payouts
+            WHERE status = 'completed' AND tournament_id IS NOT NULL AND user_id IN ({placeholders})
+            GROUP BY user_id
+            ''',
+            tuple(ids),
+        )
+        for row in cur.fetchall():
+            user_id = int(row.get('user_id') or 0)
+            if user_id in stats:
+                stats[user_id]['tournament_payouts'] = float(row.get('tournament_payouts') or 0)
+
+    return stats
+
+
 def _ensure_tournament_duration_column(cur) -> None:
     cur.execute("SHOW COLUMNS FROM tournaments LIKE 'match_duration_mins'")
     if not cur.fetchone():
@@ -1558,6 +1706,20 @@ def _ensure_user_equipped_columns(cur) -> None:
 
 def _ensure_season_tables(cur) -> None:
     """Create season_snapshots table and add season tracking columns to users."""
+    # PERF: see _schema_ready - this was previously re-checked (1 CREATE
+    # TABLE IF NOT EXISTS + 6 SHOW COLUMNS, all separate round-trips) on
+    # every /api/leaderboard request via _ensure_season_reset. Once the
+    # columns exist they can't disappear, so skip straight past on repeats.
+    if 'season_tables' in _schema_ready:
+        return
+    with _schema_ready_lock:
+        if 'season_tables' in _schema_ready:
+            return
+        _ensure_season_tables_impl(cur)
+        _schema_ready.add('season_tables')
+
+
+def _ensure_season_tables_impl(cur) -> None:
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS season_snapshots (
@@ -2294,15 +2456,24 @@ def _normalize_site_settings(raw: Any) -> Dict[str, Any]:
 
 
 def _ensure_site_settings_table(cur) -> None:
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS site_settings (
-            setting_key VARCHAR(80) PRIMARY KEY,
-            setting_value LONGTEXT NOT NULL,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """
-    )
+    # PERF: see _schema_ready - avoids re-running this CREATE TABLE IF NOT
+    # EXISTS on every _load_site_settings() call (which _load_site_settings
+    # runs on every /api/leaderboard request to read tier thresholds).
+    if 'site_settings' in _schema_ready:
+        return
+    with _schema_ready_lock:
+        if 'site_settings' in _schema_ready:
+            return
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS site_settings (
+                setting_key VARCHAR(80) PRIMARY KEY,
+                setting_value LONGTEXT NOT NULL,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
+        _schema_ready.add('site_settings')
 
 
 def _persist_site_settings(settings: Dict[str, Any], *, persist_file: bool = True) -> None:
@@ -2332,8 +2503,42 @@ def _persist_site_settings(settings: Dict[str, Any], *, persist_file: bool = Tru
         except OSError:
             pass
 
+    # PERF: any write invalidates the short-lived read cache below so the
+    # next read reflects the change immediately instead of waiting out the TTL.
+    _clear_site_settings_cache()
+
+
+# PERF: site settings (incl. leaderboard tier thresholds) rarely change, but
+# _load_site_settings() was being called - and hitting the DB with its own
+# connection checkout + query - on every single /api/leaderboard request.
+# Cache the result in-process for a few seconds, same idea as the existing
+# leaderboard/public-stats caches above.
+SITE_SETTINGS_CACHE_TTL_MS = 15_000
+_site_settings_cache: Dict[str, Any] = {'expires_at': 0, 'payload': None}
+_site_settings_cache_lock = _threading.Lock()
+
+
+def _clear_site_settings_cache() -> None:
+    with _site_settings_cache_lock:
+        _site_settings_cache.update({'expires_at': 0, 'payload': None})
+
 
 def _load_site_settings() -> Dict[str, Any]:
+    now_ms = int(time.time() * 1000)
+    with _site_settings_cache_lock:
+        if _site_settings_cache['payload'] is not None and _site_settings_cache['expires_at'] > now_ms:
+            return _site_settings_cache['payload']
+
+    settings = _load_site_settings_uncached()
+
+    with _site_settings_cache_lock:
+        _site_settings_cache.update(
+            {'expires_at': int(time.time() * 1000) + SITE_SETTINGS_CACHE_TTL_MS, 'payload': settings}
+        )
+    return settings
+
+
+def _load_site_settings_uncached() -> Dict[str, Any]:
     defaults = _site_settings_defaults()
     conn = None
     try:
@@ -3797,6 +4002,8 @@ def _apply_user_performance_update(
         placement=placement,
         total_players=total_players,
         owned_items=owned_items,
+        verification_method=verification_method,
+        anti_cheat_flags=anti_cheat_flags,
     )
 
     flags_json = json.dumps(anti_cheat_flags or [])
@@ -3851,10 +4058,14 @@ def _apply_user_performance_update(
             user_id,
         ),
     )
-    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
-    updated_user = cur.fetchone()
     # Accumulate per-season counters and apply this race's point delta so
-    # season_points_stored stays current.
+    # season_points_stored stays current. This MUST run before the row we
+    # return is fetched below - otherwise every caller (practice submit,
+    # live race settlement) gets back a snapshot of season_points_stored
+    # from BEFORE this race's points were applied, which is exactly what
+    # was making the points a client displays right after a race drift
+    # from what the leaderboard/profile show moments later: the same
+    # number, just one race behind.
     _increment_season_stats(
         cur,
         user_id=user_id,
@@ -3863,6 +4074,16 @@ def _apply_user_performance_update(
         delta=points_delta,
         race_category=race_category,
     )
+    cur.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+    updated_user = cur.fetchone()
+    # Surface the exact delta this race was worth. It's computed once,
+    # right here, so every caller reads the SAME number the audit trail
+    # (race_history.points_delta) got - instead of the client re-deriving
+    # its own guess at the reward formula and risking it disagreeing with
+    # the server (skill bonuses, the perk multiplier, and placement-based
+    # loss scaling all live only in _season_points_delta_for_race).
+    if updated_user is not None:
+        updated_user['_season_points_delta'] = points_delta
     return updated_user
 
 
@@ -4184,7 +4405,7 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
                 user_id = int(player['userId'])
                 result = results.get(user_id, {})
                 did_win = user_id == winner_user_id
-                _apply_user_performance_update(
+                updated_user = _apply_user_performance_update(
                     cur,
                     user_id=user_id,
                     username=str(player.get('username') or result.get('username') or 'Player'),
@@ -4200,6 +4421,15 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
                     verification_method=str(result.get('verificationMethod') or 'legacy'),
                     anti_cheat_flags=result.get('antiCheatFlags') or [],
                 )
+                # Stamp the authoritative points onto this player's result so
+                # _serialize_live_room hands it straight to the client - the
+                # post-race screen was otherwise the only surface with no
+                # way to show real points (only /api/races/submit did), so
+                # any "+X points" it showed for a live/tournament race was
+                # a guess that could disagree with what got stored.
+                if updated_user is not None:
+                    result['seasonPointsDelta'] = int(updated_user.get('_season_points_delta') or 0)
+                    result['seasonPointsTotal'] = int(updated_user.get('season_points_stored') or 0)
         if _owns_conn:
             conn.commit()
         room['resultsPersisted'] = True
@@ -8850,32 +9080,10 @@ def leaderboard():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT
-                    u.*,
-                    COALESCE(rh.live_races, 0) AS live_races,
-                    COALESCE(rh.live_earnings, 0) AS live_earnings,
-                    COALESCE(tj.tournament_entries, 0) AS tournament_entries,
-                    COALESCE(pp.tournament_payouts, 0) AS tournament_payouts
+                SELECT u.*
                 FROM users u
-                LEFT JOIN (
-                    SELECT user_id, COUNT(*) AS live_races, COALESCE(SUM(earnings), 0) AS live_earnings
-                    FROM race_history
-                    GROUP BY user_id
-                ) rh ON rh.user_id = u.id
-                LEFT JOIN (
-                    SELECT user_id, COUNT(*) AS tournament_entries
-                    FROM tournament_joins
-                    WHERE paid_amount > 0
-                    GROUP BY user_id
-                ) tj ON tj.user_id = u.id
-                LEFT JOIN (
-                    SELECT user_id, COALESCE(SUM(amount), 0) AS tournament_payouts
-                    FROM prize_payouts
-                    WHERE status = 'completed' AND tournament_id IS NOT NULL
-                    GROUP BY user_id
-                ) pp ON pp.user_id = u.id
                 -- Tiebreak on this season's wins first (season_wins), not
-                -- lifetime career stats ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â two players tied on season points
+                -- lifetime career stats: two players tied on season points
                 -- should be separated by how they did *this season*. Lifetime
                 -- wins/wpm are kept only as a last-resort tiebreak for the
                 -- (very rare) case for perfectly tied season stats.
@@ -8886,9 +9094,15 @@ def leaderboard():
             )
             users = cur.fetchall()
 
-        owned_by_user = _owned_store_items_for_users(conn, [int(u.get('id') or 0) for u in users])
+        user_ids = [int(u.get('id') or 0) for u in users]
+        owned_by_user = _owned_store_items_for_users(conn, user_ids)
+        # PERF: race/tournament/payout stats are now computed only for the
+        # users being returned (see _race_tournament_stats_for_users), not by
+        # aggregating the entire race_history/tournament_joins/prize_payouts
+        # tables on every load.
+        race_stats = _race_tournament_stats_for_users(conn, user_ids)
         # Load tier thresholds once for the whole board instead of once per
-        # row ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â this was previously opening a new DB connection per user.
+        # row - this was previously opening a new DB connection per user.
         tier_thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
         board = []
         for idx, user in enumerate(users, start=1):
@@ -8899,10 +9113,11 @@ def leaderboard():
                 owned_by_user.get(int(user.get('id') or 0), []),
                 tier_thresholds,
             )
-            row['tournamentEntries'] = int(user.get('tournament_entries') or 0)
-            row['tournamentPayouts'] = float(user.get('tournament_payouts') or 0)
-            row['liveRaces'] = int(user.get('live_races') or 0)
-            row['liveEarnings'] = float(user.get('live_earnings') or 0)
+            stats = race_stats.get(int(user.get('id') or 0), {})
+            row['tournamentEntries'] = int(stats.get('tournament_entries') or 0)
+            row['tournamentPayouts'] = float(stats.get('tournament_payouts') or 0)
+            row['liveRaces'] = int(stats.get('live_races') or 0)
+            row['liveEarnings'] = float(stats.get('live_earnings') or 0)
             row['seasonPoints'] = int(user.get('season_points_stored') or 0)
             row['rank'] = idx
             row['weeklyRank'] = idx
@@ -9751,6 +9966,12 @@ def submit_race():
                 'timestamp': now_dt.isoformat() + 'Z',
                 'verificationMethod': verification_method,
                 'antiCheatFlags': anti_cheat_flags,
+                # The authoritative numbers from _apply_user_performance_update
+                # (see the note there): read these instead of recomputing a
+                # "points earned" figure client-side, or it can drift from
+                # what actually landed on the leaderboard.
+                'seasonPointsEarned': int(updated_user.get('_season_points_delta') or 0),
+                'seasonPoints': int(updated_user.get('season_points_stored') or 0),
                 'coachTip': _coach_tip_for_user(
                     {
                         'wpm': updated_user.get('wpm', wpm),
@@ -9915,6 +10136,13 @@ def _bootstrap_db() -> None:
                 _ensure_race_history_audit_columns(cur)
                 _ensure_anti_cheat_columns(cur)
                 _backfill_legacy_race_history(cur)
+                # PERF: create these lookup indexes (if missing) at startup
+                # rather than lazily on the first /api/leaderboard request
+                # that needs them, so a large existing table doesn't make
+                # some unlucky user's request pay the one-time index-build cost.
+                _ensure_race_history_lookup_indexes(cur)
+                _ensure_tournament_joins_lookup_index(cur)
+                _ensure_prize_payouts_lookup_index(cur)
             conn.commit()
         finally:
             _return_connection(conn)
