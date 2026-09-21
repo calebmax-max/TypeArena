@@ -335,7 +335,6 @@ export function useLiveRaceSession({
         mode,
         language,
         duration,
-        winnerPrize: Math.round((duration / 60) * 150),
         excludeContentIds: getUsedContentIds(mode, language),
         tournamentId: tournamentId || undefined,
         wpmMin: wpmFilter.min > 0 ? wpmFilter.min : undefined,
@@ -715,7 +714,10 @@ export function useLiveRaceSession({
 
     const roomId = liveRoom.id;
     const interval = window.setInterval(async () => {
-      if (document.visibilityState !== 'visible' || roomPollInFlightRef.current) {
+      // While queued, the poll doubles as the "I'm still here" heartbeat that
+      // keeps this waiting room matchable on the server, so it must keep
+      // running even if the tab is in the background. Other phases can pause.
+      if ((document.visibilityState !== 'visible' && phase !== 'queued') || roomPollInFlightRef.current) {
         return;
       }
 
@@ -735,6 +737,15 @@ export function useLiveRaceSession({
           window.setTimeout(() => inputRef.current?.focus(), 150);
         }
       } catch (error) {
+        if (error?.status === 404 && phase === 'queued' && !isLeavingRef.current) {
+          // The server removed our waiting room (it went stale). Reset and let
+          // the player queue again instead of sitting on a dead screen.
+          setLiveRoom(null);
+          clearTransientLiveState();
+          setPhase('lobby');
+          showNotice('Your place in the queue expired. Please join again.', 'info');
+          return;
+        }
         console.error('Live room polling error:', error);
       } finally {
         roomPollInFlightRef.current = false;

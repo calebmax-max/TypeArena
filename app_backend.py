@@ -154,6 +154,16 @@ WITHDRAWAL_FEE = 50.0
 # TYPEARENA_ADMIN_TRANSFER_MAX_KES environment variable.
 ADMIN_TRANSFER_MAX_AMOUNT = float(max(1, _env_int('TYPEARENA_ADMIN_TRANSFER_MAX_KES', 1_000_000)))
 LIVE_RACE_COUNTDOWN_SECONDS = 10
+# Public 1v1 matchmaking tuning.
+# A waiting room only counts as "open" while its owner keeps polling it (each
+# poll refreshes live_race_rooms.updated_at, see get_live_race). If the owner
+# closed the tab / lost signal, the room stops being matchable after
+# LIVE_QUEUE_STALE_SECONDS instead of pairing the next player with a ghost.
+LIVE_QUEUE_STALE_SECONDS = 20
+# Abandoned public waiting rooms older than this are deleted outright.
+LIVE_QUEUE_ORPHAN_DELETE_SECONDS = 300
+# How long a queue request waits for the per-bucket matchmaking lock.
+LIVE_QUEUE_LOCK_WAIT_SECONDS = 2
 LIVE_RACE_MIN_DURATION_SECONDS = 15
 LIVE_RACE_MAX_DURATION_SECONDS = 300
 LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
@@ -7508,10 +7518,34 @@ def list_live_races():
         _return_connection(conn)
 
 
+def _parse_wpm_bound(value: Any) -> Optional[int]:
+    """Parse a client-supplied WPM filter bound. Returns None when unset/invalid."""
+    if value is None or value == '':
+        return None
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(1000, parsed))
+
+
+def _wpm_in_range(wpm: float, low: Optional[int], high: Optional[int]) -> bool:
+    """True when wpm satisfies the optional [low, high] bounds."""
+    if low is not None and wpm < low:
+        return False
+    if high is not None and wpm > high:
+        return False
+    return True
+
+
 @app.post('/api/live-races/queue')
 def queue_live_race():
     payload = request.get_json(silent=True) or {}
     conn = get_connection()
+    # Name of the MySQL advisory lock held for public matchmaking (if any).
+    # It is session-scoped, so it must be released explicitly in the finally
+    # block below - the pool's rollback() on return does NOT release it.
+    queue_lock_name = None
     try:
         user = _get_user_from_header(conn)
         if not user:
@@ -7548,6 +7582,15 @@ def queue_live_race():
             # hardcoded to 0 now regardless of what the client sends.
             winner_prize = 0.0
             exclude_content_ids = payload.get('excludeContentIds') or []
+            # Optional skill filter for public matchmaking. It is mutual: the
+            # joiner's average WPM must fall inside the waiting room owner's
+            # range AND the owner's WPM must fall inside the joiner's range.
+            # Bounds left unset mean "no limit" on that side.
+            wpm_min = _parse_wpm_bound(payload.get('wpmMin'))
+            wpm_max = _parse_wpm_bound(payload.get('wpmMax'))
+            if wpm_min is not None and wpm_max is not None and wpm_min > wpm_max:
+                wpm_min, wpm_max = wpm_max, wpm_min
+            my_wpm = _safe_float(user.get('wpm') or 0)
             # Only private rooms can carry a stake - public 1v1 matchmaking
             # stays cash-free, same reasoning as winner_prize above (a
             # client could otherwise queue into a random public match with
@@ -7637,16 +7680,52 @@ def queue_live_race():
                     )
 
             if not is_private:
+                # Serialize find-or-create per matchmaking bucket. The row locks
+                # below only protect joining an EXISTING room; without this, two
+                # players pressing the button at the same instant both see "no
+                # waiting room" and each create their own, then wait alone
+                # forever. The lock is held until the room is committed (it is
+                # released in the outer finally), so the second request always
+                # sees the first player's room.
+                bucket_key = f'{mode}|{language}|{duration}|{tournament_id or 0}'
+                queue_lock_name = 'liveq:' + hashlib.md5(bucket_key.encode('utf-8')).hexdigest()
+                cur.execute('SELECT GET_LOCK(%s, %s) AS got', (queue_lock_name, LIVE_QUEUE_LOCK_WAIT_SECONDS))
+                lock_row = cur.fetchone() or {}
+                if int(lock_row.get('got') or 0) != 1:
+                    # Could not get the lock in time - fall back to the old
+                    # (unserialized) behaviour rather than failing the request.
+                    queue_lock_name = None
+                # End the current transaction so the candidate scan below gets a
+                # fresh snapshot (REPEATABLE READ would otherwise hide a room
+                # that another request committed while we waited for the lock).
+                conn.commit()
+
+                # Drop long-abandoned public waiting rooms so they do not pile up.
+                cur.execute(
+                    '''
+                    DELETE FROM live_race_rooms
+                    WHERE status = 'waiting' AND is_private = 0
+                      AND updated_at < (NOW() - INTERVAL %s SECOND)
+                    ''',
+                    (LIVE_QUEUE_ORPHAN_DELETE_SECONDS,),
+                )
+                conn.commit()
+
                 # Filter in SQL ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â avoids deserializing up to 100 rooms in Python.
                 # This first pass is a plain (non-locking) read used only to shortlist
                 # candidate room ids.
+                # Only rooms whose owner is still polling (updated_at is
+                # refreshed on every poll) are candidates - see
+                # LIVE_QUEUE_STALE_SECONDS.
                 cur.execute(
                     '''
                     SELECT room_id FROM live_race_rooms
                     WHERE status = 'waiting' AND is_private = 0
+                      AND updated_at >= (NOW() - INTERVAL %s SECOND)
                     ORDER BY created_at ASC
                     LIMIT 20
                     ''',
+                    (LIVE_QUEUE_STALE_SECONDS,),
                 )
                 candidate_ids = [row['room_id'] for row in cur.fetchall()]
 
@@ -7676,7 +7755,17 @@ def queue_live_race():
                         continue
                     if len(room.get('players', [])) >= TOURNAMENT_MATCH_SIZE:
                         continue
+                    # Mutual skill filter (rooms created before this feature
+                    # have no stored bounds and match anyone).
+                    room_owner_wpm = _safe_float(room.get('queueWpm') or 0)
+                    if not _wpm_in_range(my_wpm, room.get('wpmMin'), room.get('wpmMax')):
+                        continue
+                    if not _wpm_in_range(room_owner_wpm, wpm_min, wpm_max):
+                        continue
 
+                    # NOTE: TOURNAMENT_MATCH_SIZE is 3, but a public room flips
+                    # to 'countdown' as soon as a SECOND player joins, so public
+                    # matchmaking is effectively 1v1.
                     room['players'].append(player_snapshot)
                     room['status'] = 'countdown'
                     room['startedAt'] = _now_iso()
@@ -7721,6 +7810,9 @@ def queue_live_race():
                 'contentId': content.get('contentId'),
                 'totalContentCount': int(content.get('totalContentCount') or 0),
                 'tournamentId': tournament_id,
+                'wpmMin': wpm_min if not is_private else None,
+                'wpmMax': wpm_max if not is_private else None,
+                'queueWpm': my_wpm if not is_private else None,
                 'spectators': 0,
                 'createdAt': _now_iso(),
                 'startedAt': None,
@@ -7737,6 +7829,13 @@ def queue_live_race():
                 }
             ), 201
     finally:
+        if queue_lock_name:
+            try:
+                with conn.cursor() as lock_cur:
+                    lock_cur.execute('SELECT RELEASE_LOCK(%s)', (queue_lock_name,))
+            except Exception:
+                # A dead connection drops its session locks automatically.
+                pass
         _return_connection(conn)
 
 
@@ -7765,6 +7864,21 @@ def get_live_race(room_id: str):
                 room['spectators'] = int(room.get('spectators') or 0) + 1
             if expired or is_spectator:
                 _save_live_room(cur, room)
+            elif (
+                room.get('status') == 'waiting'
+                and not room.get('isPrivate')
+                and viewer_user_id
+                and viewer_user_id in {player['userId'] for player in room.get('players', [])}
+            ):
+                # Heartbeat for public matchmaking: the queued player's poll
+                # marks their room as alive. queue_live_race only matches rooms
+                # refreshed within LIVE_QUEUE_STALE_SECONDS, so a player who
+                # closed the tab stops being matchable instead of becoming a
+                # ghost opponent.
+                cur.execute(
+                    'UPDATE live_race_rooms SET updated_at = CURRENT_TIMESTAMP WHERE room_id = %s',
+                    (room_id,),
+                )
             # Always commit (even when nothing changed) to release the
             # FOR UPDATE lock before the connection goes back to the pool.
             conn.commit()
