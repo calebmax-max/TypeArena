@@ -41,6 +41,7 @@ import {
   withdrawFundsToWallet,
 } from '../utils/typingApi';
 import '../styles/TypeProfile.css';
+import TermsConsent from './TermsConsent';
 
 // ──────────────────────────────────────── Constants ────────────────────────────────────────
 const USER_CHANGE_EVENT                  = 'typearena-user-changed';
@@ -283,6 +284,7 @@ export default function TypeProfile() {
   const [authNotice,    setAuthNotice]     = useState('');
   const [authLoading,   setAuthLoading]   = useState(false);
   const [showPassword,  setShowPassword]   = useState(false);
+  const [termsAccepted, setTermsAccepted]  = useState(false);
   const [profileName,   setProfileName]    = useState('');
   const [profileSaving, setProfileSaving]  = useState(false);
   const [activeTab,     setActiveTab]      = useState('wallet');
@@ -466,6 +468,10 @@ export default function TypeProfile() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     if (authLoading) return;
+    if (authMode === 'signup' && !termsAccepted) {
+      setAuthNotice('Please accept the Terms of Service and Privacy Policy to create an account.');
+      return;
+    }
     setAuthLoading(true);
     setAuthNotice('');
     try {
@@ -482,6 +488,7 @@ export default function TypeProfile() {
       }
 
       setShowAuthForm(false);
+      setTermsAccepted(false);
       setFormData({ email: '', password: '', username: '', phoneNumber: '' });
       // user already came back from loginUser/signupUser — no need to
       // re-fetch it, just load the wallet/race data that depends on it.
@@ -609,6 +616,7 @@ export default function TypeProfile() {
 
   const openAuthForm = (mode) => {
     setAuthMode(mode);
+    setTermsAccepted(false);
     setAuthNotice('');
     setShowAuthForm(true);
     setAuthNotice('');
@@ -691,6 +699,10 @@ export default function TypeProfile() {
                     <input className="tp-input" type="tel" placeholder="+254 7XX XXX XXX" value={formData.phoneNumber}
                       onChange={(e) => setFormData((c) => ({ ...c, phoneNumber: e.target.value }))} />
                   </div>
+                )}
+
+                {authMode === 'signup' && (
+                  <TermsConsent checked={termsAccepted} onChange={setTermsAccepted} />
                 )}
 
                 <Notice message={authNotice} type="error" />
