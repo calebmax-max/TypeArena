@@ -1,0 +1,28 @@
+# fly.toml — generated config for a FastAPI + WebSockets backend
+# Replace "typearena-api" with whatever app name you choose during `fly launch`
+app = "typearena-api"
+primary_region = "jnb"  # Johannesburg — closest Fly.io region to Kenya; change if you prefer another
+
+[build]
+
+[env]
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false   # keep the machine running so WebSocket connections stay alive
+  auto_start_machines = true
+  min_machines_running = 1     # avoid cold starts dropping active sockets
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"           # add a simple GET /health route in your FastAPI app
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
