@@ -29,8 +29,21 @@ from flask import Flask, jsonify, request, send_from_directory, Response
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
+try:
+    from flask_compress import Compress
+except ImportError:  # pragma: no cover - only hit if the dependency isn't installed yet
+    Compress = None
 
 app = Flask(__name__, static_folder=None)
+if Compress is not None:
+    # Gzip/brotli-compresses JSON and text responses automatically. Base64
+    # image/text payloads and JSON typically shrink 60-80% with this alone,
+    # and it requires no per-route changes.
+    app.config['COMPRESS_MIMETYPES'] = [
+        'text/html', 'text/css', 'text/xml', 'application/json',
+        'application/javascript', 'text/javascript',
+    ]
+    Compress(app)
 # A browser Socket.IO handshake includes the frontend's Origin. Render does
 # not load this repository's .env file, so a localhost-only default causes
 # every production WebSocket upgrade to fail with HTTP 400 when its env var is
@@ -110,7 +123,7 @@ STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', '').strip()
 STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
-LEADERBOARD_CACHE_TTL_MS = 15_000
+LEADERBOARD_CACHE_TTL_MS = 60_000
 PUBLIC_STATS_CACHE_TTL_MS = 15_000
 SITE_SETTINGS_STORAGE_KEY = 'site_settings'
 _leaderboard_cache: Dict[str, Any] = {
@@ -3503,19 +3516,27 @@ def _safe_user_with_owned_items(
     user: Dict[str, Any],
     owned_items: list[str] | set[str] | tuple[str, ...],
     tier_thresholds: Dict[str, int] | None = None,
+    *,
+    include_profile_image: bool = True,
 ) -> Dict[str, Any]:
     total_races = _safe_int(user.get('total_races') or 0)
     wins = _safe_int(user.get('wins') or 0)
     owned_list = list(owned_items or [])
     perks = _store_perks_from_owned_items(owned_list)
     is_admin = _is_admin_email(user.get('email') or '')
-    return {
+    result = {
         'id': user['id'],
         'username': user['username'],
         'email': user['email'],
         'isAdmin': is_admin,
         'phoneNumber': user.get('phone_number') or '',
-        'profileImage': user.get('profile_image') or '',
+        # avatarUrl is always included and points at the cacheable
+        # /api/users/<id>/avatar endpoint. The raw base64 profileImage is
+        # only included when explicitly requested (e.g. the signed-in
+        # user's own profile) - bulk/list endpoints should pass
+        # include_profile_image=False so a 500-user leaderboard response
+        # doesn't carry ~250KB of base64 per row.
+        'avatarUrl': _avatar_url_for_user(user),
         'wpm': _safe_float(user.get('wpm') or 0),
         'accuracy': _safe_float(user.get('accuracy') or 0),
         'totalRaces': total_races,
@@ -3539,6 +3560,9 @@ def _safe_user_with_owned_items(
             'cursor': user.get('equipped_cursor') or '',
         },
     }
+    if include_profile_image:
+        result['profileImage'] = user.get('profile_image') or ''
+    return result
 
 
 def _terms_status_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -6591,6 +6615,60 @@ def handle_upload_too_large(_err):
     return jsonify({'message': f'Upload is too large. Max size is {limit_mb}MB.'}), 413
 
 
+_DATA_URI_RE = re.compile(r'^data:(?P<mime>[\w.+/-]+);base64,(?P<b64>.+)$', re.DOTALL)
+
+
+@app.get('/api/users/<int:user_id>/avatar')
+def serve_user_avatar(user_id: int):
+    # Profile pictures are stored as base64 data URIs on the users row so
+    # they used to get embedded (and re-sent) inline on every leaderboard /
+    # presence / chat-contacts payload that included that user. Serving them
+    # from their own cacheable endpoint means the browser fetches each
+    # avatar once instead of re-downloading it on every poll.
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('SELECT profile_image FROM users WHERE id = %s', (user_id,))
+            row = cur.fetchone()
+    finally:
+        _return_connection(conn)
+
+    raw = str((row or {}).get('profile_image') or '').strip()
+    match = _DATA_URI_RE.match(raw) if raw else None
+    if not match:
+        return jsonify({'message': 'No profile image set for this user.'}), 404
+
+    try:
+        image_bytes = base64.b64decode(match.group('b64'), validate=False)
+    except (binascii.Error, ValueError):
+        return jsonify({'message': 'Stored profile image is corrupted.'}), 500
+
+    resp = Response(image_bytes, status=200, mimetype=match.group('mime'))
+    resp.headers['Content-Length'] = str(len(image_bytes))
+    # Short-ish cache: unlike music tracks these can change when a user
+    # updates their profile picture, so don't mark them immutable.
+    resp.headers['Cache-Control'] = 'public, max-age=3600'
+    return resp
+
+
+def _avatar_url_for_user(user: Dict[str, Any]) -> str:
+    user_id = user.get('id')
+    if not user_id:
+        return ''
+    # Accept either the full base64 profile_image column, or a cheaper
+    # boolean/int has_profile_image flag from a query that deliberately
+    # avoided selecting the (potentially ~250KB) blob just to check
+    # whether it's set.
+    has_image = (
+        user.get('has_profile_image')
+        if 'has_profile_image' in user
+        else str(user.get('profile_image') or '').strip()
+    )
+    if not has_image:
+        return ''
+    return f'/api/users/{int(user_id)}/avatar'
+
+
 @app.get('/api/admin/leaderboard-settings')
 def admin_leaderboard_settings():
     if not _is_admin_request():
@@ -7868,7 +7946,7 @@ def queue_live_race():
             player_snapshot = {
                 'userId': user['id'],
                 'username': user['username'],
-                'profileImage': user.get('profile_image') or '',
+                'avatarUrl': _avatar_url_for_user(user),
                 'progress': 0,
                 'currentWpm': 0,
                 'currentAccuracy': 100,
@@ -8980,7 +9058,7 @@ def join_tournament(tournament_id: int):
                 'inviteCode': f'T{tournament_id}{secrets.token_hex(3).upper()}', 'password': '', 'isPrivate': False,
                 'hostUserId': None, 'maxPlayers': match_size, 'stakeAmount': entry_fee,
                 'escrow': {}, 'totalEscrow': round(entry_fee * match_size, 2),
-                'players': [{'userId': uid, 'username': str(joined_users[uid].get('username') or 'Player'), 'profileImage': joined_users[uid].get('profile_image') or '', 'progress': 0, 'currentWpm': 0, 'currentAccuracy': 100} for uid in joined_user_ids],
+                'players': [{'userId': uid, 'username': str(joined_users[uid].get('username') or 'Player'), 'avatarUrl': _avatar_url_for_user(joined_users[uid]), 'progress': 0, 'currentWpm': 0, 'currentAccuracy': 100} for uid in joined_user_ids],
                 'results': {}, 'winnerPrize': round(entry_fee * match_size * TOURNAMENT_PODIUM_SHARES[0], 2),
                 'winnerUserId': None, 'contentId': content.get('contentId'), 'totalContentCount': int(content.get('totalContentCount') or 0),
                 'tournamentId': tournament_id, 'spectators': 0, 'createdAt': _now_iso(), 'startedAt': _now_iso(), 'completedAt': None,
@@ -9112,6 +9190,7 @@ def leaderboard():
                 user_with_rank,
                 owned_by_user.get(int(user.get('id') or 0), []),
                 tier_thresholds,
+                include_profile_image=False,
             )
             stats = race_stats.get(int(user.get('id') or 0), {})
             row['tournamentEntries'] = int(stats.get('tournament_entries') or 0)
@@ -9204,7 +9283,7 @@ def presence_online():
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT u.id, u.username, u.wpm, u.profile_image, p.last_seen
+                SELECT u.id, u.username, u.wpm, p.last_seen
                 FROM user_presence p
                 JOIN users u ON u.id = p.user_id
                 WHERE p.last_seen >= %s
@@ -9264,7 +9343,7 @@ def _serialize_chat_contact_row(user_row: Dict[str, Any], *, unread_count: int =
         'lastMessageAt': last_message_at,
         'isOnline': bool(is_online),
         'unreadCount': int(unread_count or 0),
-        'profileImage': user_row.get('profile_image') or '',
+        'avatarUrl': _avatar_url_for_user(user_row),
         'isMe': False,
     }
 
@@ -9296,7 +9375,9 @@ def _fetch_chat_contacts(
     with conn.cursor() as cur:
         cur.execute(
             '''
-            SELECT u.id, u.username, u.wpm, u.profile_image, p.last_seen
+            SELECT u.id, u.username, u.wpm,
+                   (u.profile_image IS NOT NULL AND u.profile_image <> '') AS has_profile_image,
+                   p.last_seen
             FROM user_presence p
             JOIN users u ON u.id = p.user_id
             WHERE p.user_id <> %s AND p.last_seen >= %s
@@ -9335,7 +9416,7 @@ def _fetch_chat_contacts(
             'id': user_id,
             'username': row['username'],
             'wpm': float(row['wpm'] or 0),
-            'profileImage': row.get('profile_image') or '',
+            'avatarUrl': _avatar_url_for_user(row),
             'lastSeen': row['last_seen'].isoformat() + 'Z' if row.get('last_seen') else None,
             'lastMessageAt': None,
             'isOnline': bool(row.get('last_seen') and row['last_seen'] >= cutoff_dt),
@@ -9348,7 +9429,9 @@ def _fetch_chat_contacts(
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT u.id, u.username, u.wpm, u.profile_image, p.last_seen
+                SELECT u.id, u.username, u.wpm,
+                       (u.profile_image IS NOT NULL AND u.profile_image <> '') AS has_profile_image,
+                       p.last_seen
                 FROM users u
                 LEFT JOIN user_presence p ON p.user_id = u.id
                 WHERE u.id <> %s AND u.username LIKE %s
@@ -9367,7 +9450,7 @@ def _fetch_chat_contacts(
                 'id': user_id,
                 'username': row['username'],
                 'wpm': float(row['wpm'] or 0),
-                'profileImage': row.get('profile_image') or '',
+                'avatarUrl': _avatar_url_for_user(row),
                 'lastSeen': last_seen.isoformat() + 'Z' if last_seen else None,
                 'lastMessageAt': None,
                 'isOnline': bool(last_seen and last_seen >= cutoff_dt),
@@ -9382,7 +9465,8 @@ def _fetch_chat_contacts(
             with conn.cursor() as cur:
                 cur.execute(
                     f'''
-                    SELECT id, username, wpm, profile_image
+                    SELECT id, username, wpm,
+                           (profile_image IS NOT NULL AND profile_image <> '') AS has_profile_image
                     FROM users
                     WHERE id IN ({placeholders})
                     ''',
@@ -9405,7 +9489,7 @@ def _fetch_chat_contacts(
                     'id': partner_id,
                     'username': partner['username'],
                     'wpm': float(partner['wpm'] or 0),
-                    'profileImage': partner.get('profile_image') or '',
+                    'avatarUrl': _avatar_url_for_user(partner),
                     'lastSeen': None,
                     'lastMessageAt': last_message_at.isoformat() + 'Z' if last_message_at else None,
                     'isOnline': False,
@@ -10081,14 +10165,18 @@ def _frontend_file_response(path: str = ''):
 
 @app.errorhandler(RuntimeError)
 def handle_runtime_error(exc):
+    # The full exception (with traceback) is logged server-side for
+    # debugging, but the client only ever gets a generic message - the raw
+    # exception text can contain internal details (query fragments, file
+    # paths, variable values) that shouldn't be exposed to end users.
     app.logger.exception('Runtime error while serving request')
-    return jsonify({'message': str(exc)}), 500
+    return jsonify({'message': 'Something went wrong. Please try again.'}), 500
 
 
 @app.errorhandler(pymysql.MySQLError)
 def handle_mysql_error(exc):
     app.logger.exception('Database error while serving request')
-    return jsonify({'message': f'Database unavailable: {exc}'}), 503
+    return jsonify({'message': 'Database is temporarily unavailable. Please try again shortly.'}), 503
 
 
 @app.errorhandler(Exception)
@@ -10096,7 +10184,7 @@ def handle_unexpected_error(exc):
     if isinstance(exc, HTTPException):
         return exc
     app.logger.exception('Unexpected error while serving request')
-    return jsonify({'message': f'Unexpected server error: {exc}'}), 500
+    return jsonify({'message': 'Unexpected server error. Please try again.'}), 500
 
 
 @app.get('/')

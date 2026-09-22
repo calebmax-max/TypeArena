@@ -185,7 +185,7 @@ function ContactList({ players, onSelect, unread, search, onAvatarClick }) {
               onMouseLeave={(e) => e.currentTarget.style.background = 'hsl(240 12% 8%)'}
             >
               <div style={{ position: 'relative' }}>
-                <Avatar name={p.username} image={p.profileImage} size={49} onClick={p.profileImage ? () => onAvatarClick?.(p) : undefined} />
+                <Avatar name={p.username} image={p.avatarUrl} size={49} onClick={p.avatarUrl ? () => onAvatarClick?.(p) : undefined} />
                 {p.isOnline ? (
                   <span style={{
                     position: 'absolute', bottom: 1, right: 1,
@@ -427,7 +427,7 @@ function Thread({ partner, currentUserId, onBack, onAvatarClick, socketConnected
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
-        <Avatar name={partner.username} image={partner.profileImage} size={38} onClick={partner.profileImage ? () => onAvatarClick?.(partner) : undefined} />
+        <Avatar name={partner.username} image={partner.avatarUrl} size={38} onClick={partner.avatarUrl ? () => onAvatarClick?.(partner) : undefined} />
         <div style={{ flex: 1 }}>
           <div style={{ color: 'hsl(0 0% 95%)', fontWeight: 600, fontSize: 15 }}>{partner.username}</div>
           <div style={{ color: partner.isOnline ? 'hsl(145 40% 60%)' : 'hsl(240 5% 58%)', fontSize: 12 }}>
@@ -929,7 +929,7 @@ function ChatWidget({ currentUser }) {
           </button>
           <div onClick={(event) => event.stopPropagation()} style={{ cursor: 'default', textAlign: 'center' }}>
             <img
-              src={enlargedProfile.profileImage || enlargedProfile.image}
+              src={enlargedProfile.avatarUrl || enlargedProfile.profileImage || enlargedProfile.image}
               alt={(enlargedProfile.username || enlargedProfile.name || 'Player') + ' enlarged profile'}
               style={{
                 display: 'block',

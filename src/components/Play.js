@@ -2231,9 +2231,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                         <span style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--arena-accent, #22c55e)' }}>VS</span>
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', minWidth: '120px' }}>
-                        {player.profileImage ? (
+                        {player.avatarUrl ? (
                           <img
-                            src={player.profileImage}
+                            src={player.avatarUrl}
                             alt=""
                             className="room-roster__avatar"
                             style={{ width: '80px', height: '80px' }}
@@ -2322,8 +2322,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               <div className="room-roster__players">
                 {liveRoom.players.map((player) => (
                   <div className="room-roster__player" key={player.userId}>
-                    {player.profileImage ? (
-                      <img src={player.profileImage} alt="" className="room-roster__avatar" />
+                    {player.avatarUrl ? (
+                      <img src={player.avatarUrl} alt="" className="room-roster__avatar" />
                     ) : (
                       <span className="room-roster__avatar room-roster__avatar--fallback" aria-hidden="true">
                         {(player.username || 'P').slice(0, 1).toUpperCase()}
@@ -2575,7 +2575,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 <span style={{ fontSize:'0.72rem', color:'var(--arena-accent)', marginTop:'2px' }}>{wpmValue.toFixed(0)} WPM</span>
               </div>
               <div className="opponent-panel__item" style={{ position:'relative' }}>
-                {opponent?.profileImage && <img src={opponent.profileImage} alt="Opponent profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>{opponent?.username || 'Opponent'}</span>
+                {opponent?.avatarUrl && <img src={opponent.avatarUrl} alt="Opponent profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>{opponent?.username || 'Opponent'}</span>
                 <strong>{opponent?.progress || 0}%</strong>
                 {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? NEW #C: opponent live WPM bar Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
                 {opponent?.currentWpm != null && (
