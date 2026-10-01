@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 import math
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -198,6 +198,63 @@ LIVE_RACE_ROOMS: dict[str, Dict[str, Any]] = {}
 SOCKETIO_ASYNC_MODE = os.getenv('TYPEARENA_SOCKETIO_ASYNC_MODE', 'threading').strip() or 'threading'
 socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode=SOCKETIO_ASYNC_MODE)
 app.extensions['socketio'] = socketio
+def _live_race_socket_room(room_id: str) -> str:
+    return f'live_race:{room_id}'
+
+def _emit_live_race_update(room: Optional[Dict[str, Any]]) -> None:
+    if room and room.get('id'):
+        socketio.emit(
+            'live_race:update',
+            _serialize_live_room(room),
+            to=_live_race_socket_room(room['id']),
+        )
+
+
+@socketio.on('live_race:join')
+def handle_live_race_join(data):
+    room_id = str((data or {}).get('roomId') or '').strip()
+    if not room_id:
+        return
+    join_room(_live_race_socket_room(room_id))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            room = _get_live_room(cur, room_id)
+        if room:
+            emit('live_race:update', _serialize_live_room(room))
+    finally:
+        _return_connection(conn)
+
+
+@socketio.on('live_race:presence')
+def handle_live_race_presence(data):
+    room_id = str((data or {}).get('roomId') or '').strip()
+    if not room_id:
+        return
+    join_room(_live_race_socket_room(room_id))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            room = _get_live_room(cur, room_id, for_update=True)
+            if not room:
+                emit('live_race:removed', {'roomId': room_id})
+                return
+            if room.get('status') == 'waiting' and not room.get('isPrivate'):
+                cur.execute(
+                    'UPDATE live_race_rooms SET updated_at = CURRENT_TIMESTAMP WHERE room_id = %s',
+                    (room_id,),
+                )
+            conn.commit()
+        emit('live_race:update', _serialize_live_room(room))
+    finally:
+        _return_connection(conn)
+
+
+@socketio.on('live_race:leave')
+def handle_live_race_leave(data):
+    room_id = str((data or {}).get('roomId') or '').strip()
+    if room_id:
+        leave_room(_live_race_socket_room(room_id))
 
 
 def _is_admin_email(email: str) -> bool:
@@ -4722,7 +4779,9 @@ def _save_live_room(cur, room: Dict[str, Any]) -> Dict[str, Any]:
             payload,
         ),
     )
-    return _hydrate_live_room(room_copy) or room_copy
+    saved_room = _hydrate_live_room(room_copy) or room_copy
+    _emit_live_race_update(saved_room)
+    return saved_room
 
 
 def _get_live_room(cur, room_id: str, for_update: bool = False) -> Optional[Dict[str, Any]]:
@@ -4789,6 +4848,7 @@ def _delete_live_room(cur, room_id: str) -> None:
         return
     cur.execute('DELETE FROM live_race_rooms WHERE room_id=%s', (normalized,))
     LIVE_RACE_ROOMS.pop(normalized, None)
+    socketio.emit('live_race:removed', {'roomId': normalized}, to=_live_race_socket_room(normalized))
 
 
 def _ensure_auth_token_column(cur) -> None:

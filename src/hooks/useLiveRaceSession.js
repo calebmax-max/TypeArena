@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { liveRaceSocket } from '../utils/liveRaceSocket';
 import {
   calculateAccuracy,
   calculateOfficialWPM,
@@ -15,9 +16,6 @@ import {
 
 const LIVE_RACE_COUNTDOWN_FALLBACK = 10;
 const LIVE_CLOCK_SYNC_INTERVAL_MS = 50;
-const LIVE_ROOM_POLL_QUEUED_MS = 1500;
-const LIVE_ROOM_POLL_ACTIVE_MS = 4000;
-const LIVE_ROOM_POLL_RESULTS_MS = 2500;
 
 export function useLiveRaceSession({
   currentUser,
@@ -752,56 +750,65 @@ export function useLiveRaceSession({
     }
 
     const roomId = liveRoom.id;
-    const interval = window.setInterval(async () => {
-      // While queued, the poll doubles as the "I'm still here" heartbeat that
-      // keeps this waiting room matchable on the server, so it must keep
-      // running even if the tab is in the background. Other phases can pause.
-      if ((document.visibilityState !== 'visible' && phase !== 'queued') || roomPollInFlightRef.current) {
+    const applyRoomUpdate = (room) => {
+      if (!room || String(room.id) !== String(roomId) || isLeavingRef.current) {
         return;
       }
-
-      roomPollInFlightRef.current = true;
-      try {
-        const pollSentAt = Date.now();
-        const room = await fetchLiveRaceRoom(roomId);
-        recordClockSample(room, pollSentAt, Date.now());
-        if (isLeavingRef.current) {
-          return;
-        }
-        setLiveRoom(room);
-        if (finalizeRoomIfCompleted(room) || phase === 'results') {
-          return;
-        }
-        syncRoomClock(room);
-        if (phase === 'queued' && room.status === 'racing') {
-          setPhase('racing');
-          window.setTimeout(() => inputRef.current?.focus(), 150);
-        }
-      } catch (error) {
-        if (error?.status === 404 && phase === 'queued' && !isLeavingRef.current) {
-          // The server removed our waiting room (it went stale). Reset and let
-          // the player queue again instead of sitting on a dead screen.
-          setLiveRoom(null);
-          clearTransientLiveState();
-          setPhase('lobby');
-          showNotice('Your place in the queue expired. Please join again.', 'info');
-          return;
-        }
-        console.error('Live room polling error:', error);
-      } finally {
-        roomPollInFlightRef.current = false;
+      recordClockSample(room, Date.now(), Date.now());
+      setLiveRoom(room);
+      if (finalizeRoomIfCompleted(room) || phase === 'results') {
+        return;
       }
-    }, phase === 'queued'
-      ? LIVE_ROOM_POLL_QUEUED_MS
-      : phase === 'results'
-        ? LIVE_ROOM_POLL_RESULTS_MS
-        : LIVE_ROOM_POLL_ACTIVE_MS);
+      syncRoomClock(room);
+      if (phase === 'queued' && room.status === 'racing') {
+        setPhase('racing');
+        window.setTimeout(() => inputRef.current?.focus(), 150);
+      }
+    };
 
-    return () => window.clearInterval(interval);
-  // Keep the polling interval stable; the latest room/player state is read through refs in callbacks.
+    const handleRemoved = ({ roomId: removedRoomId } = {}) => {
+      if (String(removedRoomId) !== String(roomId) || phase !== 'queued' || isLeavingRef.current) {
+        return;
+      }
+      setLiveRoom(null);
+      clearTransientLiveState();
+      setPhase('lobby');
+      showNotice('Your place in the queue expired. Please join again.', 'info');
+    };
+
+    const joinRoom = () => {
+      liveRaceSocket.emit('live_race:join', { roomId });
+    };
+    liveRaceSocket.on('live_race:update', applyRoomUpdate);
+    liveRaceSocket.on('live_race:removed', handleRemoved);
+    liveRaceSocket.on('connect', joinRoom);
+    if (!liveRaceSocket.connected) {
+      liveRaceSocket.connect();
+    } else {
+      joinRoom();
+    }
+
+    const presenceInterval = phase === 'queued'
+      ? window.setInterval(() => {
+          if (!isLeavingRef.current) {
+            liveRaceSocket.emit('live_race:presence', { roomId });
+          }
+        }, 5000)
+      : null;
+
+    return () => {
+      if (presenceInterval) {
+        window.clearInterval(presenceInterval);
+      }
+      liveRaceSocket.emit('live_race:leave', { roomId });
+      liveRaceSocket.off('live_race:update', applyRoomUpdate);
+      liveRaceSocket.off('live_race:removed', handleRemoved);
+      liveRaceSocket.off('connect', joinRoom);
+      liveRaceSocket.disconnect();
+    };
+  // Keep the socket subscription stable; the latest room/player state is read through refs in callbacks.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finalizeRoomIfCompleted, inputRef, liveRoom?.id, phase, setPhase, syncRoomClock]);
-
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown' && revealRemaining > 0) {
       showNotice('Opponent found!', 'success');
