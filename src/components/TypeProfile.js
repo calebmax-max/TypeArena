@@ -50,7 +50,6 @@ const TOPUP_STATUS_POLL_INTERVAL_MS      = 4000;
 const TOPUP_STATUS_POLL_MAX_ATTEMPTS     = 20;
 const WITHDRAW_STATUS_POLL_INTERVAL_MS   = 4000;
 const WITHDRAW_STATUS_POLL_MAX_ATTEMPTS  = 20;
-const BADGE_IMAGE_KEY                    = 'typearena_badge_image';
 
 const formatMethodLabel = (m) => m.replace(/_/g, ' ');
 
@@ -64,21 +63,6 @@ const EQUIPPED_LABELS = {
 };
 
 // ──────────────────────────────────────── Helpers ────────────────────────────────────────
-const loadBadgeImage = () => {
-  try { return localStorage.getItem(BADGE_IMAGE_KEY) || null; }
-  catch { return null; }
-};
-
-const saveBadgeImage = (dataUrl) => {
-  try { localStorage.setItem(BADGE_IMAGE_KEY, dataUrl); }
-  catch { /* storage full — silently skip */ }
-};
-
-const removeBadgeImage = () => {
-  try { localStorage.removeItem(BADGE_IMAGE_KEY); }
-  catch {}
-};
-
 const medalColour = (place) => {
   if (place === 1) return '#FFD700';
   if (place === 2) return '#C0C0C0';
@@ -98,127 +82,12 @@ const medalColour = (place) => {
  * initials {string} — fallback text (e.g. "JD")
  * size {number} — diameter in px (default 96)
  */
-function AvatarBadge({ initials = 'TA', size = 96, image = '', onImageChange }) {
-  const [imgSrc, setImgSrc] = useState(() => image || loadBadgeImage());
-  const [hovered, setHovered] = useState(false);
-  const fileRef = useRef(null);
-
-  useEffect(() => {
-    setImgSrc(image || loadBadgeImage());
-  }, [image]);
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) return;
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      // Resize to max 512x512 and compress at higher quality before storing.\r\n      // This keeps profile photos sharp when opened in the chat viewer.
-      const img = new Image();
-      img.onload = () => {
-        const MAX = 1024;
-        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
-        const w = Math.max(1, Math.round(img.width * scale));
-        const h = Math.max(1, Math.round(img.height * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, w, h);
-
-        let dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-        for (let quality = 0.86; dataUrl.length > 245 * 1024 && quality >= 0.5; quality -= 0.06) {
-          dataUrl = canvas.toDataURL('image/jpeg', quality);
-        }
-
-        setImgSrc(dataUrl);
-        saveBadgeImage(dataUrl);
-        onImageChange?.(dataUrl);
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-    // Reset input so re-selecting the same file still fires onChange
-    e.target.value = '';
-  };
-
-  const handleRemove = (e) => {
-    e.stopPropagation();
-    setImgSrc(null);
-    removeBadgeImage();
-    onImageChange?.('');
-  };
-
+function AvatarBadge({ initials = 'TA', size = 96 }) {
   return (
-    <div
-      className="avatar-badge-wrap"
-      style={{ width: size, height: size }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Hidden file input */}
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        className="avatar-badge-input"
-        onChange={handleFileChange}
-        aria-label="Upload badge image"
-      />
-
-      {/* Badge circle */}
-      <button
-        className="avatar-badge"
-        style={{ width: size, height: size, fontSize: size * 0.28 }}
-        onClick={() => fileRef.current?.click()}
-        title={imgSrc ? 'Replace badge image' : 'Upload badge image'}
-        aria-label={imgSrc ? 'Replace badge image' : 'Upload badge image'}
-      >
-        {imgSrc ? (
-          <img src={imgSrc} alt="Badge" className="avatar-badge-img" />
-        ) : (
-          <span className="avatar-badge-initials">{initials}</span>
-        )}
-
-        {/* Hover overlay */}
-        <span className={`avatar-badge-overlay ${hovered ? 'is-visible' : ''}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <span style={{ fontSize: '0.6rem', letterSpacing: '0.08em' }}>UPLOAD</span>
-        </span>
-      </button>
-
-      {/* Remove button — only when image exists */}
-      {imgSrc && (
-        <button
-          className="avatar-badge-remove"
-          onClick={handleRemove}
-          title="Remove custom image"
-          aria-label="Remove custom badge image"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 28,
-            height: 28,
-            minWidth: 0,
-            padding: 0,
-            lineHeight: 1,
-            borderRadius: '50%',
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-            <line x1="6" y1="6" x2="18" y2="18" />
-            <line x1="18" y1="6" x2="6" y2="18" />
-          </svg>
-        </button>
-      )}
+    <div className="avatar-badge-wrap" style={{ width: size, height: size }}>
+      <div className="avatar-badge" style={{ width: size, height: size, fontSize: size * 0.28 }}>
+        <span className="avatar-badge-initials">{initials}</span>
+      </div>
     </div>
   );
 }
@@ -296,7 +165,6 @@ export default function TypeProfile() {
 
   // ──────────────────────────────────────── Audio / experience settings (persisted in localStorage, read by Play) ────────────────────────────────────────
   const [soundEnabled,       setSoundEnabled]       = useState(() => localStorage.getItem('typearena_sound')       !== 'false');
-  const [musicEnabled,       setMusicEnabled]       = useState(() => localStorage.getItem('typearena_music')       !== 'false');
   const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
 
   const toggleSetting = (key, setter) => {
@@ -318,28 +186,6 @@ export default function TypeProfile() {
     setCurrentUser(user);
     window.dispatchEvent(new Event(USER_CHANGE_EVENT));
   }, []);
-
-  const handleProfileImageChange = useCallback(async (profileImage) => {
-    if (!currentUser?.id) return;
-    try {
-      const updatedUser = await updateUserProfile(currentUser.id, { profileImage });
-      applyFreshUserState(updatedUser);
-    } catch (error) {
-      setAuthNotice(error.message || 'Could not save your profile picture.');
-    }
-  }, [applyFreshUserState, currentUser?.id]);
-
-  useEffect(() => {
-    const legacyImage = loadBadgeImage();
-    if (!currentUser?.id || currentUser.profileImage || !legacyImage) return;
-    let cancelled = false;
-    updateUserProfile(currentUser.id, { profileImage: legacyImage })
-      .then((updatedUser) => {
-        if (!cancelled) applyFreshUserState(updatedUser);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [applyFreshUserState, currentUser?.id, currentUser?.profileImage]);
 
   // Loads wallet/race data for a user we already have (e.g. straight after
   // login/signup, whose response already includes the full user object).
@@ -736,7 +582,7 @@ export default function TypeProfile() {
 
           {/* Identity */}
           <div className="tp-identity">
-            <AvatarBadge initials={initials} size={92} image={currentUser.profileImage} onImageChange={handleProfileImageChange} />
+            <AvatarBadge initials={initials} size={92} />
             <div className="tp-identity__info">
               <h1 className="tp-identity__name">{currentUser.username}</h1>
               <span className="tp-identity__tier">{currentUser.tier || 'Standard'} Tier</span>
@@ -1013,7 +859,7 @@ export default function TypeProfile() {
                 <span className="tp-section-head__sub">Your profile badge is visible in races and standings</span>
               </div>
               <div className="tp-badge-editor">
-                <AvatarBadge initials={initials} size={110} image={currentUser.profileImage} onImageChange={handleProfileImageChange} />
+                <AvatarBadge initials={initials} size={110} />
                 <div className="tp-badge-editor__hint">
                   <p>Click the badge to upload a custom photo.<br />Supports JPG, PNG, WebP. Saved to your TypeArena profile and visible in races and chat.</p>
                 </div>
@@ -1033,19 +879,6 @@ export default function TypeProfile() {
                     className={`tp-toggle ${soundEnabled ? 'tp-toggle--on' : ''}`}
                     onClick={() => toggleSetting('typearena_sound', setSoundEnabled)}
                     aria-pressed={soundEnabled}
-                  >
-                    <span className="tp-toggle__knob" />
-                  </button>
-                </div>
-                <div className="tp-audio-row">
-                  <div className="tp-audio-row__info">
-                    <span className="tp-audio-row__label">Background Music</span>
-                    <span className="tp-audio-row__desc">Orchestral arena music during lobby and races</span>
-                  </div>
-                  <button
-                    className={`tp-toggle ${musicEnabled ? 'tp-toggle--on' : ''}`}
-                    onClick={() => toggleSetting('typearena_music', setMusicEnabled)}
-                    aria-pressed={musicEnabled}
                   >
                     <span className="tp-toggle__knob" />
                   </button>

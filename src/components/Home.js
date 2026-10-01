@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildHeaders, fetchLiveRaces } from '../utils/typingApi';
+import { buildHeaders } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
 import { preloadPlayContent, preloadRoute } from '../utils/navigationPrefetch';
-import { arenaMusic } from '../utils/arenaMusic';
 import '../styles/Home.css';
 
 const DEMO_SENTENCES = [
@@ -120,28 +119,41 @@ const features = [
   },
 ];
 
-function useLivePlayerCount() {
+const isTabVisible = () =>
+  typeof document === 'undefined' || document.visibilityState === 'visible';
+
+// Polls a tiny endpoint, only while the tab is visible.
+function useVisiblePolling(load, intervalMs, enabled) {
+  useEffect(() => {
+    if (!enabled) return undefined;
+    load();
+    const tick = () => { if (isTabVisible()) load(); };
+    const interval = window.setInterval(tick, intervalMs);
+    const onVisible = () => { if (isTabVisible()) load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, intervalMs]);
+}
+
+function useLivePlayerCount(enabled = true) {
   const [count, setCount] = useState(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const rooms = await fetchLiveRaces();
-        if (!Array.isArray(rooms)) return;
-        const total = rooms.reduce(
-          (sum, room) => sum + (Array.isArray(room.players) ? room.players.length : 0),
-          0
-        );
-        setCount(total);
-      } catch {
-        // silently keep previous value on error
-      }
-    };
-    load();
-    const interval = window.setInterval(load, 4000);
-    return () => window.clearInterval(interval);
-  }, []);
+  const load = async () => {
+    try {
+      const response = await fetch(buildApiUrl('/api/live-races/summary'));
+      if (!response.ok) return;
+      const data = await response.json();
+      if (typeof data.players === 'number') setCount(data.players);
+    } catch {
+      // keep previous value on error
+    }
+  };
 
+  useVisiblePolling(load, 15000, enabled);
   return count;
 }
 
@@ -170,7 +182,9 @@ function usePublicStats() {
     };
 
     load();
-    const interval = window.setInterval(load, 15000);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, 30000);
 
     return () => {
       active = false;
@@ -182,52 +196,40 @@ function usePublicStats() {
 }
 
 function useOnlinePresence(currentUser) {
-  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [presence, setPresence] = useState({ count: 0, users: [] });
+  const userId = currentUser?.id;
+
+  const load = async () => {
+    try {
+      const response = await fetch(buildApiUrl('/api/presence/summary'), {
+        headers: buildHeaders(),
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setPresence({
+        count: Number(data.count) || 0,
+        users: Array.isArray(data.users) ? data.users : [],
+      });
+    } catch {
+      // keep previous snapshot on error
+    }
+  };
 
   useEffect(() => {
-    if (!currentUser?.id) {
-      setOnlineUsers([]);
-      return undefined;
-    }
+    if (!userId) setPresence({ count: 0, users: [] });
+  }, [userId]);
 
-    let active = true;
-
-    const load = async () => {
-      try {
-        const response = await fetch(buildApiUrl('/api/presence/online'), {
-          headers: buildHeaders(),
-        });
-        if (!response.ok) {
-          return;
-        }
-        const data = await response.json();
-        if (active) {
-          setOnlineUsers(Array.isArray(data) ? data : []);
-        }
-      } catch {
-        // Keep the previous presence snapshot if the network blips.
-      }
-    };
-
-    load();
-    const interval = window.setInterval(load, 5000);
-
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [currentUser?.id]);
-
-  return onlineUsers;
+  useVisiblePolling(load, 15000, Boolean(userId));
+  return presence;
 }
 
 export default function Home({ currentUser }) {
   const heroRef = useRef(null);
-  const liveCount = useLivePlayerCount();
+  const liveCount = useLivePlayerCount(!currentUser?.id);
   const publicStats = usePublicStats();
-  const onlineUsers = useOnlinePresence(currentUser);
-  const visibleOnlineUsers = onlineUsers.filter((user) => !user.isMe);
-  const onlineCount = visibleOnlineUsers.length;
+  const presence = useOnlinePresence(currentUser);
+  const visibleOnlineUsers = presence.users;
+  const onlineCount = presence.count;
   const heroBadgeLabel = currentUser?.id
     ? `${onlineCount} online`
     : `${liveCount === null ? 'N/A' : liveCount} live now`;
@@ -238,16 +240,6 @@ export default function Home({ currentUser }) {
   const preloadTournamentsPage = () => {
     void preloadRoute('tournaments');
   };
-
-  // Home is the site's entry point, so this is the only page that kicks off
-  // the shared background playlist. It keeps playing across every other
-  // page after this (arenaMusic is a persistent singleton) — someone who
-  // deep-links straight into Profile/Play/etc. without visiting Home first
-  // won't hear it start. Playback actually stops when the visitor leaves
-  // the site entirely (arenaMusic handles that itself via `pagehide`).
-  useEffect(() => {
-    arenaMusic.play();
-  }, []);
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') {

@@ -22,7 +22,6 @@ import {
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
-import { arenaMusic } from '../utils/arenaMusic';
 import { useLiveFeed } from '../hooks/useLiveFeed';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { useSpectateRoom } from '../hooks/useSpectateRoom';
@@ -46,7 +45,7 @@ const LazyPlayReplay = React.lazy(() => import('./PlayReplay'));
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const AFK_FORFEIT_MS = 15000; // #2 rage-quit/AFK: forfeit after 15s of no heartbeat
-const LOBBY_FEED_POLL_INTERVAL_MS = 8000;
+const LOBBY_FEED_POLL_INTERVAL_MS = 15000;
 const SPECTATE_POLL_INTERVAL_MS = 3000;
 
 // ---------------------------------------------------------------------------
@@ -537,7 +536,6 @@ export default function Play({ practicePage = false }){
   useEffect(() => { setSoundEnabledGlobal(soundEnabled); }, [soundEnabled]);
   const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
   const [commentatorPhrases, setCommentatorPhrases] = useState({});
-  const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem('typearena_music') !== 'false');
   const [mobileTypingSettings, setMobileTypingSettings] = useState(readMobileTypingSettings);
   const [showMobileTypingSetup, setShowMobileTypingSetup] = useState(() => localStorage.getItem(MOBILE_TYPING_SETTINGS_KEY) === null);
 
@@ -565,17 +563,11 @@ export default function Play({ practicePage = false }){
         setSoundEnabledGlobal(next); // sync module flag immediately, no render gap
         setSoundEnabled(next);
       }
-      if (e.key === 'typearena_music')        setMusicEnabled(e.newValue !== 'false');
       if (e.key === 'typearena_commentator')  setCommentatorEnabled(e.newValue !== 'false');
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
-
-  // Mute/unmute the shared playlist when the player's music setting changes
-  useEffect(() => {
-    arenaMusic.setMuted(!musicEnabled);
-  }, [musicEnabled]);
 
   // Cancel speech and hard-disable when commentator is toggled off
   const commentatorScriptRef = useRef(SCRIPT);
@@ -683,7 +675,7 @@ export default function Play({ practicePage = false }){
     phase,
     fetchLiveRaces,
     pollIntervalMs: LOBBY_FEED_POLL_INTERVAL_MS,
-    enabled: !practicePage && phase !== 'racing',
+    enabled: !practicePage && phase !== 'racing' && phase !== 'queued',
   });
 
   const {
@@ -1240,19 +1232,6 @@ export default function Play({ practicePage = false }){
     return () => window.removeEventListener('keydown', handleKeyDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, practicePage]);
-
-  // Switch the shared playlist between its idle (lobby/results) channel and
-  // its race channel as the typing phase changes. Replaces the old
-  // orchestra.toRace()/toLobby() crossfade now that arenaMusic owns all
-  // background audio - see arenaMusic.js for the two-playlist support this
-  // needs (toRace/toLobby methods analogous to the removed orchestra's).
-  useEffect(() => {
-    if (phase === 'racing') {
-      arenaMusic.toRace();
-    } else if (phase === 'lobby' || phase === 'results') {
-      arenaMusic.toLobby();
-    }
-  }, [phase]);
 
   useEffect(() => {
     if (phase !== 'waiting') {
@@ -2448,7 +2427,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <div className="player-identity-card">
             <div className={`player-avatar-shell ${frameClassName}`}>
               <div className={`player-avatar ${avatarPreset.aura}`}>
-                {currentUser?.profileImage ? <img src={currentUser.profileImage} alt={`${currentUser?.username || 'Player'} profile`} style={{ width: '100%', height: '100%', borderRadius: 'inherit', objectFit: 'cover' }} /> : <span>{avatarPreset.mark}</span>}
+                {(currentUser?.profileImage || currentUser?.avatarUrl) ? <img src={currentUser.profileImage || currentUser.avatarUrl} alt={`${currentUser?.username || 'Player'} profile`} style={{ width: '100%', height: '100%', borderRadius: 'inherit', objectFit: 'cover' }} /> : <span>{avatarPreset.mark}</span>}
               </div>
             </div>
             <div className="player-identity-copy">
@@ -2569,7 +2548,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             ) : (
             <div className="opponent-panel">
               <div className="opponent-panel__item">
-                {currentUser?.profileImage && <img src={currentUser.profileImage} alt="Your profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>You</span>
+                {(currentUser?.profileImage || currentUser?.avatarUrl) && <img src={currentUser.profileImage || currentUser.avatarUrl} alt="Your profile" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', marginBottom: 4 }} />} <span>You</span>
                 <strong>{myPlayer?.progress || 0}%</strong>
                 {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? NEW #C: your live WPM Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
                 <span style={{ fontSize:'0.72rem', color:'var(--arena-accent)', marginTop:'2px' }}>{wpmValue.toFixed(0)} WPM</span>

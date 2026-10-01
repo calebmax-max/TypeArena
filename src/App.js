@@ -13,8 +13,7 @@ import './css/Loader.css';
 
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
-import { fetchSiteMarquee, fetchCurrentUser, updateUserProfile } from './utils/typingApi';
-import { arenaMusic } from './utils/arenaMusic';
+import { fetchSiteMarquee, fetchCurrentUser } from './utils/typingApi';
 import { preloadPlayContent } from './utils/navigationPrefetch';
 import Play from './components/Play';
 import TrainingPage from './components/TrainingPage';
@@ -155,10 +154,6 @@ function AppLayout() {
   const [tourActive, setTourActive] = useState(false);
 
   useEffect(() => {
-    void arenaMusic.loadRemoteSettings();
-  }, []);
-
-  useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     setMenuOpen(false);
   }, [location.key]);
@@ -191,15 +186,7 @@ function AppLayout() {
                              // dispatched USER_CHANGE_EVENT; syncUser will pick it up.
 
         // Update stored user with latest server data (balance, wpm, etc.)
-        const legacyProfileImage = localStorage.getItem('typearena_badge_image') || '';
-        if (!fresh.profileImage && legacyProfileImage.startsWith('data:image/')) {
-          try {
-            const migratedUser = await updateUserProfile(fresh.id, { profileImage: legacyProfileImage });
-            Object.assign(fresh, migratedUser);
-          } catch (_) {
-            // The profile page will retry migration and show any upload error.
-          }
-        }
+        try { localStorage.removeItem('typearena_badge_image'); } catch (_) {}
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(fresh));
         setCurrentUser(fresh);
       } catch (_) {

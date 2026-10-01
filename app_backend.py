@@ -56,11 +56,9 @@ ALLOWED_ORIGINS = (
 )
 CORS(app, origins=ALLOWED_ORIGINS)
 
-# Uploaded music is stored as a DB blob (see music_files table), so cap the
-# request body well below the DB column's practical limit to keep rows and
-# memory usage sane. 20MB is generous for a compressed MP3/OGG track.
-MUSIC_UPLOAD_MAX_BYTES = int(os.getenv('TYPEARENA_MUSIC_MAX_BYTES', str(20 * 1024 * 1024)))
-app.config['MAX_CONTENT_LENGTH'] = MUSIC_UPLOAD_MAX_BYTES
+# Uploads are no longer used; keep request bodies small.
+MAX_REQUEST_BYTES = int(os.getenv('TYPEARENA_MAX_REQUEST_BYTES', str(2 * 1024 * 1024)))
+app.config['MAX_CONTENT_LENGTH'] = MAX_REQUEST_BYTES
 
 BASE_DIR = Path(__file__).resolve().parent
 BUILD_DIR = BASE_DIR / 'build'
@@ -2356,6 +2354,7 @@ def _normalize_commentator_config(config: Any) -> Dict[str, float]:
 
 
 def _normalize_music_tracks(tracks: Any) -> list[Dict[str, str]]:
+    return []  # music is disabled
     if not isinstance(tracks, list):
         return []
     normalized = []
@@ -2722,7 +2721,7 @@ def _openai_generate_passage(mode: str, language: str) -> Dict[str, Any]:
     }
 
 
-def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = None) -> Dict[str, Any]:
+def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = None, include_text: bool = True) -> Dict[str, Any]:
     players = []
     winner_user_id = room.get('winnerUserId')
     winner_username = ''
@@ -2734,7 +2733,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
             {
                 'userId': player['userId'],
                 'username': player['username'],
-                'profileImage': player.get('profileImage') or '',
+                'profileImage': '',  # avatars removed; old rooms may still hold base64 images
                 'progress': int(player.get('progress') or 0),
                 'currentWpm': float(player.get('currentWpm') or 0),
                 'currentAccuracy': float(player.get('currentAccuracy') or 100),
@@ -2759,7 +2758,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
             min(LIVE_RACE_MAX_DURATION_SECONDS, int(room.get('duration') or 60)),
         ),
         'countdown': room.get('countdown', LIVE_RACE_COUNTDOWN_SECONDS),
-        'text': room['text'],
+        'text': room['text'] if include_text else '',
         'contentId': room.get('contentId'),
         'totalContentCount': int(room.get('totalContentCount') or 0),
         'players': players,
@@ -2896,179 +2895,6 @@ try:
 except (TypeError, ValueError):
     _db_pool_size = 6
 _db_pool = _ConnectionPool(size=_db_pool_size)
-
-
-MUSIC_UPLOAD_ALLOWED_MIME = {
-    'audio/mpeg': '.mp3',
-    'audio/mp3': '.mp3',
-    'audio/ogg': '.ogg',
-    'audio/wav': '.wav',
-    'audio/x-wav': '.wav',
-    'audio/wave': '.wav',
-    'audio/flac': '.flac',
-    'audio/x-flac': '.flac',
-    'audio/aac': '.aac',
-    'audio/mp4': '.m4a',
-    'audio/x-m4a': '.m4a',
-    'audio/webm': '.weba',
-}
-
-
-from collections import OrderedDict as _OrderedDict
-
-_music_table_ready = False
-_music_table_lock = _threading.Lock()
-
-# In-memory LRU of recently played tracks. Track ids are random and the
-# content never changes for a given id, so this is safe. It removes the
-# repeated full-blob reads from MySQL that audio players trigger with their
-# many Range requests. Per-process (each worker has its own copy).
-MUSIC_CACHE_MAX_BYTES = max(0, _env_int('TYPEARENA_MUSIC_CACHE_MB', 32)) * 1024 * 1024
-MUSIC_CACHE_ITEM_MAX_BYTES = min(MUSIC_CACHE_MAX_BYTES, 12 * 1024 * 1024)
-_music_cache: "_OrderedDict[str, Dict[str, Any]]" = _OrderedDict()
-_music_cache_bytes = 0
-_music_cache_lock = _threading.Lock()
-
-
-def _music_cache_get(track_id: str) -> Optional[Dict[str, Any]]:
-    with _music_cache_lock:
-        record = _music_cache.get(track_id)
-        if record is not None:
-            _music_cache.move_to_end(track_id)
-        return record
-
-
-def _music_cache_drop(track_id: str) -> None:
-    global _music_cache_bytes
-    with _music_cache_lock:
-        record = _music_cache.pop(track_id, None)
-        if record is not None:
-            _music_cache_bytes -= len(record.get('data') or b'')
-
-
-def _music_cache_put(track_id: str, record: Dict[str, Any]) -> None:
-    global _music_cache_bytes
-    data = record.get('data') or b''
-    size = len(data)
-    if size <= 0 or size > MUSIC_CACHE_ITEM_MAX_BYTES:
-        return
-    with _music_cache_lock:
-        old = _music_cache.pop(track_id, None)
-        if old is not None:
-            _music_cache_bytes -= len(old.get('data') or b'')
-        _music_cache[track_id] = record
-        _music_cache_bytes += size
-        while _music_cache_bytes > MUSIC_CACHE_MAX_BYTES and _music_cache:
-            _, evicted = _music_cache.popitem(last=False)
-            _music_cache_bytes -= len(evicted.get('data') or b'')
-
-
-def _ensure_music_files_table(cur) -> None:
-    """Create music_files once per process.
-
-    This used to run CREATE TABLE IF NOT EXISTS on every audio request,
-    which is a DDL round-trip (and a metadata lock) on the hottest media path.
-    """
-    global _music_table_ready
-    if _music_table_ready:
-        return
-    with _music_table_lock:
-        if _music_table_ready:
-            return
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS music_files (
-                id VARCHAR(80) PRIMARY KEY,
-                filename VARCHAR(255) NOT NULL,
-                mime_type VARCHAR(100) NOT NULL,
-                size_bytes INT NOT NULL,
-                data LONGBLOB NOT NULL,
-                uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """
-        )
-        _music_table_ready = True
-
-
-def _save_music_file(track_id: str, filename: str, mime_type: str, data: bytes) -> None:
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _ensure_music_files_table(cur)
-            cur.execute(
-                """
-                INSERT INTO music_files (id, filename, mime_type, size_bytes, data)
-                VALUES (%s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    filename = VALUES(filename),
-                    mime_type = VALUES(mime_type),
-                    size_bytes = VALUES(size_bytes),
-                    data = VALUES(data),
-                    uploaded_at = CURRENT_TIMESTAMP
-                """,
-                (track_id, filename, mime_type, len(data), data),
-            )
-        conn.commit()
-        _music_cache_drop(track_id)
-    finally:
-        _return_connection(conn)
-
-
-def _load_music_meta(track_id: str) -> Optional[Dict[str, Any]]:
-    """Metadata only - never pulls the LONGBLOB across the wire."""
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _ensure_music_files_table(cur)
-            cur.execute(
-                'SELECT filename, mime_type, size_bytes FROM music_files WHERE id = %s LIMIT 1',
-                (track_id,),
-            )
-            return cur.fetchone()
-    finally:
-        _return_connection(conn)
-
-
-def _load_music_file(track_id: str) -> Optional[Dict[str, Any]]:
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _ensure_music_files_table(cur)
-            cur.execute(
-                'SELECT filename, mime_type, size_bytes, data FROM music_files WHERE id = %s LIMIT 1',
-                (track_id,),
-            )
-            return cur.fetchone()
-    finally:
-        _return_connection(conn)
-
-
-def _load_music_range(track_id: str, start: int, end: int) -> Optional[bytes]:
-    """Fetch only bytes [start, end] (inclusive) of a track, server-side."""
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _ensure_music_files_table(cur)
-            cur.execute(
-                'SELECT SUBSTRING(data, %s, %s) AS chunk FROM music_files WHERE id = %s LIMIT 1',
-                (int(start) + 1, int(end) - int(start) + 1, track_id),
-            )
-            row = cur.fetchone()
-            return row['chunk'] if row else None
-    finally:
-        _return_connection(conn)
-
-
-def _delete_music_file(track_id: str) -> None:
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            _ensure_music_files_table(cur)
-            cur.execute('DELETE FROM music_files WHERE id = %s', (track_id,))
-        conn.commit()
-        _music_cache_drop(track_id)
-    finally:
-        _return_connection(conn)
 
 
 def get_connection() -> pymysql.connections.Connection:
@@ -3584,9 +3410,9 @@ def _terms_status_for_user(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _safe_user(user: Dict[str, Any], conn=None) -> Dict[str, Any]:
+def _safe_user(user: Dict[str, Any], conn=None, include_profile_image: bool = False) -> Dict[str, Any]:
     owned_items = _owned_store_items_for_user(conn, _safe_int(user.get('id') or 0)) if conn else []
-    result = _safe_user_with_owned_items(user, owned_items)
+    result = _safe_user_with_owned_items(user, owned_items, include_profile_image=include_profile_image)
     result.update(_terms_status_for_user(user))
     return result
 
@@ -6471,148 +6297,10 @@ def admin_update_media_settings():
     return jsonify({'message': 'Media settings updated.', 'settings': settings})
 
 
-@app.post('/api/admin/media-upload')
-def admin_upload_music_file():
-    if not _is_admin_request():
-        return jsonify({'message': 'Unauthorized admin request'}), 401
-
-    upload = request.files.get('file')
-    if upload is None or not upload.filename:
-        return jsonify({'message': 'No audio file was uploaded.'}), 400
-
-    mime_type = (upload.mimetype or '').lower().split(';')[0].strip()
-    ext = MUSIC_UPLOAD_ALLOWED_MIME.get(mime_type)
-    if not ext:
-        # Some browsers send a generic/empty mimetype for less common audio
-        # formats — fall back to sniffing the filename extension instead of
-        # rejecting outright.
-        fallback_ext = os.path.splitext(upload.filename)[1].lower()
-        if fallback_ext in {'.mp3', '.ogg', '.wav', '.flac', '.aac', '.m4a', '.weba'}:
-            ext = fallback_ext
-            mime_type = mime_type or 'application/octet-stream'
-        else:
-            return jsonify({'message': 'Unsupported audio format. Use MP3, OGG, WAV, FLAC, AAC, or M4A.'}), 400
-
-    data = upload.read()
-    if not data:
-        return jsonify({'message': 'The uploaded file is empty.'}), 400
-    if len(data) > MUSIC_UPLOAD_MAX_BYTES:
-        limit_mb = MUSIC_UPLOAD_MAX_BYTES // (1024 * 1024)
-        return jsonify({'message': f'Audio file is too large. Max size is {limit_mb}MB.'}), 413
-
-    track_id = 'music_' + secrets.token_hex(8)
-    safe_filename = (os.path.basename(upload.filename) or f'track{ext}')[:255]
-
-    try:
-        _save_music_file(track_id, safe_filename, mime_type, data)
-    except Exception:
-        return jsonify({'message': 'Could not save the audio file on the server.'}), 500
-
-    title = str(request.form.get('title') or os.path.splitext(safe_filename)[0]).strip()[:150] or 'Untitled Track'
-    artist = str(request.form.get('artist') or 'Unknown Artist').strip()[:150]
-
-    track = {
-        'id': track_id,
-        'title': title,
-        'artist': artist,
-        'url': f'/api/media/music/{track_id}',
-    }
-    return jsonify({'message': 'Track uploaded.', 'track': track})
-
-
-@app.delete('/api/admin/media-upload/<track_id>')
-def admin_delete_music_file(track_id):
-    if not _is_admin_request():
-        return jsonify({'message': 'Unauthorized admin request'}), 401
-    try:
-        _delete_music_file(track_id)
-    except Exception:
-        return jsonify({'message': 'Could not delete the audio file.'}), 500
-    return jsonify({'message': 'Audio file deleted.'})
-
-
-_RANGE_HEADER_RE = re.compile(r'bytes=(\d*)-(\d*)')
-
-
-@app.get('/api/media/music/<track_id>')
-def serve_music_file(track_id):
-    # Public endpoint (no admin check) - everyone in the arena needs to hear
-    # the track, not just admins.
-    if not re.fullmatch(r'music_[0-9a-f]{16}', track_id):
-        return jsonify({'message': 'Track not found.'}), 404
-
-    # Fast path: recently played tracks are served from memory with zero
-    # database round-trips. On a miss we read metadata only, then load the
-    # blob once (and cache it) if it is small enough; oversized tracks are
-    # streamed from MySQL one Range chunk at a time instead of re-reading
-    # the whole file for every request.
-    record = _music_cache_get(track_id)
-    if record is None:
-        try:
-            meta = _load_music_meta(track_id)
-            if meta and int(meta.get('size_bytes') or 0) <= MUSIC_CACHE_ITEM_MAX_BYTES:
-                record = _load_music_file(track_id)
-                if record:
-                    _music_cache_put(track_id, record)
-            else:
-                record = meta
-        except Exception:
-            return jsonify({'message': 'Could not load the audio file.'}), 500
-
-    if not record:
-        return jsonify({'message': 'Track not found.'}), 404
-
-    data = record.get('data')  # None for oversized, uncached tracks
-    mime_type = record.get('mime_type') or 'application/octet-stream'
-    total_len = len(data) if data is not None else int(record.get('size_bytes') or 0)
-
-    range_header = request.headers.get('Range', '')
-    match = _RANGE_HEADER_RE.match(range_header) if range_header else None
-
-    if match:
-        start_raw, end_raw = match.groups()
-        start = int(start_raw) if start_raw else 0
-        end = int(end_raw) if end_raw else total_len - 1
-        end = min(end, total_len - 1)
-        if start > end or start >= total_len:
-            resp = Response(status=416)
-            resp.headers['Content-Range'] = f'bytes */{total_len}'
-            return resp
-        if data is not None:
-            chunk = data[start:end + 1]
-        else:
-            try:
-                chunk = _load_music_range(track_id, start, end)
-            except Exception:
-                return jsonify({'message': 'Could not load the audio file.'}), 500
-            if chunk is None:
-                return jsonify({'message': 'Track not found.'}), 404
-        resp = Response(chunk, status=206, mimetype=mime_type)
-        resp.headers['Content-Range'] = f'bytes {start}-{end}/{total_len}'
-        resp.headers['Accept-Ranges'] = 'bytes'
-        resp.headers['Content-Length'] = str(len(chunk))
-    else:
-        if data is None:
-            try:
-                full = _load_music_file(track_id)
-            except Exception:
-                return jsonify({'message': 'Could not load the audio file.'}), 500
-            if not full:
-                return jsonify({'message': 'Track not found.'}), 404
-            data = full['data']
-        resp = Response(data, status=200, mimetype=mime_type)
-        resp.headers['Accept-Ranges'] = 'bytes'
-        resp.headers['Content-Length'] = str(len(data))
-
-    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
-    resp.headers['Content-Disposition'] = f'inline; filename="{record.get("filename") or track_id}"'
-    return resp
-
-
 @app.errorhandler(RequestEntityTooLarge)
 def handle_upload_too_large(_err):
-    limit_mb = MUSIC_UPLOAD_MAX_BYTES // (1024 * 1024)
-    return jsonify({'message': f'Upload is too large. Max size is {limit_mb}MB.'}), 413
+    limit_mb = MAX_REQUEST_BYTES // (1024 * 1024)
+    return jsonify({'message': f'Request is too large. Max size is {limit_mb}MB.'}), 413
 
 
 _DATA_URI_RE = re.compile(r'^data:(?P<mime>[\w.+/-]+);base64,(?P<b64>.+)$', re.DOTALL)
@@ -6620,6 +6308,7 @@ _DATA_URI_RE = re.compile(r'^data:(?P<mime>[\w.+/-]+);base64,(?P<b64>.+)$', re.D
 
 @app.get('/api/users/<int:user_id>/avatar')
 def serve_user_avatar(user_id: int):
+    return jsonify({'message': 'Profile pictures are disabled.'}), 410
     # Profile pictures are stored as base64 data URIs on the users row so
     # they used to get embedded (and re-sent) inline on every leaderboard /
     # presence / chat-contacts payload that included that user. Serving them
@@ -6647,8 +6336,9 @@ def serve_user_avatar(user_id: int):
     resp.headers['Content-Length'] = str(len(image_bytes))
     # Short-ish cache: unlike music tracks these can change when a user
     # updates their profile picture, so don't mark them immutable.
-    resp.headers['Cache-Control'] = 'public, max-age=3600'
-    return resp
+    resp.headers['Cache-Control'] = 'public, max-age=300'
+    resp.add_etag()
+    return resp.make_conditional(request)
 
 
 def _avatar_url_for_user(user: Dict[str, Any]) -> str:
@@ -6664,9 +6354,7 @@ def _avatar_url_for_user(user: Dict[str, Any]) -> str:
         if 'has_profile_image' in user
         else str(user.get('profile_image') or '').strip()
     )
-    if not has_image:
-        return ''
-    return f'/api/users/{int(user_id)}/avatar'
+    return ''  # avatars are disabled to save bandwidth
 
 
 @app.get('/api/admin/leaderboard-settings')
@@ -7824,11 +7512,25 @@ def list_live_races():
         viewer_user_id = int(viewer['id']) if viewer else None
         with conn.cursor() as cur:
             rooms = sorted(
-                (_serialize_live_room(room, viewer_user_id=viewer_user_id) for room in _list_live_rooms(cur)),
+                (_serialize_live_room(room, viewer_user_id=viewer_user_id, include_text=False) for room in _list_live_rooms(cur)),
                 key=lambda item: item.get('createdAt') or '',
                 reverse=True,
             )
         return jsonify(rooms[:20])
+    finally:
+        _return_connection(conn)
+
+
+@app.get('/api/live-races/summary')
+def live_races_summary():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            rooms = _list_live_rooms(cur)
+        players = sum(len(r.get('players') or []) for r in rooms if r.get('status') in {'waiting', 'queued', 'countdown', 'racing'})
+        resp = jsonify({'players': players})
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
     finally:
         _return_connection(conn)
 
@@ -9307,6 +9009,35 @@ def presence_online():
         _return_connection(conn)
 
 
+@app.get('/api/presence/summary')
+def presence_summary():
+    if not _has_bearer_token():
+        return jsonify({'message': 'Unauthorized'}), 401
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        cutoff = (datetime.utcnow() - timedelta(seconds=45)).strftime('%Y-%m-%d %H:%M:%S')
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT u.id, u.username
+                FROM user_presence p JOIN users u ON u.id = p.user_id
+                WHERE p.last_seen >= %s AND u.id <> %s
+                ORDER BY u.username ASC
+                ''',
+                (cutoff, int(user['id'])),
+            )
+            rows = cur.fetchall()
+        return jsonify({
+            'count': len(rows),
+            'users': [{'id': r['id'], 'username': r['username']} for r in rows[:4]],
+        })
+    finally:
+        _return_connection(conn)
+
+
 @app.get('/api/chat/contacts')
 def chat_contacts():
     conn = get_connection()
@@ -10126,7 +9857,7 @@ def update_user(user_id: int):
 
             username = payload.get('username')
             phone_number = payload.get('phoneNumber')
-            profile_image = payload.get('profileImage')
+            profile_image = None  # profile pictures are disabled
             if username is not None:
                 normalized_username = str(username).strip()
                 if not normalized_username or len(normalized_username) > 50:
@@ -10158,9 +9889,25 @@ def _frontend_file_response(path: str = ''):
     requested_file = BUILD_DIR / normalized_path if normalized_path else BUILD_DIR / 'index.html'
 
     if normalized_path and requested_file.exists() and requested_file.is_file():
-        return send_from_directory(BUILD_DIR, normalized_path)
+        resp = send_from_directory(BUILD_DIR, normalized_path)
+        if normalized_path.startswith('static/'):
+            resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return resp
 
-    return send_from_directory(BUILD_DIR, 'index.html')
+    resp = send_from_directory(BUILD_DIR, 'index.html')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
+@app.after_request
+def _log_big_responses(resp):  # TEMPORARY (A6): remove after a day of data
+    try:
+        size = resp.calculate_content_length()
+        if size and size > 50_000 and not resp.direct_passthrough:
+            app.logger.warning('BIGRESP %s %s bytes=%s', request.method, request.path, size)
+    except Exception:
+        pass
+    return resp
 
 
 @app.errorhandler(RuntimeError)
@@ -10206,7 +9953,6 @@ def _bootstrap_db() -> None:
         try:
             with conn.cursor() as cur:
                 _ensure_chat_tables(cur)
-                _ensure_music_files_table(cur)
                 _ensure_live_race_rooms_table(cur)
                 _ensure_typing_content_table(cur)
                 _ensure_typing_content_schedule_column(cur)

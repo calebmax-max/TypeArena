@@ -143,11 +143,21 @@ const shouldUseLocalFallback = (error) => {
   );
 };
 
-const apiFetch = (url, options = {}) =>
-  fetch(url, {
+// Short-lived dedupe for /api/user/me. Any write request or wallet call
+// clears it, so balances and profile data never look stale after an action.
+const ME_CACHE_TTL_MS = 30000;
+let meCache = { at: 0, generation: -1, promise: null };
+
+const apiFetch = (url, options = {}) => {
+  const method = String(options.method || 'GET').toUpperCase();
+  if (method !== 'GET' || String(url).includes('/api/wallet/')) {
+    meCache = { at: 0, generation: -1, promise: null };
+  }
+  return fetch(url, {
     credentials: 'omit',
     ...options,
   });
+};
 
 const normalizeTournamentList = (payload) => {
   if (Array.isArray(payload)) return payload;
@@ -160,7 +170,25 @@ export const getAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY);
 
 // --- User APIs ---
 
-export const fetchCurrentUser = async () => {
+export const fetchCurrentUser = ({ force = false } = {}) => {
+  const now = Date.now();
+  if (
+    !force &&
+    meCache.promise &&
+    meCache.generation === authGeneration &&
+    now - meCache.at < ME_CACHE_TTL_MS
+  ) {
+    return meCache.promise;
+  }
+  const promise = fetchCurrentUserUncached();
+  meCache = { at: now, generation: authGeneration, promise };
+  promise
+    .then((user) => { if (!user && meCache.promise === promise) meCache.promise = null; })
+    .catch(() => { if (meCache.promise === promise) meCache.promise = null; });
+  return promise;
+};
+
+const fetchCurrentUserUncached = async () => {
   const requestGeneration = authGeneration;
   try {
     const stored = getStoredUser();
@@ -356,7 +384,7 @@ export const submitRaceResult = async (raceData) => {
     // to get the official wpm/accuracy this call already returned. Awaiting
     // this here was adding 1-3s of pure delay between the race ending and
     // the corrected numbers reaching the results screen.
-    fetchCurrentUser()
+    fetchCurrentUser({ force: true })
       .then((refreshedUser) => {
         if (refreshedUser) setStoredUser(refreshedUser);
       })
@@ -805,52 +833,6 @@ export const updateAdminMediaSettings = async (payload) => {
   return await parseResponse(response);
 };
 
-// Uploads an audio file from the admin's device. Sent as multipart/form-data,
-// so the Content-Type header must NOT be set manually — the browser adds the
-// correct multipart boundary itself. The backend stores the bytes in the
-// database and returns a track descriptor ({id, title, artist, url}) whose
-// url points at the streaming endpoint (/api/media/music/<id>).
-export const uploadAdminMusicTrack = async (file, { title = '', artist = '' } = {}, { onProgress } = {}) => {
-  const { 'Content-Type': _omit, ...headers } = buildAdminHeaders();
-  const formData = new FormData();
-  formData.append('file', file);
-  if (title) formData.append('title', title);
-  if (artist) formData.append('artist', artist);
-
-  // Use XHR instead of fetch so we can report upload progress for larger files.
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', buildApiUrl('/api/admin/media-upload'));
-    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
-
-    if (onProgress) {
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-      };
-    }
-
-    xhr.onload = () => {
-      let data = {};
-      try { data = JSON.parse(xhr.responseText || '{}'); } catch { data = {}; }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(data);
-      } else {
-        reject(new Error(data.message || `Upload failed (${xhr.status}).`));
-      }
-    };
-    xhr.onerror = () => reject(new Error('Upload failed. Check your connection and try again.'));
-    xhr.send(formData);
-  });
-};
-
-export const deleteAdminMusicFile = async (trackId) => {
-  const response = await apiFetch(buildApiUrl(`/api/admin/media-upload/${encodeURIComponent(trackId)}`), {
-    method: 'DELETE',
-    headers: buildAdminHeaders(),
-  });
-  return await parseResponse(response);
-};
-
 export const fetchAdminContent = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/content'), {
@@ -1064,7 +1046,7 @@ export const submitLiveRaceResult = async (roomId, payload) => {
     body: JSON.stringify(payload),
   });
   const data = await parseResponse(response);
-  const refreshedUser = await fetchCurrentUser();
+  const refreshedUser = await fetchCurrentUser({ force: true });
   if (refreshedUser) {
     setStoredUser(refreshedUser);
   }

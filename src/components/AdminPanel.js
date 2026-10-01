@@ -28,14 +28,11 @@ import {
   updateAdminLeaderboardSettings,
   updateAdminMediaSettings,
   updateAdminSiteMarquee,
-  uploadAdminMusicTrack,
-  deleteAdminMusicFile,
   withdrawFromAdminWallet,
   searchAdminUsers,
   sendAdminWalletTransfer,
   fetchAdminImpersonationLog,
 } from '../utils/typingApi';
-import { arenaMusic, useMusicState } from '../utils/arenaMusic';
 
 const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Product Update',
@@ -84,7 +81,6 @@ const NAV_ITEMS = [
   { id: 'tournaments', label: 'Tournaments', icon: 'T' },
   { id: 'players', label: 'Top Players', icon: 'P' },
   { id: 'leaderboard', label: 'Leaderboard', icon: 'L' },
-  { id: 'music', label: 'Music', icon: 'M' },
   { id: 'content', label: 'Content', icon: 'C' },
   { id: 'marketplace', label: 'Marketplace', icon: 'MK' },
   { id: 'ai', label: 'AI Settings', icon: 'AI' },
@@ -168,15 +164,6 @@ export default function AdminPanel() {
   const [loadingParticipantsId, setLoadingParticipantsId] = useState(null);
   const [impersonatingId, setImpersonatingId] = useState(null);
 
-  // Music
-  const musicState = useMusicState();
-  const [newTrack, setNewTrack] = useState({ title: '', artist: '', url: '' });
-  const [musicNotice, setMusicNotice] = useState('');
-  const [trackAddMode, setTrackAddMode] = useState('file');
-  const [localFileObjectUrl, setLocalFileObjectUrl] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [uploadingTrack, setUploadingTrack] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = React.useCallback(async () => {
@@ -199,9 +186,6 @@ export default function AdminPanel() {
       });
     }
     if (leaderboardData?.tiers) setLeaderboardTiers({ ...DEFAULT_LEADERBOARD_TIERS, ...leaderboardData.tiers });
-    if (Array.isArray(mediaData?.musicTracks) && mediaData.musicTracks.length) {
-      arenaMusic.setTracks(mediaData.musicTracks);
-    }
   }, []);
 
   useEffect(() => {
@@ -251,10 +235,7 @@ export default function AdminPanel() {
     if (noticeTimerRef.current) {
       clearTimeout(noticeTimerRef.current);
     }
-    if (localFileObjectUrl) {
-      URL.revokeObjectURL(localFileObjectUrl);
-    }
-  }, [localFileObjectUrl]);
+  }, []);
 
   const showNotice = (msg) => {
     setNotice(msg);
@@ -537,32 +518,6 @@ export default function AdminPanel() {
     finally { setClearingTournaments(false); }
   };
 
-  // Music
-  const MAX_MUSIC_UPLOAD_BYTES = 20 * 1024 * 1024; // keep in sync with backend TYPEARENA_MUSIC_MAX_BYTES
-
-  const handleFileSelected = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_MUSIC_UPLOAD_BYTES) {
-      setMusicNotice(`"${file.name}" is too large. Max upload size is ${Math.round(MAX_MUSIC_UPLOAD_BYTES / (1024 * 1024))}MB.`);
-      e.target.value = '';
-      return;
-    }
-    if (localFileObjectUrl) URL.revokeObjectURL(localFileObjectUrl);
-    const objectUrl = URL.createObjectURL(file); // local preview only, not the final track url
-    setLocalFileObjectUrl(objectUrl);
-    setSelectedFile(file);
-    const autoTitle = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
-    setNewTrack(p => ({ ...p, title: p.title || autoTitle }));
-  };
-
-  const handleSwitchMode = (mode) => {
-    setTrackAddMode(mode);
-    if (mode === 'url' && localFileObjectUrl) { URL.revokeObjectURL(localFileObjectUrl); setLocalFileObjectUrl(null); }
-    if (mode === 'url') setSelectedFile(null);
-    setNewTrack(p => ({ ...p, url: '' }));
-  };
-
   const persistMediaSettings = async (tracks, nextCommentatorEnabled = commentatorEnabled, nextCommentatorConfig = commentatorConfig, nextCommentatorPhrases = commentatorPhrasesText) => {
     try {
       const result = await updateAdminMediaSettings({
@@ -574,7 +529,6 @@ export default function AdminPanel() {
           finish: parseCommentatorPhrases(nextCommentatorPhrases.finish),
         },
       });
-      if (Array.isArray(result?.settings?.musicTracks)) arenaMusic.setTracks(result.settings.musicTracks);
       if (result?.settings?.commentatorPhrases) {
         setCommentatorPhrasesText({
           raceStart: formatCommentatorPhrases(result.settings.commentatorPhrases.raceStart || []),
@@ -585,82 +539,16 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not update media settings.'); }
   };
 
-  const handleAddTrack = async () => {
-    const title = newTrack.title.trim() || 'Untitled Track';
-    const artist = newTrack.artist.trim() || 'Unknown Artist';
-
-    if (trackAddMode === 'file') {
-      if (!selectedFile) { setMusicNotice('Select an audio file.'); return; }
-      setUploadingTrack(true);
-      setUploadProgress(0);
-      try {
-        const result = await uploadAdminMusicTrack(
-          selectedFile,
-          { title, artist },
-          { onProgress: setUploadProgress },
-        );
-        const track = result?.track;
-        if (!track?.url) throw new Error(result?.message || 'Upload did not return a track.');
-        arenaMusic.addTrack(track);
-        void persistMediaSettings(arenaMusic.getState().tracks);
-        if (localFileObjectUrl) URL.revokeObjectURL(localFileObjectUrl);
-        setLocalFileObjectUrl(null);
-        setSelectedFile(null);
-        setNewTrack({ title: '', artist: '', url: '' });
-        setMusicNotice(`"${track.title}" uploaded and added.`);
-        setTimeout(() => setMusicNotice(''), 3000);
-        if (!musicState.playing) arenaMusic.play();
-      } catch (err) {
-        setMusicNotice(err.message || 'Could not upload the audio file.');
-      } finally {
-        setUploadingTrack(false);
-        setUploadProgress(0);
-      }
-      return;
-    }
-
-    const url = newTrack.url.trim();
-    if (!url) { setMusicNotice('Enter a URL.'); return; }
-    const track = { id: 'track_' + Date.now(), title, artist, url };
-    arenaMusic.addTrack(track);
-    void persistMediaSettings(arenaMusic.getState().tracks);
-    setNewTrack({ title: '', artist: '', url: '' });
-    setMusicNotice(`"${title}" added.`);
-    setTimeout(() => setMusicNotice(''), 3000);
-    if (!musicState.playing) arenaMusic.play();
-  };
-
-  const handleRemoveTrack = (id, title) => {
-    if (!window.confirm(`Remove "${title}"?`)) return;
-    arenaMusic.removeTrack(id);
-    void persistMediaSettings(arenaMusic.getState().tracks);
-    // Uploaded tracks (id like "music_<hex>") store their bytes in the DB —
-    // free that storage too. Ignore failures; a stray orphaned blob isn't harmful.
-    if (/^music_[0-9a-f]{16}$/.test(id)) {
-      deleteAdminMusicFile(id).catch(() => {});
-    }
-    setMusicNotice(`"${title}" removed.`);
-    setTimeout(() => setMusicNotice(''), 3000);
-  };
-
-  const handleResetPlaylist = () => {
-    if (!window.confirm('Reset to default playlist?')) return;
-    arenaMusic.resetToDefaults();
-    void persistMediaSettings(arenaMusic.DEFAULT_TRACKS);
-    setMusicNotice('Playlist reset.');
-    setTimeout(() => setMusicNotice(''), 3000);
-  };
-
   const handleCommentatorToggle = () => {
     const next = !commentatorEnabled;
     setCommentatorEnabled(next);
-    void persistMediaSettings(musicState.tracks, next, commentatorConfig, commentatorPhrasesText);
+    void persistMediaSettings([], next, commentatorConfig, commentatorPhrasesText);
   };
 
   const handleCommentatorConfigChange = (key, value) => {
     const next = { ...commentatorConfig, [key]: Number(value) };
     setCommentatorConfig(next);
-    void persistMediaSettings(musicState.tracks, commentatorEnabled, next, commentatorPhrasesText);
+    void persistMediaSettings([], commentatorEnabled, next, commentatorPhrasesText);
   };
 
   const handleCommentatorPhrasesChange = (key, value) => {
@@ -669,7 +557,7 @@ export default function AdminPanel() {
 
   const handleCommentatorPhrasesSave = async () => {
     try {
-      await persistMediaSettings(musicState.tracks, commentatorEnabled, commentatorConfig, commentatorPhrasesText);
+      await persistMediaSettings([], commentatorEnabled, commentatorConfig, commentatorPhrasesText);
       showNotice('Commentary phrases updated.');
     } catch (err) {
       showNotice(err.message || 'Could not update commentary phrases.');
@@ -1776,167 +1664,6 @@ export default function AdminPanel() {
                       </tbody>
                     </table>
                   ) : <div className="ap-empty">No sign-ins recorded yet.</div>}
-                </div>
-              </>
-            )}
-
-            {/* MUSIC */}
-            {activeSection === 'music' && (
-              <>
-                <div className="ap-section-header">
-                  <h1 className="ap-section-title">Background Music</h1>
-                  <p className="ap-section-sub">Shared playlist for every visitor. Volume and mute remain personal.</p>
-                </div>
-
-                {musicNotice && <div className="ap-toast">{musicNotice}</div>}
-
-                {/* Now playing */}
-                <div className="ap-now-playing">
-                  <div className={`ap-disc${musicState.playing ? ' spinning' : ''}`}>
-                    <span className="ap-disc-dot" />
-                  </div>
-                  <div className="ap-track-info">
-                    <div className="ap-track-title">{musicState.currentTrack?.title || 'No track loaded'}</div>
-                    <div className="ap-track-artist">{musicState.currentTrack?.artist || ''}</div>
-                  </div>
-                  <div className="ap-music-controls">
-                    <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.prev}>⏮</button>
-                    <button className="ap-btn ap-btn-sm" onClick={arenaMusic.toggle}>{musicState.playing ? '⏸' : '▶'}</button>
-                    <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.next}>⏭</button>
-                  </div>
-                </div>
-
-                {/* Volume */}
-                <div className="ap-vol-row">
-                  <span className="ap-vol-label">Volume: {Math.round((musicState.muted ? 0 : musicState.volume) * 100)}%</span>
-                  <input
-                    type="range" className="ap-vol-slider" min="0" max="1" step="0.01"
-                    value={musicState.muted ? 0 : musicState.volume}
-                    style={{ background: `linear-gradient(to right, #63cab7 ${Math.round((musicState.muted ? 0 : musicState.volume) * 100)}%, rgba(255,255,255,0.1) ${Math.round((musicState.muted ? 0 : musicState.volume) * 100)}%)` }}
-                    onChange={e => { arenaMusic.setMuted(false); arenaMusic.setVolume(Number(e.target.value)); }}
-                  />
-                  <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={arenaMusic.toggleMute}>
-                    {musicState.muted ? '🔇 Muted' : '🔊 Live'}
-                  </button>
-                </div>
-
-                <div className="ap-card">
-                  <p className="ap-card-title">Live Commentator</p>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', marginBottom: 14 }}>Controls whether the browser voice commentator is available for players. Each player can still turn it off in Profile.</p>
-                  <button className="ap-btn ap-btn-ghost ap-btn-sm" onClick={handleCommentatorToggle}>
-                    {commentatorEnabled ? 'Commentator enabled' : 'Commentator disabled'}
-                  </button>
-                  <div className="ap-two-col" style={{ marginTop: 16 }}>
-                    <div className="ap-field">
-                      <label className="ap-label">Speaking Speed: {Number(commentatorConfig.rate).toFixed(2)}</label>
-                      <input type="range" min="0.5" max="2" step="0.05" value={commentatorConfig.rate} onChange={(e) => handleCommentatorConfigChange('rate', e.target.value)} />
-                    </div>
-                    <div className="ap-field">
-                      <label className="ap-label">Voice Pitch: {Number(commentatorConfig.pitch).toFixed(2)}</label>
-                      <input type="range" min="0" max="2" step="0.05" value={commentatorConfig.pitch} onChange={(e) => handleCommentatorConfigChange('pitch', e.target.value)} />
-                    </div>
-                    <div className="ap-field">
-                      <label className="ap-label">Pause Between Lines: {commentatorConfig.gap}ms</label>
-                      <input type="range" min="0" max="2000" step="50" value={commentatorConfig.gap} onChange={(e) => handleCommentatorConfigChange('gap', e.target.value)} />
-                    </div>
-                    <div className="ap-field">
-                      <label className="ap-label">Speech Volume: {Math.round(Number(commentatorConfig.volume) * 100)}%</label>
-                      <input type="range" min="0" max="1" step="0.05" value={commentatorConfig.volume} onChange={(e) => handleCommentatorConfigChange('volume', e.target.value)} />
-                    </div>
-                    <div className="ap-field">
-                      <label className="ap-label">Cooldown: {commentatorConfig.cooldown}ms</label>
-                      <input type="range" min="0" max="15000" step="250" value={commentatorConfig.cooldown} onChange={(e) => handleCommentatorConfigChange('cooldown', e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="ap-two-col" style={{ marginTop: 18 }}>
-                    <div className="ap-field">
-                      <label className="ap-label">Race Start Phrases</label>
-                      <textarea className="ap-textarea" rows={6} value={commentatorPhrasesText.raceStart} onChange={(e) => handleCommentatorPhrasesChange('raceStart', e.target.value)} placeholder="One take per line, sentences separated by |" />
-                    </div>
-                    <div className="ap-field">
-                      <label className="ap-label">Finish Phrases</label>
-                      <textarea className="ap-textarea" rows={6} value={commentatorPhrasesText.finish} onChange={(e) => handleCommentatorPhrasesChange('finish', e.target.value)} placeholder="One take per line, sentences separated by |" />
-                    </div>
-                  </div>
-                  <div className="ap-btn-row" style={{ marginTop: 12 }}>
-                    <button className="ap-btn" onClick={handleCommentatorPhrasesSave}>Save Commentary Phrases</button>
-                  </div>
-                </div>
-
-                {/* Add Track */}
-                <div className="ap-card">
-                  <p className="ap-card-title">Add Track</p>
-                  <div className="ap-mode-tabs">
-                    <button type="button" className={`ap-mode-tab${trackAddMode === 'file' ? ' active' : ''}`} onClick={() => handleSwitchMode('file')}>📁 From Device</button>
-                    <button type="button" className={`ap-mode-tab${trackAddMode === 'url' ? ' active' : ''}`} onClick={() => handleSwitchMode('url')}>🔗 From URL</button>
-                  </div>
-
-                  <div className="ap-two-col" style={{ marginBottom: 14 }}>
-                    <div className="ap-field" style={{ margin: 0 }}>
-                      <label className="ap-label">Track Title</label>
-                      <input className="ap-input" type="text" placeholder="Auto-filled from filename" value={newTrack.title} onChange={e => setNewTrack(p => ({ ...p, title: e.target.value }))} />
-                    </div>
-                    <div className="ap-field" style={{ margin: 0 }}>
-                      <label className="ap-label">Artist</label>
-                      <input className="ap-input" type="text" placeholder="Artist name" value={newTrack.artist} onChange={e => setNewTrack(p => ({ ...p, artist: e.target.value }))} />
-                    </div>
-                  </div>
-
-                  {trackAddMode === 'file' ? (
-                    <>
-                      <input id="music-file-input" type="file" accept="audio/*,.mp3,.ogg,.wav,.flac,.aac,.m4a" style={{ display: 'none' }} onChange={handleFileSelected} disabled={uploadingTrack} />
-                      <label htmlFor="music-file-input" className={`ap-file-label${localFileObjectUrl ? ' has-file' : ''}`}>
-                        {localFileObjectUrl
-                          ? `Selected: ${selectedFile?.name || 'file'} — click to change`
-                          : 'Click to choose MP3, OGG, WAV, or FLAC from your device'}
-                      </label>
-                      <p style={{ fontSize: '0.68rem', color: 'var(--ap-muted)', margin: '4px 0 0' }}>
-                        Uploaded to the server and saved to the shared playlist — plays for every player, on every device. Max {Math.round(MAX_MUSIC_UPLOAD_BYTES / (1024 * 1024))}MB per file.
-                      </p>
-                      {uploadingTrack && (
-                        <div style={{ marginTop: 8 }}>
-                          <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#63cab7', transition: 'width 0.2s' }} />
-                          </div>
-                          <p style={{ fontSize: '0.68rem', color: 'var(--ap-muted)', margin: '4px 0 0' }}>Uploading... {uploadProgress}%</p>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="ap-field">
-                      <label className="ap-label">Audio URL</label>
-                      <input className="ap-input" type="url" placeholder="https://example.com/track.mp3" value={newTrack.url} onChange={e => setNewTrack(p => ({ ...p, url: e.target.value }))} />
-                    </div>
-                  )}
-
-                  <div className="ap-btn-row">
-                    <button className="ap-btn" onClick={handleAddTrack} disabled={uploadingTrack}>{uploadingTrack ? 'Uploading...' : 'Add to Playlist'}</button>
-                    <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={handleResetPlaylist} disabled={uploadingTrack}>Reset Defaults</button>
-                  </div>
-                </div>
-
-                {/* Playlist */}
-                <div className="ap-card">
-                  <p className="ap-card-title">Playlist ({musicState.tracks.length} tracks)</p>
-                  {musicState.tracks.length ? (
-                    <div className="ap-track-list">
-                      {musicState.tracks.map((track, i) => (
-                        <div
-                          key={track.id}
-                          className={`ap-track-row${i === musicState.currentIndex ? ' playing' : ''}`}
-                          onClick={() => { arenaMusic.seekToTrack(i); arenaMusic.play(); }}
-                        >
-                          <span className="ap-track-num">{i === musicState.currentIndex ? (musicState.playing ? '⏸' : '▶') : String(i + 1).padStart(2, '0')}</span>
-                          <div className="ap-track-meta">
-                            <div className="ap-track-row-title">{track.title}</div>
-                            <div className="ap-track-row-artist">{track.artist}</div>
-                          </div>
-                          <span className="ap-track-url">{track.url}</span>
-                          <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={e => { e.stopPropagation(); handleRemoveTrack(track.id, track.title); }}>Remove</button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : <div className="ap-empty">No tracks. Add one above or reset to defaults.</div>}
                 </div>
               </>
             )}
