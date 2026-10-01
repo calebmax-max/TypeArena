@@ -147,7 +147,10 @@ const readStoredUser = () => {
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [currentUser, setCurrentUser] = useState(null);
+  // undefined means the local/session auth check has not resolved yet. Keep
+  // it distinct from null (a confirmed signed-out visitor) so onboarding
+  // cannot flash while a returning user's session is being restored.
+  const [currentUser, setCurrentUser] = useState(undefined);
   const [siteMarqueeItems, setSiteMarqueeItems] = useState(DEFAULT_SITE_MARQUEE_ITEMS);
   const [menuOpen, setMenuOpen] = useState(false);
   const [tourActive, setTourActive] = useState(false);

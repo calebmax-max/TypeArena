@@ -8,6 +8,9 @@ const START_DELAY_MS = 1500;
 
 export function shouldShowOnboardingTour({ pathname, currentUser }) {
   if (pathname !== '/') return false;
+  // App uses undefined while the cached/session user is being resolved. Do
+  // not flash a guest tour over a returning user's home page during that gap.
+  if (currentUser === undefined) return false;
   return !currentUser || !currentUser.id;
 }
 
@@ -145,6 +148,12 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
       wasMenuOpenedByTour.current = false;
     }
   }, [setMenuOpen]);
+
+  // A session can resolve after the tour has started (for example when the
+  // API is slow). Close the guest tour as soon as that session is confirmed.
+  useEffect(() => {
+    if (currentUser?.id && active) endTour();
+  }, [active, currentUser?.id, endTour]);
 
   // Escape closes the tour from anywhere.
   useEffect(() => {
@@ -307,7 +316,23 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
             signedIn={Boolean(currentUser?.id)}
           />
         </div>
-      ) : null}
+      ) : (
+        // Keep navigation controls available if a lazy route is still
+        // mounting or a target was removed in a later UI change.
+        <div className="tour-card tour-card--centered">
+          <TourBody
+            step={step}
+            stepIndex={stepIndex}
+            total={total}
+            isFirst={isFirst}
+            isLast={isLast}
+            onNext={goNext}
+            onBack={goBack}
+            onSkip={endTour}
+            signedIn={Boolean(currentUser?.id)}
+          />
+        </div>
+      )}
     </div>
   );
 }

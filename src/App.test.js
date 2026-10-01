@@ -69,6 +69,7 @@ test('renders the current TypeArena navigation and home content', async () => {
 test('shows onboarding for signed-out visitors on the home page', () => {
   expect(shouldShowOnboardingTour({ pathname: '/', currentUser: null })).toBe(true);
   expect(shouldShowOnboardingTour({ pathname: '/', currentUser: { id: 1 } })).toBe(false);
+  expect(shouldShowOnboardingTour({ pathname: '/', currentUser: undefined })).toBe(false);
   expect(shouldShowOnboardingTour({ pathname: '/play', currentUser: null })).toBe(false);
 });
 
