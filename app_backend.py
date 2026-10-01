@@ -8351,6 +8351,7 @@ def submit_live_race(room_id: str):
         with conn.cursor() as cur:
             _save_live_room(cur, room)
         conn.commit()
+        _emit_live_race_update(room)
         return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
     finally:
         _return_connection(conn)

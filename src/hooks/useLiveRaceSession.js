@@ -789,7 +789,7 @@ export function useLiveRaceSession({
           }
         }, 5000)
       : null;
-    const roomRefreshInterval = phase === 'queued'
+    const roomRefreshInterval = (phase === 'queued' || phase === 'waiting')
       ? window.setInterval(() => {
           if (isLeavingRef.current) return;
           fetchLiveRaceRoom(roomId)
