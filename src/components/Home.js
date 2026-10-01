@@ -285,8 +285,8 @@ export default function Home({ currentUser }) {
               <span className="pill">Daily Tourneys</span>
             </div>
             <div className="hero-cta reveal">
-              <Link to="/play" className="btn-primary-hero" onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Start Typing →</Link>
-              <Link to="/tournaments" className="btn-ghost-hero" onMouseEnter={preloadTournamentsPage} onFocus={preloadTournamentsPage} onTouchStart={preloadTournamentsPage}>Browse Tournaments</Link>
+              <Link to="/play" data-tour="home-start-typing" className="btn-primary-hero" onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Start Typing →</Link>
+              <Link to="/tournaments" data-tour="home-browse-tournaments" className="btn-ghost-hero" onMouseEnter={preloadTournamentsPage} onFocus={preloadTournamentsPage} onTouchStart={preloadTournamentsPage}>Browse Tournaments</Link>
             </div>
           </div>
 

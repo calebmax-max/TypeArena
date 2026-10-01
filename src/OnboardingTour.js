@@ -12,50 +12,48 @@ export function shouldShowOnboardingTour({ pathname, currentUser }) {
 }
 
 // ── Step definitions ─────────────────────────────────────────────────────
-// `target` is the value of a `data-tour="..."` attribute somewhere in the
-// nav. Steps without a `target` render as a centered card instead of a
-// pointer + tooltip.
+// `target` is the value of a `data-tour="..."` attribute on the relevant
+// element. `route` tells the tour which page to navigate to before that step
+// is shown, so the highlight lands on the exact action area the user needs.
 const STEPS = [
   {
     id: 'welcome',
     title: 'Welcome to TypeArena',
-    body: 'Take a quick tour, then start your first race. You can skip this at any time.',
+    body: 'Take a quick tour through the main ways to play. You can skip this at any time.',
     centered: true,
   },
   {
-    id: 'play',
-    target: 'nav-play',
-    title: 'Start here: Play',
-    body: 'Free practice, free friend battles, or battle friends for real money \u2014 your call.',
+    id: 'practice',
+    target: 'home-start-typing',
+    route: '/',
+    title: 'Start a free practice race',
+    body: 'From the home page, click Start Typing to launch a quick free practice session and warm up before live competition.',
   },
   {
-    id: 'training',
-    target: 'nav-training',
-    title: 'Build your skill',
-    body: 'Use Training for focused lessons and repeatable practice before entering a live race.',
+    id: 'public-race',
+    target: 'play-live-1v1',
+    route: '/play',
+    title: 'Find a public 1v1 opponent',
+    body: 'On the Play page, tap Join Live 1v1 to match against another racer in a live duel. It is a great way to test your speed in real time.',
   },
   {
-    id: 'tournaments',
-    target: 'nav-tournaments',
-    title: 'Compete in tournaments',
-    body: 'Join a tournament when you are ready. Entry fees are shown before joining, passages rotate fairly, and prizes are settled after the match.',
+    id: 'private-room',
+    target: 'play-create-private-room',
+    route: '/play',
+    title: 'Create a private room and invite a username',
+    body: 'You can create a free private room or set a stake first. Then invite a username, choose your settings, and start when everyone is ready.',
   },
   {
-    id: 'leaderboard',
-    target: 'nav-leaderboard',
-    title: 'Track your progress',
-    body: 'Your results and season points show how you are improving against other racers.',
-  },
-  {
-    id: 'profile',
-    target: 'nav-profile',
-    title: 'Manage your account',
-    body: 'Update your profile, wallet, and race preferences here. Stakes are only charged when you join a paid room or tournament.',
+    id: 'tournament',
+    target: 'tournament-join-button',
+    route: '/tournaments',
+    title: 'Join a tournament',
+    body: 'Open Tournaments, pick a match, and click Join to enter the lobby. Entry fees are shown up front, and prizes are paid out after the match.',
   },
   {
     id: 'finish',
-    title: 'Ready for your first race?',
-    body: 'Start with free practice, then try a live 1v1 when you feel ready.',
+    title: 'You’re ready to play',
+    body: 'Practice, challenge a live opponent, or jump into a tournament when you feel ready.',
     centered: true,
     finish: true,
   },
@@ -87,6 +85,13 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
 
   const active = stepIndex >= 0;
   const step = active ? STEPS[stepIndex] : null;
+
+  useEffect(() => {
+    if (!active || !step?.route) return;
+    if (location.pathname !== step.route) {
+      navigate(step.route);
+    }
+  }, [active, location.pathname, navigate, step]);
 
   // Tell the parent when the tour is on screen, so it can hide the install
   // button etc. Fires on mount too, in case a previous render left it stuck.

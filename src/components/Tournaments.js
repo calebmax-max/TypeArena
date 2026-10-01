@@ -181,6 +181,7 @@ function TournamentCard({ tournament, currentUser, processingId, onJoin }) {
       )}
 
       <button
+        data-tour="tournament-join-button"
         className={`join-btn${(isFull || joinClosed || isCompleted) ? ' join-btn--disabled' : ''}`}
         onClick={() => onJoin(tournament)}
         disabled={btnDisabled}

@@ -1851,6 +1851,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <div className="results-actions">
             <div className="practice-launcher">
               <button
+                data-tour={practicePage ? 'play-practice-mode' : 'play-start-practice'}
                 className="btn btn-outline-primary"
                 onClick={() => {
                   if (!practicePage) {
@@ -1884,7 +1885,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : 'Start This Practice'}
               </button>
             ) : (
-              <button className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive || currentUser === undefined}>
+              <button data-tour="play-live-1v1" className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive || currentUser === undefined}>
                 {(loadingLive || currentUser === undefined) ? <span className="arena-spinner" aria-label="Loading" /> : 'Join Live 1v1'}
               </button>
             )}

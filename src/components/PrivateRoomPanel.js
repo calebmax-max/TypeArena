@@ -135,6 +135,7 @@ export default function PrivateRoomPanel({
 
       <div className="results-actions">
         <button
+          data-tour="play-create-private-room"
           className="btn btn-primary"
           onClick={createFriendBattle}
           disabled={loadingLive || currentUser === undefined || !currentUser?.id || createShortfall > 0}
