@@ -789,10 +789,21 @@ export function useLiveRaceSession({
           }
         }, 5000)
       : null;
+    const roomRefreshInterval = phase === 'queued'
+      ? window.setInterval(() => {
+          if (isLeavingRef.current) return;
+          fetchLiveRaceRoom(roomId)
+            .then((room) => applyRoomUpdate(room))
+            .catch(() => {});
+        }, 3000)
+      : null;
 
     return () => {
       if (presenceInterval) {
         window.clearInterval(presenceInterval);
+      }
+      if (roomRefreshInterval) {
+        window.clearInterval(roomRefreshInterval);
       }
       liveRaceSocket.emit('live_race:leave', { roomId });
       liveRaceSocket.off('live_race:update', applyRoomUpdate);
