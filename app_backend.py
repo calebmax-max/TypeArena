@@ -2743,10 +2743,6 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
             }
         )
 
-    spectator_count = max(0, int(room.get('spectators') or 0))
-    if viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}:
-        spectator_count += 1
-
     return {
         'id': room['id'],
         'inviteCode': room.get('inviteCode'),
@@ -2772,7 +2768,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'maxPlayers': max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE))),
         'hasPassword': bool(room.get('password')),
         'tournamentId': room.get('tournamentId'),
-        'spectators': spectator_count,
+        'spectators': 0,  # spectating was removed; key kept so older cached clients don't break
         'createdAt': room['createdAt'],
         'startedAt': room.get('startedAt'),
         'serverNow': _now_iso(),
@@ -7882,10 +7878,7 @@ def get_live_race(room_id: str):
             expired = _finalize_live_room_if_expired(room, conn=conn)
             viewer = _get_user_from_header(conn)
             viewer_user_id = int(viewer['id']) if viewer else None
-            is_spectator = viewer_user_id and viewer_user_id not in {player['userId'] for player in room.get('players', [])}
-            if is_spectator:
-                room['spectators'] = int(room.get('spectators') or 0) + 1
-            if expired or is_spectator:
+            if expired:
                 _save_live_room(cur, room)
             elif (
                 room.get('status') == 'waiting'

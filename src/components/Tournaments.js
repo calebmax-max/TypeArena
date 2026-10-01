@@ -241,8 +241,13 @@ export default function Tournaments() {
 
     load(true);
 
-    // Re-fetch every 45 seconds to keep lobby counts and statuses current
-    const pollId = setInterval(() => load(false), 45000);
+    // Re-fetch every 45 seconds to keep lobby counts and statuses current,
+    // but only while the tab is visible; catch up as soon as the player returns.
+    const pollId = setInterval(() => {
+      if (document.visibilityState === 'visible') load(false);
+    }, 45000);
+    const onVisible = () => { if (document.visibilityState === 'visible') load(false); };
+    document.addEventListener('visibilitychange', onVisible);
 
     // Also tick client-side status every 30 seconds for instant upcomingï¿½?'active flips
     const tickId = setInterval(() => {
@@ -253,6 +258,7 @@ export default function Tournaments() {
       cancelled = true;
       clearInterval(pollId);
       clearInterval(tickId);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 

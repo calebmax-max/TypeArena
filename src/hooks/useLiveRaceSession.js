@@ -37,7 +37,6 @@ export function useLiveRaceSession({
   generatedContentPassage,
   redirectToProfile,
   navigate,
-  refreshFeed,
   showNotice,
   inputRef,
   typingTextRef,
@@ -397,7 +396,6 @@ export function useLiveRaceSession({
           type: response.matched ? 'success' : 'info',
         }
       );
-      refreshFeed();
     } catch (error) {
       showNotice(error.message || 'Could not join a live race.', 'error');
     } finally {
@@ -412,7 +410,6 @@ export function useLiveRaceSession({
     mode,
     redirectToProfile,
     recordClockSample,
-    refreshFeed,
     showNotice,
     startQueuedRoom,
     tournamentId,
@@ -462,7 +459,6 @@ export function useLiveRaceSession({
         }
       );
       setFriendBattle((prev) => ({ ...prev, inviteCode: response.room.inviteCode || '' }));
-      refreshFeed();
     } catch (error) {
       console.error('Error creating friend battle:', error);
       setPhase('lobby');
@@ -496,7 +492,6 @@ export function useLiveRaceSession({
     mode,
     navigate,
     redirectToProfile,
-    refreshFeed,
     setFriendBattle,
     setPhase,
     showNotice,
@@ -511,14 +506,13 @@ export function useLiveRaceSession({
     try {
       const response = await startLiveRaceRoom(liveRoom.id, { duration });
       startQueuedRoom(response.room, { message: response.message || 'Race countdown started.', type: 'success' });
-      refreshFeed();
     } catch (error) {
       showNotice(error.message || 'Could not start the private room.', 'error');
     } finally {
       setLoadingLive(false);
       setLiveAction(null);
     }
-  }, [duration, liveRoom?.id, liveRoom?.status, refreshFeed, showNotice, startQueuedRoom]);
+  }, [duration, liveRoom?.id, liveRoom?.status, showNotice, startQueuedRoom]);
 
   const joinFriendBattle = useCallback(async () => {
     if (currentUser === undefined) return;
@@ -558,7 +552,6 @@ export function useLiveRaceSession({
         response.room.mode || mode,
         response.room.language || language
       );
-      refreshFeed();
     } catch (error) {
       const inviteCode = friendBattle.inviteCode.trim().toUpperCase();
       const redirectParams = new URLSearchParams();
@@ -589,7 +582,6 @@ export function useLiveRaceSession({
     mode,
     navigate,
     redirectToProfile,
-    refreshFeed,
     setDuration,
     setLanguage,
     setMode,
@@ -723,9 +715,8 @@ export function useLiveRaceSession({
       queuedAtRef.current = null;
       setPhase('lobby');
       setLoadingLive(false);
-      refreshFeed();
     }
-  }, [clearLiveTimers, clearTransientLiveState, refreshFeed, setPhase, showNotice]);
+  }, [clearLiveTimers, clearTransientLiveState, setPhase, showNotice]);
 
   const resetLiveSession = useCallback(() => {
     isLeavingRef.current = true;

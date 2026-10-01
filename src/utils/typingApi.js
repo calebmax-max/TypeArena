@@ -969,13 +969,6 @@ export const queueLiveRace = async (payload) => {
   return data;
 };
 
-export const fetchLiveRaces = async () => {
-  const response = await apiFetch(buildApiUrl('/api/live-races'), {
-    headers: buildHeaders(),
-  });
-  return await parseResponse(response);
-};
-
 export const fetchLiveRaceRoom = async (roomId) => {
   const response = await apiFetch(buildApiUrl(`/api/live-races/${roomId}`), {
     headers: buildHeaders(),

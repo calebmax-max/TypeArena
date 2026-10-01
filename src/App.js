@@ -23,7 +23,6 @@ import Profile from './components/TypeProfile';
 import AdminPanel from './components/AdminPanel';
 import Marketplace from './components/Marketplace';
 import Results from './components/Results';
-import Spectate from './components/Spectate';
 import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
@@ -288,7 +287,6 @@ function AppLayout() {
           <Route path="/marketplace" element={<Marketplace />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/profile" element={<Profile />} />
-          <Route path="/spectate/:roomId" element={<Spectate />} />
           <Route path="/results/:raceId" element={<Results />} />
           <Route path="*" element={<Notfound />} />
         </Routes>

@@ -4,7 +4,6 @@
    Fonts: "Syne" (display) + "JetBrains Mono" (code/data)
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;600;700&display=swap');
 
 /* ── CSS Custom Properties ────────────────────────────────── */
 :root {
@@ -311,7 +310,7 @@
   box-shadow: 0 0 0 3px var(--arena-accent-soft);
 }
 
-/* ── Live spectator board ─────────────────────────────────── */
+/* ── Live board ───────────────────────────────────────────── */
 .live-board {
   margin-top: 2rem;
 }
@@ -372,23 +371,6 @@
   color: var(--arena-text);
   letter-spacing: -0.02em;
   line-height: 1.1;
-}
-
-.live-card {
-  cursor: default;
-}
-
-.live-card .result-value {
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: capitalize;
-  color: var(--arena-accent);
-}
-
-.live-card p {
-  font-size: 0.72rem;
-  color: var(--arena-muted);
-  margin-top: 0.15rem;
 }
 
 /* ── Typed notice banner ─────────────────────────────────── */

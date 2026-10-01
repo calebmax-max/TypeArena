@@ -14,17 +14,13 @@ import {
   buildHeaders,
   fetchCurrentUser,
   fetchDailyContent,
-  fetchLiveRaceRoom,
-  fetchLiveRaces,
   fetchMediaSettings,
   getStoredUserSnapshot,
   startRace,
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
-import { useLiveFeed } from '../hooks/useLiveFeed';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
-import { useSpectateRoom } from '../hooks/useSpectateRoom';
 import { getRaceContent } from '../utils/navigationPrefetch';
 import { KEYBOARD_LAYOUT } from '../utils/keyboardLayout';
 import { getUsedContentIds, recordUsedContentId } from '../utils/contentRotation';
@@ -45,8 +41,6 @@ const LazyPlayReplay = React.lazy(() => import('./PlayReplay'));
 
 const LATEST_RACE_RESULT_KEY = 'typearena_latest_race_result';
 const AFK_FORFEIT_MS = 15000; // #2 rage-quit/AFK: forfeit after 15s of no heartbeat
-const LOBBY_FEED_POLL_INTERVAL_MS = 15000;
-const SPECTATE_POLL_INTERVAL_MS = 3000;
 
 // ---------------------------------------------------------------------------
 // Shared AudioContext Ã¯Â¿Â½?" single instance used by both sound effects and the
@@ -600,7 +594,6 @@ export default function Play({ practicePage = false }){
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #2: AFK/forfeit detection state Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   const [afkWarning, setAfkWarning] = useState(false);
   const lastHeartbeatRef = useRef(Date.now());
-  // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #3: Spectator mode state Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #4: Daily challenge state Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   const [dailyChallenge, setDailyChallenge] = useState(() => getDailyChallenge());
   const [showDailyChallenge, setShowDailyChallenge] = useState(false);
@@ -670,23 +663,6 @@ export default function Play({ practicePage = false }){
   const showNotice = useCallback((message, type = 'info') => {
     setNotice(message ? { message, type } : null);
   }, []);
-
-  const { liveFeed, liveFeedError, refreshFeed } = useLiveFeed({
-    phase,
-    fetchLiveRaces,
-    pollIntervalMs: LOBBY_FEED_POLL_INTERVAL_MS,
-    enabled: !practicePage && phase !== 'racing' && phase !== 'queued',
-  });
-
-  const {
-    spectateRoom,
-    spectateData,
-    watchRoom,
-    stopWatching,
-  } = useSpectateRoom({
-    fetchLiveRaceRoom,
-    pollIntervalMs: SPECTATE_POLL_INTERVAL_MS,
-  });
 
   useEffect(() => {
     let active = true;
@@ -944,7 +920,6 @@ export default function Play({ practicePage = false }){
     generatedContentPassage: generatedContent?.passage,
     redirectToProfile,
     navigate,
-    refreshFeed,
     showNotice,
     inputRef,
     typingTextRef,
@@ -2120,76 +2095,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </div>
             </div>
           )}
-
-          {!practicePage && (
-          <div className="live-board">
-            <div className="live-board__header">
-              <h2>Live Spectator Feed</h2>
-              <button className="btn btn-sm btn-outline-light" onClick={refreshFeed}>
-                Refresh
-              </button>
-            </div>
-            {liveFeedError && (
-              <p className="results-challenge" style={{ marginTop: 0, color: 'hsl(0 75% 68%)' }}>
-                Live feed is unavailable right now. Showing the last known rooms.
-              </p>
-            )}
-            <div className="live-board__grid">
-              {liveFeed.slice(0, 6).map((room) => (
-                <div key={room.id} className="result-card live-card">
-                  <span className="result-label">{room.mode}</span>
-                  <span className="result-value">{room.status}</span>
-                  <p>
-                    {room.players?.length || 0}/{room.maxPlayers || 2} players | {room.spectators || 0} spectators
-                  </p>
-                  {room.status === 'racing' && (
-                    <button
-                      className="btn btn-sm btn-outline-light"
-                      style={{ marginTop:'0.4rem', fontSize:'0.75rem' }}
-                      onClick={() => watchRoom(room.id)}
-                    >
-                      Watch Live
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-          )}
-        </div>
-      )}
-
-      {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #3: Inline Spectator Modal Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
-      {spectateRoom && spectateData && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.82)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
-          <div style={{ background:'var(--arena-bg, #0f111a)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg)', maxWidth:'680px', width:'100%', padding:'1.5rem', position:'relative' }}>
-            <button className="btn btn-sm btn-outline-light" style={{ position:'absolute', top:'1rem', right:'1rem' }} onClick={stopWatching}>Stop watching</button>
-            <div style={{ marginBottom:'0.5rem', fontFamily:'var(--font-mono)', fontSize:'0.7rem', textTransform:'uppercase', letterSpacing:'0.12em', color:'var(--arena-accent)' }}>
-              Spectating - {spectateData.mode || 'live'} race
-              {spectateData.status === 'completed' && <span style={{ marginLeft:'0.5rem', color:'var(--arena-gold)' }}>- Race Over</span>}
-            </div>
-            <div style={{ display:'flex', gap:'1rem', marginBottom:'1rem', flexWrap:'wrap' }}>
-              {(spectateData.players || []).map((player) => (
-                <div key={player.userId} style={{ flex:'1 1 200px', background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius)', padding:'0.85rem 1rem' }}>
-                  <div style={{ fontWeight:700, marginBottom:'0.4rem', color:'var(--arena-text)' }}>{player.username || 'Player'}</div>
-                  <div style={{ height:'6px', background:'hsl(240 14% 14%)', borderRadius:'999px', overflow:'hidden', marginBottom:'0.4rem' }}>
-                    <div style={{ height:'100%', width:`${player.progress || 0}%`, background:'var(--arena-accent)', transition:'width 0.4s ease', borderRadius:'999px' }} />
-                  </div>
-                  <div style={{ display:'flex', gap:'0.75rem', fontSize:'0.78rem', color:'var(--arena-muted)' }}>
-                    <span><strong style={{ color:'var(--arena-text)' }}>{player.currentWpm || 0}</strong> WPM</span>
-                    <span><strong style={{ color:'var(--arena-text)' }}>{player.progress || 0}</strong>%</span>
-                    {player.result && <span style={{ color:'var(--arena-accent)' }}>Finished</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {spectateData.text && (
-              <div style={{ fontFamily:'var(--font-mono)', fontSize:'0.82rem', color:'var(--arena-muted)', lineHeight:'1.6', background:'hsl(240 14% 6%)', borderRadius:'8px', padding:'0.75rem 1rem', maxHeight:'120px', overflow:'hidden' }}>
-                {spectateData.text.slice(0, 200)}
-              </div>
-            )}
-            <p style={{ marginTop:'0.5rem', fontSize:'0.72rem', color:'var(--arena-muted)', opacity:0.6 }}>Refreshes every 3 seconds. You cannot interact with the race.</p>
-          </div>
         </div>
       )}
 
@@ -2578,10 +2483,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                     </div>
                   </>
                 )}
-              </div>
-              <div className="opponent-panel__item">
-                <span>Spectators</span>
-                <strong>{liveRoom.spectators || 0}</strong>
               </div>
             </div>
             )

@@ -6,7 +6,6 @@ const routeLoaders = {
   admin: () => import('../components/AdminPanel'),
   marketplace: () => import('../components/Marketplace'),
   results: () => import('../components/Results'),
-  spectate: () => import('../components/Spectate'),
 };
 
 const preloadedRoutes = new Set();
@@ -63,7 +62,7 @@ export const warmNavigation = () => {
   }
 
   warmupStarted = true;
-  const routesToWarm = ['play', 'leaderboard', 'tournaments', 'marketplace', 'profile', 'results', 'spectate', 'admin'];
+  const routesToWarm = ['play', 'leaderboard', 'tournaments', 'marketplace', 'profile', 'results', 'admin'];
 
   routesToWarm.forEach((routeName) => {
     void preloadRoute(routeName);
