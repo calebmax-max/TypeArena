@@ -91,6 +91,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
   const [mobile, setMobile] = useState(isMobileViewport);
   const startTimer = useRef(null);
   const wasMenuOpenedByTour = useRef(false);
+  const scrolledTargetRef = useRef(null);
 
   const active = stepIndex >= 0;
   const step = active ? STEPS[stepIndex] : null;
@@ -155,6 +156,10 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
     if (currentUser?.id && active) endTour();
   }, [active, currentUser?.id, endTour]);
 
+  useEffect(() => {
+    scrolledTargetRef.current = null;
+  }, [active, step?.id]);
+
   // Escape closes the tour from anywhere.
   useEffect(() => {
     if (!active) return undefined;
@@ -193,6 +198,20 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
         }
         setRect(null);
         return;
+      }
+
+      // Lower controls are often below the fold on desktop. Center the
+      // control once per step so both the spotlight and its instructions are
+      // reachable without asking the visitor to hunt for them.
+      if (!mobile && scrolledTargetRef.current !== step.id) {
+        const targetRect = el.getBoundingClientRect();
+        const outsideViewport = targetRect.top < 24 || targetRect.bottom > window.innerHeight - 24;
+        scrolledTargetRef.current = step.id;
+        if (outsideViewport) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+          window.setTimeout(measure, 260);
+          return;
+        }
       }
       setRect(el.getBoundingClientRect());
     };
@@ -329,7 +348,11 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
 }
 
 function tooltipPosition(rect) {
-  const top = rect.bottom + 14;
+  const cardHeight = 230;
+  const fitsBelow = rect.bottom + 14 + cardHeight <= window.innerHeight - 16;
+  const top = fitsBelow
+    ? rect.bottom + 14
+    : Math.max(16, rect.top - cardHeight - 14);
   const left = Math.min(
     Math.max(rect.left, 16),
     window.innerWidth - 336 // keep the ~320px card on screen
