@@ -7839,6 +7839,11 @@ def queue_live_race():
                         room['status'] = 'countdown' if len(room['players']) >= TOURNAMENT_MATCH_SIZE else 'waiting'
                         room['startedAt'] = _live_match_start_iso() if room['status'] == 'countdown' else room.get('startedAt')
                     _save_live_room(cur, room)
+                    if room.get('isPrivate') and len(room.get('players', [])) >= room_max_players:
+                        cur.execute(
+                            "UPDATE room_invites SET status='expired', responded_at=%s WHERE room_id=%s AND status='pending'",
+                            (_now_db(), room['id']),
+                        )
                     conn.commit()
                     _emit_live_race_update(room)
                     return jsonify(
@@ -9244,7 +9249,7 @@ def presence_ping():
 # Private-room invites (replaces 1-to-1 chat as the way to bring friends in)
 # ---------------------------------------------------------------------------
 
-INVITE_TTL_SECONDS = 600            # invite lives 10 minutes
+INVITE_TTL_SECONDS = 120            # invite lives 2 minutes
 INVITE_MAX_PER_MINUTE = 10          # per host, across all rooms
 INVITE_PENDING_LIMIT = 5            # most invites shown to a user at once
 
@@ -9465,11 +9470,20 @@ def accept_room_invite(invite_id: int):
                 conn.commit()
                 return jsonify({'message': 'This invite has expired.'}), 410
 
-            room = _get_live_room(cur, invite['room_id'])
+            room = _get_live_room(cur, invite['room_id'], for_update=True)
             if not room or not room.get('isPrivate') or room.get('status') != 'waiting':
                 cur.execute("UPDATE room_invites SET status = 'expired' WHERE id = %s", (invite_id,))
                 conn.commit()
                 return jsonify({'message': 'That room has started or was cancelled.'}), 410
+
+            room_max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
+            if len(room.get('players', [])) >= room_max_players:
+                cur.execute(
+                    "UPDATE room_invites SET status='expired', responded_at=%s WHERE room_id=%s AND status='pending'",
+                    (_now_db(), room['id']),
+                )
+                conn.commit()
+                return jsonify({'message': 'This private room is already full.'}), 410
 
             cur.execute(
                 "UPDATE room_invites SET status = 'accepted', responded_at = %s WHERE id = %s",
