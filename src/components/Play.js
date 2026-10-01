@@ -1271,16 +1271,16 @@ export default function Play({ practicePage = false }){
       return;
     }
 
-    // Bug fix: generatedContent in state was fetched for the PREVIOUS mode
-    // by the lobby useEffect (keyed on `mode`), which hasn't had a chance
-    // to re-run yet — setMode above only takes effect on the next render.
+    // Always refresh the selected mode before starting a generated-content race.
+    // This makes newly published or edited admin passages available immediately,
+    // including when the player starts the same mode that is already selected.
     // Starting the race immediately with the stale generatedContent meant
     // the passage shown (and the content ID recorded into the new mode's
     // rotation bucket) belonged to whatever mode was previously active,
     // not resolvedMode. When switching modes, fetch fresh content for
     // resolvedMode and wait for it before starting the race.
     let raceContent = generatedContent;
-    if (switchingMode) {
+    if (!useCustomText) {
       contentLoadingRef.current = true;
       setContentLoading(true);
       try {
@@ -1289,11 +1289,11 @@ export default function Play({ practicePage = false }){
         setGeneratedContent(raceContent);
         loadedForRef.current = `${resolvedMode}__${language}`;
       } catch (err) {
-        console.error('Failed to load race content for mode switch:', err);
+        console.error('Failed to load race content:', err);
         showNotice('Could not load race content. Check your connection and try again.', 'error');
         contentLoadingRef.current = false;
         setContentLoading(false);
-        return; // Don't start a race with mismatched/missing content.
+        return; // Do not start a race with missing content.
       }
       contentLoadingRef.current = false;
       setContentLoading(false);
@@ -1364,7 +1364,7 @@ export default function Play({ practicePage = false }){
     // Freeze this immediately: everything that reads "the current passage"
     // for the rest of this race (the live render, finishRace's scoring)
     // must use this exact string, not a fresh recomputation that could
-    // pick up a since-changed generatedContent/dailyChallenge/customText.
+    // pick up a subsequently changed generatedContent or customText.
     practiceSourceTextRef.current = practicePassageText;
     startRace(practicePassageText, { mode: resolvedMode, durationLimit: duration })
       .then((receipt) => { raceTokenRef.current = receipt?.token || null; })
@@ -2084,11 +2084,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </>
           ) : (
             <>
-              <h1>{liveRoom?.isPrivate ? 'Private Room Ready' : 'Queued for Live Race'}</h1>
+              <h1>{liveRoom?.isPrivate ? 'Private Room Ready' : 'Searching for an opponent'}</h1>
               <p className="results-challenge">
                 {notice?.message || (liveRoom?.isPrivate
                   ? 'Your room is ready. Share the invite and wait for your opponent to connect.'
-                  : 'Waiting for an opponent to join your room.')}
+                  : 'Searching for an opponent to join your race.')}
               </p>
               {queueElapsed > 0 && (
                 <p className="arena-queue-elapsed">
@@ -2100,7 +2100,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               )}
             </>
           )}
-          {(liveRoom?.inviteCode || friendBattle.inviteCode) && (
+          {liveRoom?.isPrivate && (liveRoom?.inviteCode || friendBattle.inviteCode) && (
             <p className="results-challenge">
               Invite code: <strong>{liveRoom?.inviteCode || friendBattle.inviteCode}</strong>
               <button

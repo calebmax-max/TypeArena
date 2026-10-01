@@ -1312,6 +1312,98 @@ def _ensure_typing_content_table(cur) -> None:
     )
 
 
+def _ensure_tournament_content_rotation_table(cur) -> None:
+    cur.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS tournament_content_rotation_state (
+            scope_key VARCHAR(40) PRIMARY KEY,
+            cycle INT NOT NULL DEFAULT 1
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        '''
+    )
+    cur.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS tournament_content_rotation (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            scope_key VARCHAR(40) NOT NULL,
+            cycle INT NOT NULL,
+            content_id VARCHAR(80) NOT NULL,
+            room_id VARCHAR(120) NULL,
+            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_tournament_rotation (scope_key, cycle, content_id),
+            KEY idx_tournament_rotation_cycle (scope_key, cycle)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        '''
+    )
+    cur.execute(
+        "INSERT IGNORE INTO tournament_content_rotation_state (scope_key, cycle) VALUES ('tournament', 1)"
+    )
+
+
+def _select_tournament_rotation_content(cur, room_id: str) -> Dict[str, Any] | None:
+    """Select an unused tournament passage and reserve it in the current cycle."""
+    cur.execute(
+        '''
+        SELECT content_id, passage
+        FROM typing_content
+        WHERE content_type='tournament' AND is_active=1
+        ORDER BY id ASC
+        '''
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return None
+
+    cur.execute(
+        "SELECT cycle FROM tournament_content_rotation_state WHERE scope_key='tournament' FOR UPDATE"
+    )
+    state = cur.fetchone()
+    if not state:
+        cur.execute(
+            "INSERT INTO tournament_content_rotation_state (scope_key, cycle) VALUES ('tournament', 1)"
+        )
+        current_cycle = 1
+    else:
+        current_cycle = int(state.get('cycle') or 1)
+
+    cur.execute(
+        '''
+        SELECT content_id
+        FROM tournament_content_rotation
+        WHERE scope_key='tournament' AND cycle=%s
+        ''',
+        (current_cycle,),
+    )
+    used_ids = {str(row['content_id']) for row in cur.fetchall()}
+    available = [row for row in rows if str(row['content_id']) not in used_ids]
+
+    if not available:
+        current_cycle += 1
+        cur.execute(
+            "UPDATE tournament_content_rotation_state SET cycle=%s WHERE scope_key='tournament'",
+            (current_cycle,),
+        )
+        available = list(rows)
+
+    selected = secrets.choice(available)
+    content_id = str(selected['content_id'])
+    cur.execute(
+        '''
+        INSERT INTO tournament_content_rotation (scope_key, cycle, content_id, room_id)
+        VALUES ('tournament', %s, %s, %s)
+        ''',
+        (current_cycle, content_id, room_id),
+    )
+    return {
+        'contentId': content_id,
+        'id': content_id,
+        'passage': str(selected['passage']),
+        'totalContentCount': len(rows),
+        'provider': 'admin-tournament-rotation',
+        'model': 'database',
+    }
+
+
 def _ensure_typing_content_schedule_column(cur) -> None:
     """Keep the content table forward-compatible with the daily scheduler."""
     cur.execute('SHOW COLUMNS FROM typing_content')
@@ -8797,15 +8889,10 @@ def join_tournament(tournament_id: int):
                 (match_size, 'upcoming', datetime.utcnow() + timedelta(seconds=TOURNAMENT_START_DELAY_SECONDS), tournament_id),
             )
 
-            # One tournament means one shared, pre-populated race. Creating it
-            # now freezes the exact paid roster for the whole countdown.
-            # 'standard'/'english' here are just the generic fallback-bank
-            # keys if no admin passage exists at all - they no longer gate
-            # which admin content can be picked, since _fetch_admin_content
-            # treats 'tournament' content as one shared pool regardless of
-            # the mode/language tag a passage was saved under.
-            content = _generate_live_battle_passage('standard', 'english', is_tournament=True)
             room_id = f'tournament_{tournament_id}_{int(datetime.utcnow().timestamp() * 1000)}'
+            content = _select_tournament_rotation_content(cur, room_id)
+            if not content:
+                content = _generate_live_battle_passage('standard', 'english', is_tournament=True)
             room = {
                 'id': room_id, 'status': 'countdown', 'mode': 'standard', 'language': 'english',
                 'duration': min(LIVE_RACE_MAX_DURATION_SECONDS, max(LIVE_RACE_MIN_DURATION_SECONDS, int(tournament.get('match_duration_mins') or 10) * 60)),
@@ -10405,6 +10492,7 @@ def _bootstrap_db() -> None:
                 _ensure_live_race_rooms_table(cur)
                 _ensure_typing_content_table(cur)
                 _ensure_typing_content_schedule_column(cur)
+                _ensure_tournament_content_rotation_table(cur)
                 _ensure_marketplace_catalog_table(cur)
                 _sync_marketplace_catalog_from_code(cur)
                 _ensure_store_purchase_table(cur)
