@@ -170,7 +170,9 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
     if (location.pathname !== '/') endTour();
   }, [active, endTour, location.pathname, step]);
 
-  // Measure (and re-measure) the current step's target element.
+  // Measure (and re-measure) the current step's target element. Some steps
+  // mount a little later than the route change and need a short retry window
+  // before the card can position itself correctly.
   useEffect(() => {
     if (!active || !step?.target) {
       setRect(null);
@@ -178,14 +180,17 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
     }
 
     let cancelled = false;
-    let openedMenuThisStep = false;
+    let attempts = 0;
 
     const measure = () => {
       if (cancelled) return;
       const el = document.querySelector(`[data-tour="${step.target}"]`);
       if (!el) {
-        // Target isn't in the DOM (e.g. menu still animating open) - skip
-        // forward rather than get stuck on a step nobody can see.
+        attempts += 1;
+        if (attempts < 18) {
+          window.setTimeout(measure, 180);
+          return;
+        }
         setRect(null);
         return;
       }
@@ -197,7 +202,6 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
       if (!menuOpen) {
         setMenuOpen(true);
         wasMenuOpenedByTour.current = true;
-        openedMenuThisStep = true;
       }
       // Give the menu's open transition a moment before measuring.
       const t = window.setTimeout(measure, 220);
@@ -211,14 +215,14 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
       };
     }
 
-    measure();
+    const t = window.setTimeout(measure, 50);
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
     return () => {
       cancelled = true;
+      window.clearTimeout(t);
       window.removeEventListener('resize', measure);
       window.removeEventListener('scroll', measure, true);
-      void openedMenuThisStep;
     };
   }, [active, step, mobile, menuOpen, setMenuOpen]);
 
