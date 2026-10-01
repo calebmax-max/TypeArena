@@ -49,8 +49,8 @@ const STEPS = [
     id: 'private-room',
     target: 'play-create-private-room',
     route: '/play',
-    title: 'Create a private room and invite a username',
-    body: 'You can create a free private room or set a stake first. Then invite a username, choose your settings, and start when everyone is ready.',
+    title: 'Create a private room and invite a friend',
+    body: 'Create a free private room or set a stake first. Enter a friend\'s username and send them an invite. If you have several friends, enter each username and send each invite, then choose your settings and start when everyone is ready.',
   },
   {
     id: 'tournament',
