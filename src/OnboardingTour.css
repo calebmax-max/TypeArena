@@ -68,6 +68,29 @@
   color: var(--tour-text);
 }
 
+.tour-title {
+  margin: 0 0 0.55rem;
+  font-size: 1.15rem;
+  line-height: 1.25;
+  color: var(--tour-text);
+}
+
+.tour-progress {
+  height: 4px;
+  margin: 0 0 0.85rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tour-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tour-accent);
+  transition: width 0.2s ease;
+}
+
 .tour-body--large {
   font-size: 1.05rem;
 }

@@ -62,37 +62,44 @@ export function resetOnboardingTour() {
 const STEPS = [
   {
     id: 'welcome',
-    body: 'Welcome to TypeArena. Take a one-minute tour?',
+    title: 'Welcome to TypeArena',
+    body: 'Take a quick tour, then start your first race. You can skip this at any time.',
     centered: true,
   },
   {
     id: 'play',
     target: 'nav-play',
+    title: 'Start here: Play',
     body: 'Free practice, free friend battles, or battle friends for real money \u2014 your call.',
   },
   {
     id: 'training',
     target: 'nav-training',
-    body: 'Practice for free with lessons. Nothing is staked, and it even works offline.',
+    title: 'Build your skill',
+    body: 'Use Training for focused lessons and repeatable practice before entering a live race.',
   },
   {
     id: 'tournaments',
     target: 'nav-tournaments',
-    body: 'Paid matches, real money in KES. Pay the entry fee and the winner takes the prize.',
+    title: 'Compete in tournaments',
+    body: 'Join a tournament when you are ready. Entry fees are shown before joining, passages rotate fairly, and prizes are settled after the match.',
   },
   {
     id: 'leaderboard',
     target: 'nav-leaderboard',
-    body: 'Earn season points, and see where you rank. The season resets at the end of each month.',
+    title: 'Track your progress',
+    body: 'Your results and season points show how you are improving against other racers.',
   },
   {
     id: 'profile',
     target: 'nav-profile',
-    body: 'Your account: top up your wallet, change your username or photo, and adjust audio settings.',
+    title: 'Manage your account',
+    body: 'Update your profile, wallet, and race preferences here. Stakes are only charged when you join a paid room or tournament.',
   },
   {
     id: 'finish',
-    body: 'Ready to jump in?',
+    title: 'Ready for your first race?',
+    body: 'Start with free practice, then try a live 1v1 when you feel ready.',
     centered: true,
     finish: true,
   },
@@ -147,7 +154,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
 
     const eligible =
       location.pathname === '/' &&
-      !currentUser &&
+      currentUser !== undefined &&
       !hasSeenTour() &&
       !hasTrainingProgress();
 
@@ -252,7 +259,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
   const goNext = () => {
     if (isLast) {
       endTour();
-      navigate('/profile?signup=1');
+      navigate(currentUser?.id ? '/play' : '/profile?signup=1');
       return;
     }
     setStepIndex((i) => i + 1);
@@ -289,6 +296,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
             onNext={goNext}
             onBack={goBack}
             onSkip={endTour}
+            signedIn={Boolean(currentUser?.id)}
           />
         </div>
       ) : mobile ? (
@@ -302,6 +310,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
             onNext={goNext}
             onBack={goBack}
             onSkip={endTour}
+            signedIn={Boolean(currentUser?.id)}
             large
           />
         </div>
@@ -319,6 +328,7 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
             onNext={goNext}
             onBack={goBack}
             onSkip={endTour}
+            signedIn={Boolean(currentUser?.id)}
           />
         </div>
       ) : null}
@@ -335,9 +345,13 @@ function tooltipPosition(rect) {
   return { top, left };
 }
 
-function TourBody({ step, stepIndex, total, isFirst, isLast, onNext, onBack, onSkip, large }) {
+function TourBody({ step, stepIndex, total, isFirst, isLast, onNext, onBack, onSkip, signedIn, large }) {
   return (
     <>
+      {step.title && <h2 className="tour-title">{step.title}</h2>}
+      <div className="tour-progress" aria-hidden="true">
+        <span style={{ width: `${((stepIndex + 1) / total) * 100}%` }} />
+      </div>
       <p className={`tour-body${large ? ' tour-body--large' : ''}`}>{step.body}</p>
       <div className="tour-footer">
         <span className="tour-counter">{stepIndex + 1} of {total}</span>
@@ -353,7 +367,7 @@ function TourBody({ step, stepIndex, total, isFirst, isLast, onNext, onBack, onS
             </button>
           )}
           <button type="button" className="tour-btn tour-btn--primary" onClick={onNext}>
-            {step.finish ? 'Create Account' : isFirst ? 'Start' : 'Next'}
+            {step.finish ? (signedIn ? 'Start Racing' : 'Create Account') : isFirst ? 'Start' : 'Next'}
           </button>
         </div>
       </div>
