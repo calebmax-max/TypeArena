@@ -165,19 +165,10 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [active, endTour]);
 
-  // If the player navigates away mid-tour on a different page than the step's
-  // intended route, close the overlay so it doesn't float over the wrong page.
-  // When a step intentionally redirects to a target page, keep the tour alive
-  // until that page and element are ready.
-  useEffect(() => {
-    if (!active) return;
-    if (step?.route) {
-      if (location.pathname === step.route) return;
-      endTour();
-      return;
-    }
-    if (location.pathname !== '/') endTour();
-  }, [active, endTour, location.pathname, step]);
+  // Route steps intentionally navigate after the step changes. Do not close
+  // the tour while that navigation is still being committed: the old cleanup
+  // effect raced the navigate() effect and made the tour stop at step 3.
+  // The navigation effect above keeps the active step on its intended route.
 
   // Measure (and re-measure) the current step's target element. Some steps
   // mount a little later than the route change and need a short retry window
