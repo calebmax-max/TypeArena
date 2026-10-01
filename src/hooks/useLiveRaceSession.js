@@ -31,7 +31,6 @@ export function useLiveRaceSession({
   setFriendBattle,
   tournamentId,
   initialRoomId,
-  wpmFilter,
   generatedContentPassage,
   redirectToProfile,
   navigate,
@@ -61,7 +60,6 @@ export function useLiveRaceSession({
   const heartbeatTimerRef = useRef(null);
   const heartbeatPayloadRef = useRef(null);
   const heartbeatInFlightRef = useRef(false);
-  const roomPollInFlightRef = useRef(false);
   const isSubmittingRef = useRef(false);
   const isLeavingRef = useRef(false);
   const queuedAtRef = useRef(null);
@@ -378,8 +376,6 @@ export function useLiveRaceSession({
         duration,
         excludeContentIds: getUsedContentIds(mode, language),
         tournamentId: tournamentId || undefined,
-        wpmMin: wpmFilter.min > 0 ? wpmFilter.min : undefined,
-        wpmMax: wpmFilter.max < 300 ? wpmFilter.max : undefined,
       });
 
       recordClockSample(response.room, queueSentAt, Date.now());
@@ -411,8 +407,6 @@ export function useLiveRaceSession({
     showNotice,
     startQueuedRoom,
     tournamentId,
-    wpmFilter.max,
-    wpmFilter.min,
   ]);
 
   const createFriendBattle = useCallback(async () => {

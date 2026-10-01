@@ -49,7 +49,6 @@ const DEFAULT_LEADERBOARD_TIERS = { bronze: 500, silver: 851, gold: 1500, diamon
 const CONTENT_TYPE_TABS = [
   { id: 'practice', label: 'Practice' },
   { id: 'live', label: '1v1' },
-  { id: 'daily', label: 'Daily Passage' },
   { id: 'tournament', label: 'Tournament' },
 ];
 const PRACTICE_MODE_TABS = [
@@ -97,7 +96,7 @@ export default function AdminPanel() {
   const [tournaments, setTournaments] = useState([]);
   const [aiSettings, setAiSettings] = useState(normalizeAiSettings());
   const [adminContent, setAdminContent] = useState([]);
-  const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', dailyDate: '', publishAt: '', expiryAt: '', isActive: true });
+  const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
   const [contentTypeTab, setContentTypeTab] = useState('practice');
   const [practiceModeTab, setPracticeModeTab] = useState('all');
   const [marketplaceItems, setMarketplaceItems] = useState([]);
@@ -299,7 +298,7 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not update marquee.'); }
   };
 
-  const resetContentForm = () => setContentForm({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', dailyDate: '', publishAt: '', expiryAt: '', isActive: true });
+  const resetContentForm = () => setContentForm({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
 
   const handleContentSave = async (e) => {
     if (e?.preventDefault) e.preventDefault();
@@ -354,7 +353,7 @@ export default function AdminPanel() {
     setActiveSection('marketplace');
   };
   const handleContentDelete = async (item) => {
-    if (!window.confirm(item.content_type === 'daily' ? 'Archive this Daily Passage? It will remain in history.' : 'Delete this passage? Active-room passages will be deactivated instead.')) return;
+    if (!window.confirm('Delete this passage? Active-room passages will be deactivated instead.')) return;
     try {
       const result = await deleteAdminContent(item.id);
       setAdminContent((items) => items.filter((entry) => entry.id !== item.id));
@@ -1626,7 +1625,6 @@ export default function AdminPanel() {
                           <option value="practice">Practice</option>
                           <option value="live">1v1 / Live</option>
                           <option value="tournament">Tournament</option>
-                          <option value="daily">Daily Challenge</option>
                         </select>
                       </div>
                       {!['live', 'tournament'].includes(contentForm.contentType) && (
@@ -1645,18 +1643,6 @@ export default function AdminPanel() {
                           </select>
                         </div>
                       )}
-                      {contentForm.contentType === 'daily' && <>
-                        <div className="ap-field">
-                          <label className="ap-label">Publish time (Nairobi)</label>
-                          <input className="ap-input" type="datetime-local" value={contentForm.publishAt} onChange={e => setContentForm(p => ({ ...p, publishAt: e.target.value }))} />
-                          <small style={{ color: 'var(--ap-muted)' }}>Leave blank to publish immediately.</small>
-                        </div>
-                        <div className="ap-field">
-                          <label className="ap-label">Expiry time (Nairobi)</label>
-                          <input className="ap-input" type="datetime-local" value={contentForm.expiryAt} onChange={e => setContentForm(p => ({ ...p, expiryAt: e.target.value }))} />
-                          <small style={{ color: 'var(--ap-muted)' }}>Leave blank for 24 hours after publishing.</small>
-                        </div>
-                      </>}
                       {!['live', 'tournament'].includes(contentForm.contentType) && (
                         <div className="ap-field">
                           <label className="ap-label">Mode</label>
@@ -1741,12 +1727,12 @@ export default function AdminPanel() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
                           <div>
                             <strong>{['live', 'tournament'].includes(item.content_type) ? item.content_type : `${item.mode} / ${item.language} / ${item.content_type}`}</strong>
-                            <div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.passage}</div>{item.content_type === 'daily' && <div style={{ color: item.archived_at ? 'var(--ap-muted)' : 'var(--ap-accent)', fontSize: '0.72rem', marginTop: 5 }}>{item.archived_at ? `Archived ${item.archived_at} (Nairobi)` : `Publish ${item.publish_at || 'now'} ? Expire ${item.expiry_at || 'after 24 hours'} (Nairobi)`}</div>}
+                            <div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.passage}</div>
                           </div>
                           <span style={{ color: item.is_active ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.is_active ? 'Published' : 'Inactive'}</span>
                         </div>
                         <div className="ap-btn-row" style={{ marginTop: 8 }}>
-                          <button className="ap-btn ap-btn-sm" onClick={() => setContentForm({ id: item.id, contentType: item.content_type, mode: item.mode, language: item.language, passage: item.passage, dailyDate: String(item.scheduled_for || '').slice(0, 10), publishAt: String(item.publish_at || ''), expiryAt: String(item.expiry_at || ''), isActive: Boolean(item.is_active) })}>Edit</button>
+                          <button className="ap-btn ap-btn-sm" onClick={() => setContentForm({ id: item.id, contentType: item.content_type, mode: item.mode, language: item.language, passage: item.passage, isActive: Boolean(item.is_active) })}>Edit</button>
                           <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleContentDelete(item)}>Delete</button>
                         </div>
                       </div>

@@ -13,7 +13,6 @@ import {
 import {
   buildHeaders,
   fetchCurrentUser,
-  fetchDailyContent,
   fetchMediaSettings,
   getStoredUserSnapshot,
   startRace,
@@ -27,7 +26,6 @@ import { KEYBOARD_LAYOUT } from '../utils/keyboardLayout';
 import { getUsedContentIds, recordUsedContentId } from '../utils/contentRotation';
 import { getPB, savePB } from '../utils/personalBests';
 import { getWinStreak, updateWinStreak } from '../utils/winStreak';
-import { getDailyChallenge, saveDailyChallenge } from '../utils/dailyChallenge';
 import { getRecentRaces, saveRecentRace } from '../utils/recentRaces';
 import { readMobileTypingSettings, MOBILE_TYPING_SETTINGS_KEY } from '../utils/mobileTypingSettings';
 import '../styles/Play.css';
@@ -427,7 +425,7 @@ const EFFECT_PRESETS = {
 };
 
 const MODE_CONFIG = [
-  { id: 'standard', label: '1v1 Battle', description: 'Classic live duel with balanced pacing.' },
+  { id: 'standard', label: 'Standard', description: 'Balanced everyday typing practice.' },
   { id: 'survival', label: 'Survival', description: 'Stay accurate under pressure.' },
   { id: 'speed_burst', label: 'Speed Burst', description: 'Short explosive sprints.' },
   { id: 'code', label: 'Code Syntax', description: 'Battle with developer-friendly text.' },
@@ -595,16 +593,10 @@ export default function Play({ practicePage = false }){
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #2: AFK/forfeit detection state Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   const [afkWarning, setAfkWarning] = useState(false);
   const lastHeartbeatRef = useRef(Date.now());
-  // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #4: Daily challenge state Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
-  const [dailyChallenge, setDailyChallenge] = useState(() => getDailyChallenge());
-  const [showDailyChallenge, setShowDailyChallenge] = useState(false);
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #5: Custom text / paste-your-own Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   const [customText, setCustomText] = useState('');
   const [useCustomText, setUseCustomText] = useState(false);
   const [showCustomTextPanel, setShowCustomTextPanel] = useState(false);
-  // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #6: WPM skill-based matchmaking Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
-  const [wpmFilter, setWpmFilter] = useState({ min: 0, max: 300 });
-  const [showWpmFilter, setShowWpmFilter] = useState(false);
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #7: Share card (PNG via canvas) Ã¯Â¿Â½?" exportScoreCard handles this Ã¯Â¿Â½"?
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #8: Keyboard heatmap on results Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   const [showHeatmap, setShowHeatmap] = useState(false);
@@ -917,7 +909,6 @@ export default function Play({ practicePage = false }){
     setFriendBattle,
     tournamentId,
     initialRoomId,
-    wpmFilter,
     generatedContentPassage: generatedContent?.passage,
     redirectToProfile,
     navigate,
@@ -962,11 +953,9 @@ export default function Play({ practicePage = false }){
           : Math.max(1, duration - currentTimeLeft);
         // Bug A fix: finishRace previously always computed accuracy against
         // generatedContent?.passage, which is wrong when the player is using the
-        // daily challenge or custom text. Mirror the same sourceText priority chain
         // used by the component so WPM/accuracy are calculated against the correct passage.
         const sourceText = liveRoom?.text
             || (practiceSourceTextRef.current || null)
-            || (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
             || (useCustomText && customText ? customText : null)
             || generatedContent?.passage
             || MODE_CONFIG.find((item) => item.id === mode)?.description
@@ -1112,7 +1101,7 @@ export default function Play({ practicePage = false }){
         isSubmittingRef.current = false;
     }
 // Fix #9: removed timeLeft, typingText, replayFrames from deps Ã¯Â¿Â½?" read via refs above.
-}, [commentatorEnabled, currentUser?.name, currentUser?.username, customText, dailyChallenge, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, showDailyChallenge, submitFinalLiveResult, useCustomText]);
+}, [commentatorEnabled, currentUser?.name, currentUser?.username, customText, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, submitFinalLiveResult, useCustomText]);
   const handleFinishRace = useCallback(() => {
     if (phase !== 'racing' || isSubmittingRef.current) {
       return;
@@ -1156,23 +1145,6 @@ export default function Play({ practicePage = false }){
     }, 3000);
     return () => window.clearInterval(afkCheck);
   }, [duration, language, liveRoom?.id, mode, phase, showNotice, submitFinalLiveResult]);
-
-  // Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #4: Daily challenge loader Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
-  const loadDailyChallenge = useCallback(async () => {
-    try {
-      // The backend is authoritative: it uses Nairobi time and may have rotated the passage.
-      const content = await fetchDailyContent(language);
-      const entry = { passage: content.passage, id: content.id, language, publishAt: content.publishAt, expiryAt: content.expiryAt, isScheduled: content.isScheduled };
-      saveDailyChallenge(entry);
-      setDailyChallenge(entry);
-      setShowDailyChallenge(true);
-    } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language]);
-
-  // Show the server-selected Daily Challenge at the top of every practice lobby.
-  useEffect(() => { loadDailyChallenge(); }, [loadDailyChallenge]);
-
   // Queue elapsed now comes from useLiveRaceSession.
 
   // Keyboard shortcut: Enter in lobby starts the primary race action
@@ -1192,7 +1164,7 @@ export default function Play({ practicePage = false }){
           // mode's description), producing a near-total text mismatch and
           // a 0 WPM result.
           const contentReady = !contentLoading && currentUser !== undefined
-            && (useCustomText || dailyChallenge || generatedContent?.passage);
+            && (useCustomText || generatedContent?.passage);
           if (contentReady) {
             startPracticeRace();
           }
@@ -1385,8 +1357,7 @@ export default function Play({ practicePage = false }){
     // Fire-and-forget: the token only needs to land before finishRace runs
     // seconds/minutes later, so it must never block the race from starting.
     raceTokenRef.current = null;
-    const practicePassageText = (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
-      || (useCustomText && customText ? customText : null)
+    const practicePassageText = (useCustomText && customText ? customText : null)
       || raceContent?.passage
       || MODE_CONFIG.find((item) => item.id === resolvedMode)?.description
       || '';
@@ -1404,7 +1375,7 @@ export default function Play({ practicePage = false }){
 
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser, customText, dailyChallenge, duration, generatedContent, isLeavingRef, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showDailyChallenge, showNotice, useCustomText]);
+  }, [commentatorEnabled, currentUser, customText, duration, generatedContent, isLeavingRef, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showNotice, useCustomText]);
   // Note: getUsedContentIds/getRaceContent/recordUsedContentId are stable
   // module-level imports (not component state/props), so they're
   // intentionally omitted here — same convention already used by the
@@ -1535,8 +1506,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     window.clearInterval(ghostIntervalRef.current);
     // Fix #1: allow fresh content fetch on next lobby visit
     loadedForRef.current = '';
-    // Fix #5: reset daily challenge so it doesn't bleed into subsequent practice races
-    setShowDailyChallenge(false);
     setPhase('lobby');
   }, [resetLiveSession, showNotice]);
   backToLobbyRef.current = backToLobby;
@@ -1720,7 +1689,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   };
   const sourceText = liveRoom?.text
     || ((phase === 'racing' || phase === 'results') && practiceSourceTextRef.current ? practiceSourceTextRef.current : null)
-    || (showDailyChallenge && dailyChallenge?.passage ? dailyChallenge.passage : null)
     || (useCustomText && customText ? customText : null)
     || generatedContent?.passage
     || MODE_CONFIG.find((item) => item.id === mode)?.description
@@ -1911,7 +1879,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               )}
             </div>
             {practicePage ? (
-              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined || (!useCustomText && !dailyChallenge && !generatedContent?.passage)}>
+              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined || (!useCustomText && !generatedContent?.passage)}>
                 {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : 'Start This Practice'}
               </button>
             ) : (
@@ -1955,28 +1923,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 </div>
                 <p style={{ marginTop:'1rem', fontSize:'0.72rem', color:'var(--arena-muted)', opacity:0.6 }}>Press Esc or click outside to close</p>
               </div>
-            </div>
-          )}
-
-          {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #4: Daily challenge Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
-          <div style={{ marginBottom:'0.75rem' }}>
-            <button className="btn btn-outline-primary" onClick={loadDailyChallenge} style={{ marginRight:'0.5rem' }}>
-              Daily Challenge
-            </button>
-            {showDailyChallenge && dailyChallenge && (
-              <button className="btn btn-sm btn-outline-light" onClick={() => setShowDailyChallenge(false)}>Dismiss</button>
-            )}
-          </div>
-          {showDailyChallenge && dailyChallenge && (
-            <div style={{ background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg)', padding:'1rem 1.25rem', marginBottom:'1rem' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
-                <span style={{ fontFamily:'var(--font-mono)', fontSize:'0.72rem', textTransform:'uppercase', letterSpacing:'0.12em', color:'var(--arena-accent)' }}>Today's Challenge</span>
-                <span style={{ fontSize:'0.75rem', color:'var(--arena-muted)' }}>{dailyChallenge.isScheduled ? 'Nairobi daily passage' : 'Daily fallback'}</span>
-              </div>
-              <p style={{ fontFamily:'var(--font-mono)', fontSize:'0.88rem', color:'var(--arena-text)', lineHeight:'1.7', margin:'0 0 0.75rem' }}>"{dailyChallenge.passage?.slice(0, 140)}..."</p>
-              <button className="btn btn-primary btn-sm" onClick={() => { setUseCustomText(false); setShowDailyChallenge(true); startPracticeRace(); }}>
-                Race This Passage
-              </button>
             </div>
           )}
 
@@ -2024,36 +1970,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </span>
             )}
           </div>
-
-          {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #6: WPM matchmaking filter Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
-          {!practicePage && (
-            <div style={{ marginBottom:'0.75rem' }}>
-              <button className="btn btn-outline-primary" onClick={() => setShowWpmFilter((v) => !v)}>
-                Skill Filter {wpmFilter.min > 0 || wpmFilter.max < 300 ? `(${wpmFilter.min}-${wpmFilter.max} WPM)` : ''}
-              </button>
-            </div>
-          )}
-          {showWpmFilter && !practicePage && (
-            <div style={{ background:'var(--arena-panel)', border:'1px solid var(--arena-panel-border)', borderRadius:'var(--arena-radius-lg)', padding:'1rem 1.25rem', marginBottom:'1rem' }}>
-              <p style={{ fontSize:'0.8rem', color:'var(--arena-muted)', marginBottom:'0.75rem' }}>Only match me with opponents in this WPM range:</p>
-              <div style={{ display:'flex', gap:'0.75rem', alignItems:'center', flexWrap:'wrap' }}>
-                <label style={{ fontSize:'0.82rem', color:'var(--arena-muted)' }}>Min WPM
-                  <input type="number" min={0} max={299} value={wpmFilter.min}
-                    onChange={(e) => setWpmFilter((f) => ({ ...f, min: Math.max(0, Math.min(299, Number(e.target.value))) }))}
-                    style={{ marginLeft:'0.4rem', width:'64px', padding:'0.25rem 0.5rem', borderRadius:'6px', border:'1px solid var(--arena-panel-border)', background:'hsl(240 14% 8%)', color:'var(--arena-text)', fontSize:'0.85rem' }}
-                  />
-                </label>
-                <label style={{ fontSize:'0.82rem', color:'var(--arena-muted)' }}>Max WPM
-                  <input type="number" min={1} max={300} value={wpmFilter.max}
-                    onChange={(e) => setWpmFilter((f) => ({ ...f, max: Math.max(1, Math.min(300, Number(e.target.value))) }))}
-                    style={{ marginLeft:'0.4rem', width:'64px', padding:'0.25rem 0.5rem', borderRadius:'6px', border:'1px solid var(--arena-panel-border)', background:'hsl(240 14% 8%)', color:'var(--arena-text)', fontSize:'0.85rem' }}
-                  />
-                </label>
-                <button className="btn btn-sm btn-outline-light" onClick={() => setWpmFilter({ min: 0, max: 300 })}>Reset</button>
-              </div>
-              <p style={{ marginTop:'0.5rem', fontSize:'0.72rem', color:'var(--arena-muted)', opacity:0.7 }}>Narrower ranges may increase queue wait time.</p>
-            </div>
-          )}
 
           {practicePage && (
             <p className="results-challenge">
