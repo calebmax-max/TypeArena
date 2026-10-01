@@ -33,7 +33,6 @@ function formatMoney(value) {
 }
 
 export default function PrivateRoomPanel({
-  hasSignatureInvites,
   friendBattle,
   setFriendBattle,
   createFriendBattle,
@@ -114,18 +113,6 @@ export default function PrivateRoomPanel({
         </span>
       </div>
       <div className="friend-battle-grid">
-        {hasSignatureInvites && (
-          <input
-            value={friendBattle.customInviteCode}
-            onChange={(event) =>
-              setFriendBattle((prev) => ({
-                ...prev,
-                customInviteCode: event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12),
-              }))
-            }
-            placeholder="Your custom invite code"
-          />
-        )}
         <input
           value={friendBattle.inviteCode}
           onChange={(event) =>
@@ -137,13 +124,6 @@ export default function PrivateRoomPanel({
           Max players
           <input type="number" min="2" max="10" value={friendBattle.maxPlayers} onChange={(event) => setFriendBattle((prev) => ({ ...prev, maxPlayers: Math.max(2, Math.min(10, Number(event.target.value) || 2)) }))} />
         </label>
-        <input
-          value={friendBattle.password}
-          onChange={(event) =>
-            setFriendBattle((prev) => ({ ...prev, password: event.target.value }))
-          }
-          placeholder="Private room password"
-        />
       </div>
 
       {/* --- Stake / payment section --- */}
@@ -248,9 +228,7 @@ export default function PrivateRoomPanel({
         </div>
       )}
       <p className="results-challenge">
-        {hasSignatureInvites
-          ? 'Your Signature Invite Pass is active. You can create a private room with your own custom code.'
-          : 'Invite code and private password work here for private matches. Buy Signature Invite Pass to create your own custom room code.'}
+        'Create a room, invite players by username, and start when everyone is ready.'
       </p>
     </div>
   );

@@ -226,7 +226,6 @@ function InviteInbox({ currentUser }) {
     try {
       const data = await apiFetch(`/api/invites/${current.id}/accept`, { method: 'POST' });
       const params = new URLSearchParams({ invite: data.inviteCode });
-      if (data.password) params.set('password', data.password);
       dismiss(current.id);
       params.set('autoJoin', '1');
       navigate(`/play?${params.toString()}`);

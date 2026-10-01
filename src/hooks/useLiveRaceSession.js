@@ -429,8 +429,7 @@ export function useLiveRaceSession({
         language,
         duration,
         isPrivate: true,
-        inviteCode: friendBattle.customInviteCode.trim(),
-        password: friendBattle.password,
+        inviteCode: '',
         maxPlayers: friendBattle.maxPlayers,
         stakeAmount: friendBattle.stakeAmount,
         excludeContentIds: getUsedContentIds(mode, language),
@@ -446,7 +445,7 @@ export function useLiveRaceSession({
           totalContentCount: response.totalContentCount || 0,
         },
         {
-          message: `Private room created. Waiting for your opponent to join with invite code ${response.room.inviteCode}.`,
+          message: 'Private room created. Invite players by username, then start when ready.',
           type: 'success',
         }
       );
@@ -475,9 +474,7 @@ export function useLiveRaceSession({
   }, [
     currentUser,
     duration,
-    friendBattle.customInviteCode,
     friendBattle.maxPlayers,
-    friendBattle.password,
     friendBattle.stakeAmount,
     getUsedContentIds,
     language,
@@ -522,7 +519,7 @@ export function useLiveRaceSession({
     try {
       const response = await queueLiveRace({
         inviteCode: friendBattle.inviteCode.trim(),
-        password: friendBattle.password,
+        password: '',
       });
 
       setMode(response.room.mode || mode);
@@ -548,7 +545,6 @@ export function useLiveRaceSession({
       const inviteCode = friendBattle.inviteCode.trim().toUpperCase();
       const redirectParams = new URLSearchParams();
       if (inviteCode) redirectParams.set('invite', inviteCode);
-      if (friendBattle.password) redirectParams.set('password', friendBattle.password);
       const redirectPath = `/play${redirectParams.toString() ? `?${redirectParams.toString()}` : ''}`;
       const message = error.message || 'Could not join friend battle.';
 
@@ -569,7 +565,6 @@ export function useLiveRaceSession({
     currentUser,
     duration,
     friendBattle.inviteCode,
-    friendBattle.password,
     language,
     mode,
     navigate,
@@ -761,7 +756,7 @@ export function useLiveRaceSession({
     };
 
     const handleRemoved = ({ roomId: removedRoomId } = {}) => {
-      if (String(removedRoomId) !== String(roomId) || phase !== 'queued' || isLeavingRef.current) {
+      if (String(removedRoomId) !== String(roomId) || !['queued', 'waiting'].includes(phase) || isLeavingRef.current) {
         return;
       }
       setLiveRoom(null);

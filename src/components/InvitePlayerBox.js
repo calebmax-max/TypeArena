@@ -29,16 +29,13 @@ async function apiFetch(path, opts = {}) {
 // ---------------------------------------------------------------------------
 // Share button: sits next to the existing "Copy" invite-code button.
 // Uses the native share sheet when available (phones), otherwise opens
-// WhatsApp directly. The link includes the room password only when the host
-// has it in hand (friendBattle.password), so a password-protected room's link
-// still works for the person who receives it.
+// WhatsApp directly.
 // ---------------------------------------------------------------------------
-export function ShareInviteButton({ inviteCode, password, stakeAmount, showNotice }) {
+export function ShareInviteButton({ inviteCode, stakeAmount, showNotice }) {
   if (!inviteCode) return null;
 
   const handleShare = async () => {
     const params = new URLSearchParams({ invite: inviteCode });
-    if (password) params.set('password', password);
     const link = `${window.location.origin}/play?${params.toString()}`;
     const stakeNote = Number(stakeAmount) > 0
       ? ` (staked room: KES ${Number(stakeAmount).toLocaleString()} each)`

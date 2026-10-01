@@ -4940,7 +4940,6 @@ def _delete_live_room(cur, room_id: str) -> None:
         return
     cur.execute('DELETE FROM live_race_rooms WHERE room_id=%s', (normalized,))
     LIVE_RACE_ROOMS.pop(normalized, None)
-    socketio.emit('live_race:removed', {'roomId': normalized}, to=_live_race_socket_room(normalized))
 
 
 def _ensure_auth_token_column(cur) -> None:
@@ -8146,6 +8145,7 @@ def cancel_live_race(room_id: str):
             with conn.cursor() as cur:
                 _delete_live_room(cur, room_id)
             conn.commit()
+            socketio.emit('live_race:removed', {'roomId': room_id}, to=_live_race_socket_room(room_id))
             return jsonify(
                 {
                     'message': 'Left the matchmaking queue.',
@@ -8174,6 +8174,7 @@ def cancel_live_race(room_id: str):
                     refunded_users.append(_safe_user(refunded_user))
             _delete_live_room(cur, room_id)
         conn.commit()
+        socketio.emit('live_race:removed', {'roomId': room_id}, to=_live_race_socket_room(room_id))
 
         current_user = next((item for item in refunded_users if item['id'] == user['id']), _safe_user(user))
         return jsonify(

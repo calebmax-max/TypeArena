@@ -490,8 +490,6 @@ export default function Play({ practicePage = false }){
   const [raceOver, setRaceOver] = useState(false);
   const [friendBattle, setFriendBattle] = useState({
     inviteCode: '',
-    password: '',
-    customInviteCode: '',
     maxPlayers: 2,
     stakeAmount: 0,
   });
@@ -744,7 +742,6 @@ export default function Play({ practicePage = false }){
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const inviteCode = (params.get('invite') || '').trim().toUpperCase();
-    const password = params.get('password') || '';
     const nextTournamentId = (params.get('tournamentId') || '').trim();
 
     setTournamentId(nextTournamentId);
@@ -760,7 +757,6 @@ export default function Play({ practicePage = false }){
     setFriendBattle((prev) => ({
       ...prev,
       inviteCode,
-      password: password || prev.password,
     }));
 
     // Use currentUser (from API) rather than reading localStorage directly
@@ -1692,7 +1688,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commentatorEnabled, customText, duration, generatedContent?.passage, isSubmittingRef, liveRoom, mobileTypingSettings.haptics, penaltyMode, raceOver, submitHeartbeat, timeLeft, typingText, useCustomText]);
 
-  const hasSignatureInvites = Boolean(currentUser?.storePerks?.customInviteCodes);
   const equippedItems = currentUser?.equippedItems || {};
   const themePreset = THEME_PRESETS[equippedItems.theme] || THEME_PRESETS.default;
   const skinPreset = SKIN_PRESETS[equippedItems.skin] || SKIN_PRESETS.default;
@@ -1997,7 +1992,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           {!practicePage && (
             <Suspense fallback={<p className="results-challenge" style={{ opacity: 0.7 }}>Loading room options...</p>}>
               <PrivateRoomPanel
-                hasSignatureInvites={hasSignatureInvites}
                 onRequestTopUp={openWalletTopUp}
                 friendBattle={friendBattle}
                 setFriendBattle={setFriendBattle}
@@ -2132,7 +2126,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </button>
               <ShareInviteButton
                 inviteCode={liveRoom?.inviteCode || friendBattle.inviteCode}
-                password={friendBattle.password}
                 stakeAmount={liveRoom?.stakeAmount}
                 showNotice={showNotice}
               />
@@ -2192,11 +2185,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 {loadingLive ? 'Starting...' : 'Start Race'}
               </button>
             )}
-            {liveRoom?.isPrivate ? (
+            {liveRoom?.isPrivate && String(liveRoom?.hostUserId) === String(currentUser?.id) ? (
               <button className="btn btn-outline-danger" onClick={cancelPrivateRoom} disabled={loadingLive}>
                 {loadingLive ? 'Canceling room...' : 'Cancel Room'}
               </button>
-            ) : (
+            ) : !liveRoom?.isPrivate ? (
               // Bug fix: this used to call backToLobby directly, which only reset
               // local UI state and never told the server we left. That left an
               // orphaned "waiting" room in the DB that a later player could match
@@ -2210,9 +2203,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 {loadingLive ? 'Leaving queue...' : 'Leave Queue'}
               </button>
             )}
-            <button className="btn btn-secondary" onClick={backToLobby}>
-              Back to Lobby
-            </button>
+            {(!liveRoom?.isPrivate || String(liveRoom?.hostUserId) === String(currentUser?.id)) && (
+              <button className="btn btn-secondary" onClick={backToLobby}>
+                Back to Lobby
+              </button>
+            )}
           </div>
         </div>
       )}
