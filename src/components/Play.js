@@ -2185,11 +2185,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 {loadingLive ? 'Starting...' : 'Start Race'}
               </button>
             )}
-            {liveRoom?.isPrivate && String(liveRoom?.hostUserId) === String(currentUser?.id) ? (
+            {liveRoom?.isPrivate && String(liveRoom?.hostUserId) === String(currentUser?.id) && (
               <button className="btn btn-outline-danger" onClick={cancelPrivateRoom} disabled={loadingLive}>
                 {loadingLive ? 'Canceling room...' : 'Cancel Room'}
               </button>
-            ) : !liveRoom?.isPrivate ? (
+            )}
+            {!liveRoom?.isPrivate && (
               // Bug fix: this used to call backToLobby directly, which only reset
               // local UI state and never told the server we left. That left an
               // orphaned "waiting" room in the DB that a later player could match
