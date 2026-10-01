@@ -4,10 +4,8 @@ import { Link, useLocation } from 'react-router-dom';
 const IOS_HINT_KEY = 'typearena:ios-hint-dismissed';
 
 function isStandalone() {
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.navigator.standalone === true
-  );
+  const mediaQuery = window.matchMedia ? window.matchMedia('(display-mode: standalone)') : null;
+  return Boolean(mediaQuery?.matches || window.navigator.standalone === true);
 }
 
 function isIos() {

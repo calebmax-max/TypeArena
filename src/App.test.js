@@ -1,5 +1,19 @@
 import { render, screen, waitFor } from '@testing-library/react';
 
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation((query) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
+
 jest.mock('react-router-dom', () => ({
   BrowserRouter: ({ children }) => children,
   Routes: ({ children }) => <div>{children}</div>,
@@ -41,6 +55,7 @@ jest.mock('./components/Results', () => () => <div>Results Page</div>);
 jest.mock('./components/Notfound', () => () => <div>Not Found</div>);
 
 import App from './App';
+import { shouldShowOnboardingTour } from './OnboardingTour';
 
 test('renders the current TypeArena navigation and home content', async () => {
   render(<App />);
@@ -49,4 +64,10 @@ test('renders the current TypeArena navigation and home content', async () => {
   expect(screen.getAllByText(/typearena/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/private friend battles are live now/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/sign in/i).length).toBeGreaterThan(0);
+});
+
+test('shows onboarding for signed-out visitors on the home page', () => {
+  expect(shouldShowOnboardingTour({ pathname: '/', currentUser: null })).toBe(true);
+  expect(shouldShowOnboardingTour({ pathname: '/', currentUser: { id: 1 } })).toBe(false);
+  expect(shouldShowOnboardingTour({ pathname: '/play', currentUser: null })).toBe(false);
 });

@@ -3,56 +3,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import './OnboardingTour.css';
 
 // ── Storage keys ──────────────────────────────────────────────────────────
-const SEEN_KEY = 'typearena:tour-seen';
-// Recent-race history is written by Play.js the first time someone finishes
-// a training run or race (see the "Clear" button in Play.js, which removes
-// this same key). Its presence is used as a proxy for "has already tried
-// training/racing," so a returning player who cleared their account but
-// kept the device doesn't get re-onboarded mid-session.
-const RECENT_RACES_KEY = 'typearena_recent_races';
-
 const MOBILE_BREAKPOINT = 820; // matches the .arena-menu-toggle breakpoint in App.css
 const START_DELAY_MS = 1500;
 
-function hasSeenTour() {
-  try {
-    return window.localStorage.getItem(SEEN_KEY) === '1';
-  } catch (e) {
-    return false; // if storage is unavailable, fail open (don't show hint) rather than
-                   // risk crashing or re-showing the tour every load
-  }
-}
-
-function markTourSeen() {
-  try {
-    window.localStorage.setItem(SEEN_KEY, '1');
-  } catch (e) {
-    /* storage unavailable; tour just may show again next visit */
-  }
-}
-
-function hasTrainingProgress() {
-  try {
-    const raw = window.localStorage.getItem(RECENT_RACES_KEY);
-    if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.length > 0 : Boolean(parsed);
-  } catch (e) {
-    return false;
-  }
-}
-
-/**
- * Exported so a future "Replay tour" control (in Profile/Settings, say) can
- * clear the seen-flag and reload. Not wired into any UI by default, per the
- * brief: the tour is for brand-new visitors only.
- */
-export function resetOnboardingTour() {
-  try {
-    window.localStorage.removeItem(SEEN_KEY);
-  } catch (e) {
-    /* nothing to do */
-  }
+export function shouldShowOnboardingTour({ pathname, currentUser }) {
+  if (pathname !== '/') return false;
+  return !currentUser || !currentUser.id;
 }
 
 // ── Step definitions ─────────────────────────────────────────────────────
@@ -146,17 +102,16 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Arm the tour: only ever starts from the home page, after a short delay,
-  // and only for a signed-out visitor with no race/training history who
-  // hasn't seen it on this device before.
+  // Arm the tour from the home page after a short delay for signed-out
+  // visitors. The tour is meant to reappear whenever someone is unsigned and
+  // returns to the site.
   useEffect(() => {
     window.clearTimeout(startTimer.current);
 
-    const eligible =
-      location.pathname === '/' &&
-      currentUser !== undefined &&
-      !hasSeenTour() &&
-      !hasTrainingProgress();
+    const eligible = shouldShowOnboardingTour({
+      pathname: location.pathname,
+      currentUser,
+    });
 
     if (!eligible) return undefined;
 
@@ -164,7 +119,6 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
       // Defensive re-check: never start on /play, even if the player
       // navigated there in the ~1.5s since the timer was armed.
       if (window.location.pathname === '/play') return;
-      markTourSeen();
       setStepIndex(0);
     }, START_DELAY_MS);
 
