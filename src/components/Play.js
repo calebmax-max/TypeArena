@@ -495,6 +495,7 @@ export default function Play({ practicePage = false }){
     maxPlayers: 2,
     stakeAmount: 0,
   });
+  const autoJoinInviteRef = useRef('');
   // Wallet top-up modal, opened from PrivateRoomPanel when a player's
   // balance can't cover the room's stake (see /api/wallet/* in app_backend.py).
   const [walletTopUp, setWalletTopUp] = useState({ open: false, shortfall: 0 });
@@ -748,6 +749,9 @@ export default function Play({ practicePage = false }){
 
     setTournamentId(nextTournamentId);
     setInitialRoomId((params.get('room') || '').trim());
+    if (!inviteCode) {
+      autoJoinInviteRef.current = '';
+    }
 
     if (!inviteCode) {
       return;
@@ -927,6 +931,19 @@ export default function Play({ practicePage = false }){
     setRaceOver,
     setTimeLeft,
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const inviteCode = (params.get('invite') || '').trim().toUpperCase();
+    if (params.get('autoJoin') !== '1' || !inviteCode || !currentUser?.id || liveRoom || loadingLive) {
+      return;
+    }
+    if (friendBattle.inviteCode !== inviteCode || autoJoinInviteRef.current === inviteCode) {
+      return;
+    }
+    autoJoinInviteRef.current = inviteCode;
+    joinFriendBattle();
+  }, [currentUser?.id, friendBattle.inviteCode, joinFriendBattle, loadingLive, liveRoom, location.search]);
 
   const finishRaceRef = useRef(null);
   const finishRace = useCallback(async () => {

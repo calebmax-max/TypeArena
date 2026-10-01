@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { buildApiUrl } from '../utils/api';
 import { buildHeaders } from '../utils/typingApi';
 
@@ -7,13 +7,11 @@ import { buildHeaders } from '../utils/typingApi';
 //   1. Keep the user "online": POST /api/presence/ping every 30 s (the server
 //      treats a user as online for 45 s after their last ping). The ping
 //      response also carries any pending room invites.
-//   2. While the user is on /play with the tab visible, also do a read-only
-//      GET /api/invites/pending every 10 s so invites show up fast.
+//   2. Also do a read-only GET /api/invites/pending every 10 s while the tab
+//      is visible so invites appear even when the user is on another page.
 //
-// Accepting an invite does NOT join the room or charge anything. It asks the
-// server for the room code + password, then sends the user to
-// /play?invite=CODE&password=PW, which pre-fills the existing private-room
-// join form. The stake is only debited when the user presses Join there.
+// Accepting an invite sends the user to the room and starts the existing join
+// flow. The stake is only debited by that join request after any confirmation.
 
 const PING_INTERVAL_MS = 30000;
 const PLAY_POLL_INTERVAL_MS = 10000;
@@ -81,9 +79,7 @@ function formatSeconds(total) {
 
 function InviteInbox({ currentUser }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const isLoggedIn = Boolean(currentUser?.id);
-  const onPlayPage = location.pathname === '/play';
 
   const [invites, setInvites] = useState([]);
   const [dismissed, setDismissed] = useState(() => new Set());
@@ -147,9 +143,9 @@ function InviteInbox({ currentUser }) {
     };
   }, [isLoggedIn, applyInvites]);
 
-  // ---- Fast read-only check while on /play (10 s, visible tab only) -------
+  // ---- Fast read-only check on every page (10 s, visible tab only) --------
   useEffect(() => {
-    if (!isLoggedIn || !onPlayPage) return undefined;
+    if (!isLoggedIn) return undefined;
     let stopped = false;
     const check = () => {
       if (stopped || document.visibilityState !== 'visible') return;
@@ -165,7 +161,7 @@ function InviteInbox({ currentUser }) {
       stopped = true;
       clearInterval(intervalId);
     };
-  }, [isLoggedIn, onPlayPage, applyInvites]);
+  }, [isLoggedIn, applyInvites]);
 
   // ---- Hide the popup during a race ---------------------------------------
   useEffect(() => {
@@ -232,6 +228,7 @@ function InviteInbox({ currentUser }) {
       const params = new URLSearchParams({ invite: data.inviteCode });
       if (data.password) params.set('password', data.password);
       dismiss(current.id);
+      params.set('autoJoin', '1');
       navigate(`/play?${params.toString()}`);
     } catch (err) {
       setError(err?.message || 'Could not accept this invite.');

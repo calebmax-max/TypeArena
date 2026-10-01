@@ -7841,6 +7841,7 @@ def queue_live_race():
                         room['startedAt'] = _live_match_start_iso() if room['status'] == 'countdown' else room.get('startedAt')
                     _save_live_room(cur, room)
                     conn.commit()
+                    _emit_live_race_update(room)
                     return jsonify(
                         {
                             'room': _serialize_live_room(room, viewer_user_id=user['id']),
@@ -7942,6 +7943,7 @@ def queue_live_race():
                     room['startedAt'] = _live_match_start_iso()
                     _save_live_room(cur, room)
                     conn.commit()
+                    _emit_live_race_update(room)
                     return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True})
 
             # A host who sets a stake is charged their own stake up front,
@@ -7991,6 +7993,7 @@ def queue_live_race():
             }
             _save_live_room(cur, room)
             conn.commit()
+            _emit_live_race_update(room)
             return jsonify(
                 {
                     'room': _serialize_live_room(room, viewer_user_id=user['id']),
@@ -8107,6 +8110,7 @@ def start_live_race_room(room_id: str):
             room['startedAt'] = _now_iso()
             _save_live_room(cur, room)
             conn.commit()
+            _emit_live_race_update(room)
             return jsonify({'room': _serialize_live_room(room, viewer_user_id=user['id']), 'matched': True, 'message': 'Race countdown started.'})
     finally:
         _return_connection(conn)
