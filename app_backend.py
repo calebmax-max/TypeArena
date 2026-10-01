@@ -8960,6 +8960,287 @@ def presence_ping():
                 (int(user['id']), _now_db()),
             )
         conn.commit()
+
+        invites = []
+        try:
+            with conn.cursor() as cur:
+                _ensure_room_invites_table(cur)
+                invites = _pending_invites_for_user(cur, int(user['id']))
+        except Exception:  # noqa: BLE001 - never let invites break presence
+            app.logger.exception('Could not load pending invites for presence ping')
+        return jsonify({'ok': True, 'invites': invites})
+    finally:
+        _return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# Private-room invites (replaces 1-to-1 chat as the way to bring friends in)
+# ---------------------------------------------------------------------------
+
+INVITE_TTL_SECONDS = 600            # invite lives 10 minutes
+INVITE_MAX_PER_MINUTE = 10          # per host, across all rooms
+INVITE_PENDING_LIMIT = 5            # most invites shown to a user at once
+
+
+def _ensure_room_invites_table(cur) -> None:
+    # Lazy + once per process (same pattern as _ensure_season_tables).
+    # NOTE: _bootstrap_db() only runs under `python app_backend.py`
+    # (the __main__ block). Under gunicorn it never runs, so this table
+    # MUST also be ensured lazily from the routes below.
+    # DDL commits the open transaction in MySQL, so always call this
+    # BEFORE doing any writes in a request.
+    if 'room_invites' in _schema_ready:
+        return
+    with _schema_ready_lock:
+        if 'room_invites' in _schema_ready:
+            return
+        cur.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS room_invites (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                room_id VARCHAR(64) NOT NULL,
+                from_user_id INT NOT NULL,
+                from_username VARCHAR(100) NOT NULL,
+                to_user_id INT NOT NULL,
+                stake_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+                status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                created_at DATETIME NOT NULL,
+                expires_at DATETIME NOT NULL,
+                responded_at DATETIME NULL,
+                UNIQUE KEY uniq_invite_room_user (room_id, to_user_id),
+                KEY idx_invite_to_status (to_user_id, status, expires_at),
+                KEY idx_invite_from_created (from_user_id, created_at),
+                KEY idx_invite_expires (expires_at),
+                CONSTRAINT fk_invite_from FOREIGN KEY (from_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_invite_to FOREIGN KEY (to_user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            '''
+        )
+        _schema_ready.add('room_invites')
+
+
+def _pending_invites_for_user(cur, user_id: int) -> list:
+    """Read-only. Only invites that are unexpired AND whose room is still a
+    private, waiting room. Never exposes the room code or password - those
+    are only handed out by the accept endpoint."""
+    cur.execute(
+        '''
+        SELECT i.id, i.from_username, i.stake_amount, i.expires_at
+        FROM room_invites i
+        JOIN live_race_rooms r ON r.room_id = i.room_id
+        WHERE i.to_user_id = %s
+          AND i.status = 'pending'
+          AND i.expires_at > %s
+          AND r.status = 'waiting'
+          AND r.is_private = 1
+        ORDER BY i.created_at DESC
+        LIMIT %s
+        ''',
+        (int(user_id), _now_db(), INVITE_PENDING_LIMIT),
+    )
+    now = datetime.utcnow()
+    invites = []
+    for row in cur.fetchall():
+        expires_at = row['expires_at']
+        invites.append(
+            {
+                'id': row['id'],
+                'fromUsername': row['from_username'],
+                'stakeAmount': float(row['stake_amount'] or 0),
+                'expiresAt': expires_at.isoformat() + 'Z',
+                'secondsLeft': max(0, int((expires_at - now).total_seconds())),
+            }
+        )
+    return invites
+
+
+@app.post('/api/live-races/<room_id>/invites')
+def invite_to_private_room(room_id: str):
+    """Host-only: invite a player to this private room by username."""
+    if not _has_bearer_token():
+        return jsonify({'message': 'Unauthorized'}), 401
+    payload = request.get_json(silent=True) or {}
+    username = str(payload.get('username') or '').strip()
+    if not username or len(username) > 100:
+        return jsonify({'message': 'Enter a username to invite.'}), 400
+
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            _ensure_room_invites_table(cur)  # DDL first
+
+            room = _get_live_room(cur, room_id, for_update=True)
+            if not room:
+                return jsonify({'message': 'Room not found.'}), 404
+            if not room.get('isPrivate'):
+                return jsonify({'message': 'Only private rooms support invites.'}), 400
+            if str(room.get('hostUserId')) != str(user['id']):
+                return jsonify({'message': 'Only the room host can invite players.'}), 403
+            if room.get('status') != 'waiting':
+                return jsonify({'message': 'This race has already started.'}), 409
+            max_players = max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE)))
+            if len(room.get('players', [])) >= max_players:
+                return jsonify({'message': 'This room is already full.'}), 400
+
+            cur.execute('SELECT id, username FROM users WHERE username = %s LIMIT 1', (username,))
+            target = cur.fetchone()
+            if not target:
+                return jsonify({'message': 'No player with that username.'}), 404
+            if int(target['id']) == int(user['id']):
+                return jsonify({'message': "You can't invite yourself."}), 400
+            if any(str(p.get('userId')) == str(target['id']) for p in room.get('players', [])):
+                return jsonify({'message': f"{target['username']} is already in this room."}), 409
+
+            # Rate limit (per host, DB-backed so it survives restarts).
+            window_start = (datetime.utcnow() - timedelta(seconds=60)).strftime('%Y-%m-%d %H:%M:%S')
+            cur.execute(
+                'SELECT COUNT(*) AS n FROM room_invites WHERE from_user_id = %s AND created_at >= %s',
+                (int(user['id']), window_start),
+            )
+            if int((cur.fetchone() or {}).get('n') or 0) >= INVITE_MAX_PER_MINUTE:
+                return jsonify({'message': 'Too many invites. Wait a minute and try again.'}), 429
+
+            now = datetime.utcnow()
+            now_db = now.strftime('%Y-%m-%d %H:%M:%S')
+            expires_db = (now + timedelta(seconds=INVITE_TTL_SECONDS)).strftime('%Y-%m-%d %H:%M:%S')
+
+            cur.execute(
+                'SELECT id, status, expires_at FROM room_invites WHERE room_id = %s AND to_user_id = %s',
+                (room['id'], int(target['id'])),
+            )
+            existing = cur.fetchone()
+            if existing and existing['status'] in ('pending', 'accepted') and existing['expires_at'] > now:
+                return jsonify({'message': f"{target['username']} was already invited."}), 409
+
+            # One row per (room, invitee): a re-invite after decline/expiry
+            # reuses the row and resets it to pending.
+            cur.execute(
+                '''
+                INSERT INTO room_invites
+                    (room_id, from_user_id, from_username, to_user_id, stake_amount,
+                     status, created_at, expires_at, responded_at)
+                VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s, NULL)
+                ON DUPLICATE KEY UPDATE
+                    from_user_id = VALUES(from_user_id),
+                    from_username = VALUES(from_username),
+                    stake_amount = VALUES(stake_amount),
+                    status = 'pending',
+                    created_at = VALUES(created_at),
+                    expires_at = VALUES(expires_at),
+                    responded_at = NULL
+                ''',
+                (
+                    room['id'], int(user['id']), user['username'], int(target['id']),
+                    float(room.get('stakeAmount') or 0), now_db, expires_db,
+                ),
+            )
+            # Housekeeping: drop invites that expired more than a day ago.
+            cur.execute(
+                'DELETE FROM room_invites WHERE expires_at < %s',
+                ((now - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S'),),
+            )
+        conn.commit()
+        return jsonify({'ok': True, 'invitedUsername': target['username']})
+    finally:
+        _return_connection(conn)
+
+
+@app.get('/api/invites/pending')
+def pending_room_invites():
+    """Read-only. Safe to poll every ~10 s while the invitee is on /play."""
+    if not _has_bearer_token():
+        return jsonify({'message': 'Unauthorized'}), 401
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            _ensure_room_invites_table(cur)
+            invites = _pending_invites_for_user(cur, int(user['id']))
+        return jsonify({'invites': invites})
+    finally:
+        _return_connection(conn)
+
+
+@app.post('/api/invites/<int:invite_id>/accept')
+def accept_room_invite(invite_id: int):
+    """Does NOT join the room and does NOT touch the wallet. It only returns
+    the room code + password so the client can call the existing
+    /api/live-races/queue join path, which keeps the stake debit, capacity
+    check and 'already started' check exactly where they are today.
+
+    Idempotent while the invite is unexpired, so if the join fails (e.g.
+    insufficient balance) the invitee can top up and retry."""
+    if not _has_bearer_token():
+        return jsonify({'message': 'Unauthorized'}), 401
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            _ensure_room_invites_table(cur)
+            cur.execute(
+                'SELECT * FROM room_invites WHERE id = %s AND to_user_id = %s FOR UPDATE',
+                (invite_id, int(user['id'])),
+            )
+            invite = cur.fetchone()
+            if not invite:
+                return jsonify({'message': 'Invite not found.'}), 404
+            if invite['status'] not in ('pending', 'accepted'):
+                return jsonify({'message': 'This invite is no longer available.'}), 410
+            if invite['expires_at'] <= datetime.utcnow():
+                cur.execute("UPDATE room_invites SET status = 'expired' WHERE id = %s", (invite_id,))
+                conn.commit()
+                return jsonify({'message': 'This invite has expired.'}), 410
+
+            room = _get_live_room(cur, invite['room_id'])
+            if not room or not room.get('isPrivate') or room.get('status') != 'waiting':
+                cur.execute("UPDATE room_invites SET status = 'expired' WHERE id = %s", (invite_id,))
+                conn.commit()
+                return jsonify({'message': 'That room has started or was cancelled.'}), 410
+
+            cur.execute(
+                "UPDATE room_invites SET status = 'accepted', responded_at = %s WHERE id = %s",
+                (_now_db(), invite_id),
+            )
+        conn.commit()
+        return jsonify(
+            {
+                'inviteCode': room.get('inviteCode'),
+                'password': room.get('password') or '',
+                'stakeAmount': float(room.get('stakeAmount') or 0),
+                'hostUsername': invite['from_username'],
+            }
+        )
+    finally:
+        _return_connection(conn)
+
+
+@app.post('/api/invites/<int:invite_id>/decline')
+def decline_room_invite(invite_id: int):
+    if not _has_bearer_token():
+        return jsonify({'message': 'Unauthorized'}), 401
+    conn = get_connection()
+    try:
+        user = _get_user_from_header(conn)
+        if not user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        with conn.cursor() as cur:
+            _ensure_room_invites_table(cur)
+            cur.execute(
+                '''
+                UPDATE room_invites
+                SET status = 'declined', responded_at = %s
+                WHERE id = %s AND to_user_id = %s AND status IN ('pending', 'accepted')
+                ''',
+                (_now_db(), invite_id, int(user['id'])),
+            )
+        conn.commit()
         return jsonify({'ok': True})
     finally:
         _return_connection(conn)
@@ -9946,6 +10227,7 @@ def _bootstrap_db() -> None:
         try:
             with conn.cursor() as cur:
                 _ensure_chat_tables(cur)
+                _ensure_room_invites_table(cur)
                 _ensure_live_race_rooms_table(cur)
                 _ensure_typing_content_table(cur)
                 _ensure_typing_content_schedule_column(cur)

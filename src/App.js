@@ -2,7 +2,7 @@ import './App.css';
 import { BrowserRouter, Routes, Route, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import Home from './components/Home';
-import ChatWidget from './components/ChatWidget';
+import InviteInbox from './components/InviteInbox';
 
 // Inside your layout/App component, pass in currentUser:
 
@@ -276,7 +276,7 @@ function AppLayout() {
 
       
       <main>
-        <ChatWidget currentUser={currentUser} />
+        <InviteInbox currentUser={currentUser} />
         <Routes>
           <Route path="/" element={<Home currentUser={currentUser} />} />
           <Route path="/play" element={<Play />} />

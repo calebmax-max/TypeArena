@@ -20,6 +20,7 @@ import {
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
+import InvitePlayerBox, { ShareInviteButton } from './InvitePlayerBox';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { getRaceContent } from '../utils/navigationPrefetch';
 import { KEYBOARD_LAYOUT } from '../utils/keyboardLayout';
@@ -1551,6 +1552,19 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
   }, [friendBattle.inviteCode, liveRoom?.inviteCode, showNotice]);
 
+  // Tell InviteInbox when a race is on (countdown or racing) so the invite
+  // popup stays hidden until the player is back in the lobby / results.
+  const raceInProgress = phase === 'racing'
+    || liveRoom?.status === 'countdown'
+    || liveRoom?.status === 'racing';
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('typearena-race-state', { detail: { active: raceInProgress } }));
+  }, [raceInProgress]);
+  // Leaving /play (unmount) always clears the flag.
+  useEffect(() => () => {
+    window.dispatchEvent(new CustomEvent('typearena-race-state', { detail: { active: false } }));
+  }, []);
+
   const handleInputChange = useCallback((event) => {
     lastHeartbeatRef.current = Date.now(); // #2 AFK reset on every keystroke
     // Ã¯Â¿Â½"?Ã¯Â¿Â½"? NEW #A: Penalty Mode Ã¯Â¿Â½?" block backspace entirely Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
@@ -2183,6 +2197,12 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               >
                 Copy
               </button>
+              <ShareInviteButton
+                inviteCode={liveRoom?.inviteCode || friendBattle.inviteCode}
+                password={friendBattle.password}
+                stakeAmount={liveRoom?.stakeAmount}
+                showNotice={showNotice}
+              />
             </p>
           )}
           {liveRoom?.isPrivate && liveRoom?.players?.length > 0 && (
@@ -2219,6 +2239,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </div>
             </div>
           )}
+          <InvitePlayerBox room={liveRoom} currentUser={currentUser} />
           {liveRoom?.isPrivate && Number(liveRoom?.stakeAmount) > 0 && (
             <div className="room-stake-banner" aria-live="polite">
               <strong>
