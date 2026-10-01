@@ -11,6 +11,12 @@ export function shouldShowOnboardingTour({ pathname, currentUser }) {
   return !currentUser || !currentUser.id;
 }
 
+export function shouldKeepTourVisible({ active, step, pathname }) {
+  if (!active) return false;
+  if (!step?.route) return true;
+  return pathname === step.route;
+}
+
 // ── Step definitions ─────────────────────────────────────────────────────
 // `target` is the value of a `data-tour="..."` attribute on the relevant
 // element. `route` tells the tour which page to navigate to before that step
@@ -150,12 +156,19 @@ export default function OnboardingTour({ currentUser, menuOpen, setMenuOpen, onA
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [active, endTour]);
 
-  // If the player navigates away mid-tour (e.g. taps a real nav link),
-  // don't leave a stale tour card floating over the new page.
+  // If the player navigates away mid-tour on a different page than the step's
+  // intended route, close the overlay so it doesn't float over the wrong page.
+  // When a step intentionally redirects to a target page, keep the tour alive
+  // until that page and element are ready.
   useEffect(() => {
-    if (active) endTour();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
+    if (!active) return;
+    if (step?.route) {
+      if (location.pathname === step.route) return;
+      endTour();
+      return;
+    }
+    if (location.pathname !== '/') endTour();
+  }, [active, endTour, location.pathname, step]);
 
   // Measure (and re-measure) the current step's target element.
   useEffect(() => {

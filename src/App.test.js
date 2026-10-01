@@ -55,7 +55,7 @@ jest.mock('./components/Results', () => () => <div>Results Page</div>);
 jest.mock('./components/Notfound', () => () => <div>Not Found</div>);
 
 import App from './App';
-import { shouldShowOnboardingTour } from './OnboardingTour';
+import { shouldKeepTourVisible, shouldShowOnboardingTour } from './OnboardingTour';
 
 test('renders the current TypeArena navigation and home content', async () => {
   render(<App />);
@@ -70,4 +70,10 @@ test('shows onboarding for signed-out visitors on the home page', () => {
   expect(shouldShowOnboardingTour({ pathname: '/', currentUser: null })).toBe(true);
   expect(shouldShowOnboardingTour({ pathname: '/', currentUser: { id: 1 } })).toBe(false);
   expect(shouldShowOnboardingTour({ pathname: '/play', currentUser: null })).toBe(false);
+});
+
+test('keeps the tour visible only on the intended target page', () => {
+  expect(shouldKeepTourVisible({ active: true, step: { route: '/play' }, pathname: '/play' })).toBe(true);
+  expect(shouldKeepTourVisible({ active: true, step: { route: '/play' }, pathname: '/leaderboard' })).toBe(false);
+  expect(shouldKeepTourVisible({ active: true, step: null, pathname: '/play' })).toBe(true);
 });
