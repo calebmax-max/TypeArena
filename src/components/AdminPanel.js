@@ -12,7 +12,6 @@ import {
   fetchAdminAnalytics,
   fetchAdminContent,
   fetchAdminLeaderboardSettings,
-  fetchAdminMediaSettings,
   fetchAdminMarketplace,
   createAdminMarketplaceItem,
   updateAdminMarketplaceItem,
@@ -26,7 +25,6 @@ import {
   updateAdminAiSettings,
   updateAdminContent,
   updateAdminLeaderboardSettings,
-  updateAdminMediaSettings,
   updateAdminSiteMarquee,
   withdrawFromAdminWallet,
   searchAdminUsers,
@@ -47,16 +45,6 @@ const normalizeAiSettings = (v) => ({
   hasApiKey: Boolean(v?.hasApiKey),
 });
 const DEFAULT_LEADERBOARD_TIERS = { bronze: 500, silver: 851, gold: 1500, diamond: 1760, grandmaster: 2001 };
-
-const formatCommentatorPhrases = (phrases = []) => (Array.isArray(phrases) ? phrases : [])
-  .map((line) => (Array.isArray(line) ? line.join(' | ') : String(line || '').trim()))
-  .filter(Boolean)
-  .join('\n');
-
-const parseCommentatorPhrases = (text = '') => String(text || '')
-  .split(/\r?\n/)
-  .map((line) => line.split('|').map((part) => part.trim()).filter(Boolean))
-  .filter((line) => line.length > 0);
 
 const CONTENT_TYPE_TABS = [
   { id: 'practice', label: 'Practice' },
@@ -115,10 +103,7 @@ export default function AdminPanel() {
   const [marketplaceItems, setMarketplaceItems] = useState([]);
   const [marketplaceForm, setMarketplaceForm] = useState({ id: '', name: '', category: 'typingThemes', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
   const [editingMarketplaceId, setEditingMarketplaceId] = useState(null);
-  const [commentatorEnabled, setCommentatorEnabled] = useState(true);
   const [leaderboardTiers, setLeaderboardTiers] = useState(DEFAULT_LEADERBOARD_TIERS);
-  const [commentatorConfig, setCommentatorConfig] = useState({ rate: 1.08, pitch: 0.92, gap: 220, volume: 1, cooldown: 3500 });
-  const [commentatorPhrasesText, setCommentatorPhrasesText] = useState({ raceStart: '', finish: '' });
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
@@ -167,8 +152,8 @@ export default function AdminPanel() {
   const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = React.useCallback(async () => {
-    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, mediaData, leaderboardData, marketplaceData] = await Promise.all([
-      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminMediaSettings(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(),
+    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, leaderboardData, marketplaceData] = await Promise.all([
+      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(),
     ]);
     setAnalytics(analyticsData);
     setTournaments(normalizeTournamentList(tournamentData));
@@ -177,14 +162,6 @@ export default function AdminPanel() {
     setAdminWallet(walletData);
     setAdminContent(Array.isArray(contentData) ? contentData : []);
     setMarketplaceItems(Array.isArray(marketplaceData?.items) ? marketplaceData.items : []);
-    setCommentatorEnabled(mediaData?.commentatorEnabled !== false);
-    if (mediaData?.commentatorConfig) setCommentatorConfig(mediaData.commentatorConfig);
-    if (mediaData?.commentatorPhrases) {
-      setCommentatorPhrasesText({
-        raceStart: formatCommentatorPhrases(mediaData.commentatorPhrases.raceStart || []),
-        finish: formatCommentatorPhrases(mediaData.commentatorPhrases.finish || []),
-      });
-    }
     if (leaderboardData?.tiers) setLeaderboardTiers({ ...DEFAULT_LEADERBOARD_TIERS, ...leaderboardData.tiers });
   }, []);
 
@@ -516,52 +493,6 @@ export default function AdminPanel() {
       showNotice(result.message || 'All tournaments cleared.');
     } catch (err) { showNotice(err.message || 'Could not clear.'); }
     finally { setClearingTournaments(false); }
-  };
-
-  const persistMediaSettings = async (tracks, nextCommentatorEnabled = commentatorEnabled, nextCommentatorConfig = commentatorConfig, nextCommentatorPhrases = commentatorPhrasesText) => {
-    try {
-      const result = await updateAdminMediaSettings({
-        musicTracks: tracks,
-        commentatorEnabled: nextCommentatorEnabled,
-        commentatorConfig: nextCommentatorConfig,
-        commentatorPhrases: {
-          raceStart: parseCommentatorPhrases(nextCommentatorPhrases.raceStart),
-          finish: parseCommentatorPhrases(nextCommentatorPhrases.finish),
-        },
-      });
-      if (result?.settings?.commentatorPhrases) {
-        setCommentatorPhrasesText({
-          raceStart: formatCommentatorPhrases(result.settings.commentatorPhrases.raceStart || []),
-          finish: formatCommentatorPhrases(result.settings.commentatorPhrases.finish || []),
-        });
-      }
-      showNotice(result.message || 'Media settings updated.');
-    } catch (err) { showNotice(err.message || 'Could not update media settings.'); }
-  };
-
-  const handleCommentatorToggle = () => {
-    const next = !commentatorEnabled;
-    setCommentatorEnabled(next);
-    void persistMediaSettings([], next, commentatorConfig, commentatorPhrasesText);
-  };
-
-  const handleCommentatorConfigChange = (key, value) => {
-    const next = { ...commentatorConfig, [key]: Number(value) };
-    setCommentatorConfig(next);
-    void persistMediaSettings([], commentatorEnabled, next, commentatorPhrasesText);
-  };
-
-  const handleCommentatorPhrasesChange = (key, value) => {
-    setCommentatorPhrasesText((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleCommentatorPhrasesSave = async () => {
-    try {
-      await persistMediaSettings([], commentatorEnabled, commentatorConfig, commentatorPhrasesText);
-      showNotice('Commentary phrases updated.');
-    } catch (err) {
-      showNotice(err.message || 'Could not update commentary phrases.');
-    }
   };
 
   const handleLeaderboardTierSave = async (e) => {
