@@ -167,7 +167,6 @@ function InvitePlayerBox({ room, currentUser }) {
 
       {open && suggestions.length > 0 && (
         <ul
-          role="listbox"
           style={{
             listStyle: 'none', margin: '0.25rem 0 0', padding: '0.25rem', position: 'absolute',
             left: 0, right: '5.5rem', zIndex: 20,
@@ -180,7 +179,6 @@ function InvitePlayerBox({ room, currentUser }) {
             <li key={s.id}>
               <button
                 type="button"
-                role="option"
                 className="btn btn-link btn-sm"
                 style={{ width: '100%', textAlign: 'left', textDecoration: 'none' }}
                 onMouseDown={(event) => event.preventDefault()}
