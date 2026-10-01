@@ -19,7 +19,7 @@ import {
   submitRaceResult,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
-import InvitePlayerBox, { ShareInviteButton } from './InvitePlayerBox';
+import InvitePlayerBox from './InvitePlayerBox';
 import { useLiveRaceSession } from '../hooks/useLiveRaceSession';
 import { getRaceContent } from '../utils/navigationPrefetch';
 import { KEYBOARD_LAYOUT } from '../utils/keyboardLayout';
@@ -762,8 +762,8 @@ export default function Play({ practicePage = false }){
     // Use currentUser (from API) rather than reading localStorage directly
     showNotice(
       currentUser?.id
-        ? `Invite loaded. Enter the room with code ${inviteCode} when you are ready.`
-        : `Invite loaded. Sign in first, then join room ${inviteCode}.`,
+        ? 'Private room invite loaded. Joining the room.'
+        : 'Private room invite loaded. Sign in first to join.',
       'info'
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1523,17 +1523,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   }, [resetLiveSession, showNotice]);
   backToLobbyRef.current = backToLobby;
 
-  const copyInviteCode = useCallback(async () => {
-    const inviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
-    if (!inviteCode) return;
-    try {
-      await navigator.clipboard.writeText(inviteCode);
-      showNotice('Invite code copied.', 'success');
-    } catch {
-      showNotice('Copy failed on this device.', 'warning');
-    }
-  }, [friendBattle.inviteCode, liveRoom?.inviteCode, showNotice]);
-
   // Tell InviteInbox when a race is on (countdown or racing) so the invite
   // popup stays hidden until the player is back in the lobby / results.
   const raceInProgress = phase === 'racing'
@@ -1996,8 +1985,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 friendBattle={friendBattle}
                 setFriendBattle={setFriendBattle}
                 createFriendBattle={createFriendBattle}
-                joinFriendBattle={joinFriendBattle}
-                copyInviteCode={copyInviteCode}
                 loadingLive={loadingLive}
                 liveAction={liveAction}
                 currentUser={currentUser}
@@ -2110,26 +2097,6 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 </p>
               )}
             </>
-          )}
-          {liveRoom?.isPrivate && (liveRoom?.inviteCode || friendBattle.inviteCode) && (
-            <p className="results-challenge">
-              Invite code: <strong>{liveRoom?.inviteCode || friendBattle.inviteCode}</strong>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-light invite-copy-btn"
-                style={{ marginLeft: '0.5rem' }}
-                onClick={copyInviteCode}
-                aria-label="Copy invite code"
-                title="Copy invite code"
-              >
-                Copy
-              </button>
-              <ShareInviteButton
-                inviteCode={liveRoom?.inviteCode || friendBattle.inviteCode}
-                stakeAmount={liveRoom?.stakeAmount}
-                showNotice={showNotice}
-              />
-            </p>
           )}
           {liveRoom?.isPrivate && liveRoom?.players?.length > 0 && (
             <div className="room-roster" aria-label="Players in this room">

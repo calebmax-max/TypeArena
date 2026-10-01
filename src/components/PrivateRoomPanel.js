@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { buildApiUrl } from '../utils/api';
+import React, { useMemo } from 'react';
 import './PrivateRoomPayments.css';
 
 // Mirrors the backend split in _settle_private_room_stakes (app_backend.py):
@@ -36,59 +35,14 @@ export default function PrivateRoomPanel({
   friendBattle,
   setFriendBattle,
   createFriendBattle,
-  joinFriendBattle,
-  copyInviteCode,
   loadingLive,
   liveAction,
   currentUser,
   liveRoom,
   onRequestTopUp,
 }) {
-  const activeInviteCode = liveRoom?.inviteCode || friendBattle.inviteCode;
   const walletBalance = Number(currentUser?.balance || 0);
   const stakeAmount = Number(friendBattle.stakeAmount || 0);
-
-  // Live preview of a room the player is about to join by invite code, so
-  // they can see the stake and pot *before* hitting "Join" and getting
-  // debited. Uses the public GET /api/live-races/invite/<code> endpoint.
-  const [joinPreview, setJoinPreview] = useState(null);
-  const [joinPreviewError, setJoinPreviewError] = useState('');
-  const [joinPreviewLoading, setJoinPreviewLoading] = useState(false);
-
-  useEffect(() => {
-    const code = friendBattle.inviteCode.trim();
-    if (!code || liveRoom) {
-      setJoinPreview(null);
-      setJoinPreviewError('');
-      return undefined;
-    }
-    let active = true;
-    setJoinPreviewLoading(true);
-    setJoinPreviewError('');
-    const timer = window.setTimeout(() => {
-      fetch(buildApiUrl(`/api/live-races/invite/${encodeURIComponent(code)}`))
-        .then((r) => {
-          if (!r.ok) throw new Error(r.status === 404 ? 'No room found for that code yet.' : 'Could not look up that room.');
-          return r.json();
-        })
-        .then((room) => {
-          if (active) setJoinPreview(room);
-        })
-        .catch((err) => {
-          if (active) {
-            setJoinPreview(null);
-            setJoinPreviewError(err.message);
-          }
-        })
-        .finally(() => {
-          if (active) setJoinPreviewLoading(false);
-        });
-    }, 400); // debounce while typing
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [friendBattle.inviteCode, liveRoom]);
 
   const createPreview = useMemo(
     () => payoutPreview(stakeAmount, friendBattle.maxPlayers || 2),
@@ -96,9 +50,6 @@ export default function PrivateRoomPanel({
   );
 
   const createShortfall = Math.max(0, stakeAmount - walletBalance);
-  const joinStake = Number(joinPreview?.stakeAmount || 0);
-  const joinShortfall = Math.max(0, joinStake - walletBalance);
-
   const handleStakeChange = (event) => {
     const value = Math.max(0, Number(event.target.value) || 0);
     setFriendBattle((prev) => ({ ...prev, stakeAmount: value }));
@@ -113,16 +64,29 @@ export default function PrivateRoomPanel({
         </span>
       </div>
       <div className="friend-battle-grid">
-        <input
-          value={friendBattle.inviteCode}
-          onChange={(event) =>
-            setFriendBattle((prev) => ({ ...prev, inviteCode: event.target.value.toUpperCase() }))
-          }
-          placeholder="Invite code"
-        />
         <label className="friend-battle-player-limit">
           Max players
-          <input type="number" min="2" max="10" value={friendBattle.maxPlayers} onChange={(event) => setFriendBattle((prev) => ({ ...prev, maxPlayers: Math.max(2, Math.min(10, Number(event.target.value) || 2)) }))} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-light"
+              aria-label="Decrease maximum players"
+              onClick={() => setFriendBattle((prev) => ({ ...prev, maxPlayers: Math.max(2, Number(prev.maxPlayers || 2) - 1) }))}
+              disabled={friendBattle.maxPlayers <= 2}
+            >
+              −
+            </button>
+            <input type="number" min="2" max="10" value={friendBattle.maxPlayers} readOnly style={{ width: '4rem', textAlign: 'center' }} />
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-light"
+              aria-label="Increase maximum players"
+              onClick={() => setFriendBattle((prev) => ({ ...prev, maxPlayers: Math.min(10, Number(prev.maxPlayers || 2) + 1) }))}
+              disabled={friendBattle.maxPlayers >= 10}
+            >
+              +
+            </button>
+          </span>
         </label>
       </div>
 
@@ -169,36 +133,6 @@ export default function PrivateRoomPanel({
         )}
       </div>
 
-      {/* Invite-code join preview */}
-      {!liveRoom && friendBattle.inviteCode.trim() && (
-        <div className="friend-battle-join-preview" aria-live="polite">
-          {joinPreviewLoading && <span>Checking room…</span>}
-          {!joinPreviewLoading && joinPreviewError && <span className="friend-battle-stake__warning">{joinPreviewError}</span>}
-          {!joinPreviewLoading && joinPreview && (
-            <>
-              <span>
-                Room stake: <strong>{joinStake > 0 ? formatMoney(joinStake) : 'Free play'}</strong>
-                {' · '}
-                {joinPreview.players?.length || 0}/{joinPreview.maxPlayers || 2} players
-                {joinPreview.hasPassword ? ' · Password required' : ''}
-              </span>
-              {joinStake > 0 && joinShortfall > 0 && (
-                <div className="friend-battle-stake__warning" role="alert">
-                  You need {formatMoney(joinShortfall)} more to join this room.
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-primary"
-                    onClick={() => onRequestTopUp?.(joinShortfall)}
-                  >
-                    Top Up Wallet
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
       <div className="results-actions">
         <button
           className="btn btn-primary"
@@ -207,17 +141,6 @@ export default function PrivateRoomPanel({
         >
           Create Private Room
         </button>
-        <button
-          className="btn btn-outline-primary"
-          onClick={joinFriendBattle}
-          disabled={loadingLive || !friendBattle.inviteCode.trim() || (joinStake > 0 && joinShortfall > 0)}
-        >
-          Join With Invite
-        </button>
-        <button className="btn btn-outline-light" onClick={copyInviteCode} disabled={!activeInviteCode}>
-          Copy Code
-        </button>
-
       </div>
       {loadingLive && (
         <div className="friend-battle-status" role="status" aria-live="polite">
