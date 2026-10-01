@@ -8785,10 +8785,26 @@ def join_tournament(tournament_id: int):
         _return_connection(conn)
 
 
+def _json_with_etag(payload, cache_control: str = 'public, max-age=0, must-revalidate'):
+    """JSON response with a strong ETag; answers 304 when If-None-Match matches.
+
+    Browsers revalidate transparently, so unchanged polls cost a header-only
+    304 instead of the full body, and fetch() callers still see a normal 200.
+    """
+    resp = jsonify(payload)
+    resp.headers['Cache-Control'] = cache_control
+    resp.add_etag()
+    return resp.make_conditional(request)
+
+
 @app.get('/api/season/snapshots')
 def season_snapshots():
     """Return archived standings for past seasons, newest first."""
     season = request.args.get('season', '').strip()  # optional filter
+    try:
+        limit = max(1, min(500, int(request.args.get('limit', '500'))))
+    except ValueError:
+        limit = 500
     conn = get_connection()
     try:
         _ensure_season_reset(conn)
@@ -8797,19 +8813,25 @@ def season_snapshots():
             if season:
                 cur.execute(
                     """
-                    SELECT * FROM season_snapshots
+                    SELECT season_name, user_id, username, season_points, tier,
+                           rank_position, snapshotted_at
+                    FROM season_snapshots
                     WHERE season_name = %s
                     ORDER BY rank_position ASC
+                    LIMIT %s
                     """,
-                    (season,),
+                    (season, limit),
                 )
             else:
                 cur.execute(
                     """
-                    SELECT * FROM season_snapshots
+                    SELECT season_name, user_id, username, season_points, tier,
+                           rank_position, snapshotted_at
+                    FROM season_snapshots
                     ORDER BY snapshotted_at DESC, rank_position ASC
-                    LIMIT 500
-                    """
+                    LIMIT %s
+                    """,
+                    (limit,),
                 )
             rows = cur.fetchall()
         data = [
@@ -8824,9 +8846,44 @@ def season_snapshots():
             }
             for row in rows
         ]
-        return jsonify(data)
+        # Archives only change at the monthly reset, so a short max-age is safe.
+        return _json_with_etag(data, 'public, max-age=60, must-revalidate')
     finally:
         _return_connection(conn)
+
+
+def _public_leaderboard_row(
+    user: Dict[str, Any],
+    tier_thresholds: Dict[str, int] | None,
+    rank: int | None = None,
+) -> Dict[str, Any]:
+    """Public leaderboard row: only fields that are safe to show to anyone.
+
+    Deliberately omits email, phone number, balance, admin flag, owned items,
+    perks, equipped items, coach tip and payout/earnings totals.
+    `premium` is computed here from the raw row so `balance` never leaves
+    the server.
+    """
+    wins = _safe_int(user.get('wins') or 0)
+    total_races = _safe_int(user.get('total_races') or 0)
+    row = {
+        'id': user['id'],
+        'username': user['username'],
+        'wpm': _safe_float(user.get('wpm') or 0),
+        'accuracy': _safe_float(user.get('accuracy') or 0),
+        'gamesPlayed': total_races,
+        'wins': wins,
+        'tier': _tier_for_user(user, tier_thresholds),
+        'season': _season_name(),
+        'seasonPoints': _safe_int(user.get('season_points_stored') or 0),
+        'premium': wins >= 10 or _safe_float(user.get('balance') or 0) >= 5000,
+    }
+    # List rows stay minimal (the page ranks by position and has no avatars);
+    # the per-user /me row adds rank and avatarUrl.
+    if rank is not None:
+        row['rank'] = rank
+        row['avatarUrl'] = _avatar_url_for_user(user)
+    return row
 
 
 @app.get('/api/leaderboard')
@@ -8837,15 +8894,20 @@ def leaderboard():
     except ValueError:
         limit = 100
 
+    # Legacy full-detail rows are still available, but only to the admin
+    # account (never cached). Everyone else always gets the slim public rows.
+    want_full = request.args.get('full') == '1' and _is_admin_request()
+
     cache_key = f'leaderboard:{limit}'
     now_ms = int(time.time() * 1000)
     with _leaderboard_cache_lock:
         if (
-            _leaderboard_cache.get('key') == cache_key
+            not want_full
+            and _leaderboard_cache.get('key') == cache_key
             and _leaderboard_cache.get('expires_at', 0) > now_ms
             and _leaderboard_cache.get('payload') is not None
         ):
-            return jsonify(_leaderboard_cache['payload'])
+            return _json_with_etag(_leaderboard_cache['payload'])
 
     conn = get_connection()
     try:
@@ -8867,6 +8929,23 @@ def leaderboard():
             )
             users = cur.fetchall()
 
+        tier_thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
+
+        if not want_full:
+            board = [
+                _public_leaderboard_row(user, tier_thresholds)
+                for user in users
+            ]
+            with _leaderboard_cache_lock:
+                _leaderboard_cache.update(
+                    {
+                        'key': cache_key,
+                        'expires_at': int(time.time() * 1000) + LEADERBOARD_CACHE_TTL_MS,
+                        'payload': board,
+                    }
+                )
+            return _json_with_etag(board)
+
         user_ids = [int(u.get('id') or 0) for u in users]
         owned_by_user = _owned_store_items_for_users(conn, user_ids)
         # PERF: race/tournament/payout stats are now computed only for the
@@ -8874,9 +8953,6 @@ def leaderboard():
         # aggregating the entire race_history/tournament_joins/prize_payouts
         # tables on every load.
         race_stats = _race_tournament_stats_for_users(conn, user_ids)
-        # Load tier thresholds once for the whole board instead of once per
-        # row - this was previously opening a new DB connection per user.
-        tier_thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
         board = []
         for idx, user in enumerate(users, start=1):
             user_with_rank = dict(user)
@@ -8897,15 +8973,53 @@ def leaderboard():
             row['weeklyRank'] = idx
             board.append(row)
 
-        with _leaderboard_cache_lock:
-            _leaderboard_cache.update(
-                {
-                    'key': cache_key,
-                    'expires_at': int(time.time() * 1000) + LEADERBOARD_CACHE_TTL_MS,
-                    'payload': board,
-                }
-            )
         return jsonify(board)
+    finally:
+        _return_connection(conn)
+
+
+@app.get('/api/leaderboard/me')
+def leaderboard_me():
+    """The signed-in player's own public row plus their true season rank.
+
+    Lets the page show "you are #300" when the player is outside the loaded
+    top N. Per-user, so it is never shared-cached.
+    """
+    if not _has_bearer_token():
+        return jsonify({'message': 'Unauthorized'}), 401
+    conn = get_connection()
+    try:
+        auth_user = _get_user_from_header(conn)
+        if not auth_user:
+            return jsonify({'message': 'Unauthorized'}), 401
+        _ensure_season_reset(conn)
+        with conn.cursor() as cur:
+            cur.execute('SELECT * FROM users WHERE id = %s', (int(auth_user['id']),))
+            me = cur.fetchone()
+            if not me:
+                return jsonify({'message': 'User not found'}), 404
+            # Same ordering as /api/leaderboard: points, season wins, wins, wpm.
+            cur.execute(
+                """
+                SELECT COUNT(*) AS ahead FROM users
+                WHERE season_points_stored > %s
+                   OR (season_points_stored = %s AND season_wins > %s)
+                   OR (season_points_stored = %s AND season_wins = %s AND wins > %s)
+                   OR (season_points_stored = %s AND season_wins = %s AND wins = %s AND wpm > %s)
+                """,
+                (
+                    me['season_points_stored'],
+                    me['season_points_stored'], me['season_wins'],
+                    me['season_points_stored'], me['season_wins'], me['wins'],
+                    me['season_points_stored'], me['season_wins'], me['wins'], me['wpm'],
+                ),
+            )
+            ahead = int((cur.fetchone() or {}).get('ahead') or 0)
+        tier_thresholds = _load_site_settings().get('leaderboardTiers', _default_leaderboard_tiers())
+        row = _public_leaderboard_row(me, tier_thresholds, ahead + 1)
+        resp = jsonify(row)
+        resp.headers['Cache-Control'] = 'private, no-store'
+        return resp
     finally:
         _return_connection(conn)
 

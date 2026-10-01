@@ -50,3 +50,20 @@ export async function fetchLeaderboard(limit = 100) {
     throw error;
   }
 }
+/**
+ * The signed-in player's own public leaderboard row (with true season rank).
+ * Resolves to null when signed out or on any failure - it is optional UI.
+ */
+export async function fetchMyLeaderboardRank() {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+    const response = await fetch(buildApiUrl('/api/leaderboard/me'), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}

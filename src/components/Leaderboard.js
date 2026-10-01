@@ -6,7 +6,7 @@ import React, {
   useCallback,
   memo,
 } from 'react';
-import { fetchLeaderboard } from '../utils/api';
+import { fetchLeaderboard, fetchMyLeaderboardRank, buildApiUrl } from '../utils/api';
 import '../styles/Leaderboard.css';
 
 // --- Constants ----------------------------------------------------------------
@@ -29,21 +29,27 @@ const TIER_META = {
   bronze: { icon: '\u{1F949}', gradient: 'linear-gradient(135deg,#d4935a,#6b3a2a)' },
 };
 
-const POLL_INTERVAL     = 30_000;
-const ITEMS_PER_PAGE    = 20;
+const LEADERBOARD_LIMIT  = 50;
+const POLL_INTERVAL      = 30_000;
+const CACHE_MAX_AGE      = 10 * 60_000; // show cached rows for up to 10 min
+const MIN_REFETCH_MS     = 10_000;      // throttle tab-return / tab-switch refetches
+const ITEMS_PER_PAGE     = 20;
 const SEARCH_DEBOUNCE_MS = 180;
 
-// --- localStorage cache key - serves data instantly on revisit ----------------
-const LS_CACHE_KEY = 'typearena_lb_cache';
+// --- localStorage cache - serves data instantly on revisit --------------------
+// v2: the old key may hold full user records (email, phone, balance...) written
+// before the API stopped returning them, so it is removed on first load.
+const LS_CACHE_KEY = 'typearena_lb_cache_v2';
+try { localStorage.removeItem('typearena_lb_cache'); } catch {}
 
+// Returns { data, ts } or null. Callers decide whether it is fresh enough.
 const readCache = () => {
   try {
     const raw = localStorage.getItem(LS_CACHE_KEY);
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw);
-    // Discard stale cache older than the poll interval
-    if (Date.now() - ts > POLL_INTERVAL) return null;
-    return Array.isArray(data) ? data : null;
+    if (!Array.isArray(data) || Date.now() - ts > CACHE_MAX_AGE) return null;
+    return { data, ts };
   } catch { return null; }
 };
 
@@ -55,7 +61,7 @@ const writeCache = (data) => {
 
 export const primeLeaderboardCache = async () => {
   try {
-    const data = await fetchLeaderboard(100);
+    const data = await fetchLeaderboard(LEADERBOARD_LIMIT);
     writeCache(Array.isArray(data) ? data : []);
     return data;
   } catch {
@@ -244,8 +250,9 @@ export default function Leaderboard({ currentUserUsername }) {
 
   // PERF: seed from localStorage cache so the table renders immediately on
   // revisit without waiting for the network - the fetch then refreshes silently.
-  const [players,     setPlayers]     = useState(() => readCache() ?? []);
-  const [loading,     setLoading]     = useState(() => readCache() === null);
+  const [initialCache] = useState(readCache);
+  const [players,     setPlayers]     = useState(() => initialCache?.data ?? []);
+  const [loading,     setLoading]     = useState(() => initialCache === null);
   const [error,       setError]       = useState(false);
   const [sortBy,      setSortBy]      = useState('seasonPoints');
   const [searchInput, setSearchInput] = useState('');
@@ -255,6 +262,7 @@ export default function Leaderboard({ currentUserUsername }) {
   const [selected,    setSelected]    = useState(null);
   const [activeTab,   setActiveTab]   = useState('live');   // 'live' | 'past'
   const [pastSeasons, setPastSeasons] = useState([]);
+  const [myEntry,     setMyEntry]     = useState(null); // own row when outside the top list
   const [pastLoading, setPastLoading] = useState(false);
   const [pastError,   setPastError]   = useState(false);   // FIX: surface fetch errors
   const [pastSeason,  setPastSeason]  = useState('');
@@ -266,21 +274,42 @@ export default function Leaderboard({ currentUserUsername }) {
   // -- Refs -------------------------------------------------------------------
   // FIX: previousRanksRef is updated in a useEffect, never inside useMemo,
   // so trend arrows are computed from a stable snapshot and never flicker.
-  const previousRanksRef   = useRef({});
   const pollingIntervalRef = useRef(null);
   const selfRowRef         = useRef(null);
   const debounceRef        = useRef(null);
+  const lastFetchAtRef     = useRef(initialCache?.ts ?? 0); // when live data was last fetched
+  const lastPlayersJsonRef = useRef(initialCache ? JSON.stringify(initialCache.data) : '');
+  const pastSeasonRef      = useRef('');   // latest input value, read on demand
+  const hasScrolledRef     = useRef(false);
+  const usernameRef        = useRef(currentUserUsername);
+  usernameRef.current = currentUserUsername;
+  const trendBaseRef       = useRef({ sortBy: null, ranks: {} });
 
   // -- Data fetching ----------------------------------------------------------
   const loadLeaderboardData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     setError(false);
     try {
-      const data = await fetchLeaderboard(100);
+      const data = await fetchLeaderboard(LEADERBOARD_LIMIT);
       if (Array.isArray(data)) {
+        lastFetchAtRef.current = Date.now();
         writeCache(data);           // PERF: persist for instant next-visit render
-        setPlayers(data);
+        // Skip the state update when nothing changed so memos, trend arrows
+        // and the table don't churn on identical polls.
+        const json = JSON.stringify(data);
+        if (json !== lastPlayersJsonRef.current) {
+          lastPlayersJsonRef.current = json;
+          setPlayers(data);
+        }
         if (data[0]?.season) setSeasonName(data[0].season);
+
+        // Not in the loaded list? Ask the server for our real rank.
+        const me = usernameRef.current;
+        if (me && !data.some((p) => p.username === me)) {
+          fetchMyLeaderboardRank().then((row) => setMyEntry(row && row.username === me ? row : null));
+        } else {
+          setMyEntry(null);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
@@ -290,13 +319,15 @@ export default function Leaderboard({ currentUserUsername }) {
     }
   }, []);
 
-  // FIX: check res.ok before parsing so 4xx/5xx responses surface an error
+  // Fetches only when the tab opens or Search/Retry is clicked - never per
+  // keystroke. Reads the filter from a ref so typing doesn't recreate it.
   const loadPastSeasons = useCallback(async () => {
     setPastLoading(true);
     setPastError(false);
     try {
-      const url = `/api/season/snapshots${pastSeason ? `?season=${encodeURIComponent(pastSeason)}` : ''}`;
-      const res = await fetch(url);
+      const season = pastSeasonRef.current.trim();
+      const path = `/api/season/snapshots${season ? `?season=${encodeURIComponent(season)}` : ''}`;
+      const res = await fetch(buildApiUrl(path));
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       if (Array.isArray(data)) setPastSeasons(data);
@@ -306,38 +337,42 @@ export default function Leaderboard({ currentUserUsername }) {
     } finally {
       setPastLoading(false);
     }
-  }, [pastSeason]);
+  }, []);
 
-  // Load past seasons when the tab is first opened
+  // Load past seasons when the tab is opened
   useEffect(() => {
     if (activeTab === 'past') loadPastSeasons();
   }, [activeTab, loadPastSeasons]);
 
-  // Initial load + visibility-aware polling
+  // Initial load: skip the network when the cache is still fresh.
   useEffect(() => {
-    // If cache already seeded state, kick off a silent refresh immediately
-    // so data is never more than one render stale.
-    loadLeaderboardData(players.length > 0);
+    if (Date.now() - lastFetchAtRef.current >= POLL_INTERVAL) {
+      loadLeaderboardData(players.length > 0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadLeaderboardData]);
 
-    const startPolling = () => {
-      pollingIntervalRef.current = setInterval(
-        () => document.visibilityState === 'visible' && loadLeaderboardData(true),
-        POLL_INTERVAL,
-      );
+  // Polling + tab-return refresh, only while the Live tab is showing.
+  useEffect(() => {
+    if (activeTab !== 'live') return undefined;
+
+    const refreshIfStale = (minAge) => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastFetchAtRef.current < minAge) return;
+      loadLeaderboardData(true);
     };
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') loadLeaderboardData(true);
-    };
+    // Coming back to the Live tab: refresh only if the data has gone stale.
+    refreshIfStale(POLL_INTERVAL);
 
-    startPolling();
+    pollingIntervalRef.current = setInterval(() => refreshIfStale(POLL_INTERVAL - 1000), POLL_INTERVAL);
+    const handleVisibility = () => refreshIfStale(MIN_REFETCH_MS);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       clearInterval(pollingIntervalRef.current);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadLeaderboardData]);
+  }, [activeTab, loadLeaderboardData]);
 
   // Debounced search
   useEffect(() => {
@@ -384,20 +419,35 @@ export default function Leaderboard({ currentUserUsername }) {
   const [trendMap, setTrendMap] = useState({});
 
   useEffect(() => {
-    const next = {};
-    const nextTrends = {};
+    const base = trendBaseRef.current;
+    const nextRanks = {};
     rankedPlayers.forEach(({ username, id, displayRank }) => {
-      const key  = username ?? id;
-      const prev = previousRanksRef.current[key];
-      nextTrends[key] = prev === undefined ? 'same'
-        : prev > displayRank ? 'up'
-        : prev < displayRank ? 'down'
-        : 'same';
-      next[key] = displayRank;
+      nextRanks[username ?? id] = displayRank;
     });
-    previousRanksRef.current = next;
+
+    // Ranks from a different sort order aren't comparable: start fresh.
+    if (base.sortBy !== sortBy) {
+      trendBaseRef.current = { sortBy, ranks: nextRanks };
+      setTrendMap({});
+      return;
+    }
+
+    const keys = Object.keys(nextRanks);
+    const changed = keys.some((k) => base.ranks[k] !== nextRanks[k]) ||
+      keys.length !== Object.keys(base.ranks).length;
+    if (!changed) return; // identical ranking: keep the arrows already shown
+
+    const nextTrends = {};
+    keys.forEach((k) => {
+      const prev = base.ranks[k];
+      nextTrends[k] = prev === undefined ? 'same'
+        : prev > nextRanks[k] ? 'up'
+        : prev < nextRanks[k] ? 'down'
+        : 'same';
+    });
+    trendBaseRef.current = { sortBy, ranks: nextRanks };
     setTrendMap(nextTrends);
-  }, [rankedPlayers]);
+  }, [rankedPlayers, sortBy]);
 
   // Merge trend into each player object for rendering
   const fullyProcessedPlayers = useMemo(() =>
@@ -426,11 +476,14 @@ export default function Leaderboard({ currentUserUsername }) {
   const pagedPlayers   = displayList.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
   // Auto-scroll to self
+  // Once, the first time the user's row is on screen - not on every poll.
   useEffect(() => {
+    if (hasScrolledRef.current || loading || activeTab !== 'live') return;
     if (selfRowRef.current) {
+      hasScrolledRef.current = true;
       selfRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [players]);
+  }, [players, loading, activeTab, pagedPlayers]);
 
   // -- Handlers ---------------------------------------------------------------
   const handleRowClick   = useCallback((player) => setSelected(player), []);
@@ -527,8 +580,9 @@ export default function Leaderboard({ currentUserUsername }) {
               className="leaderboard-search-input"
               placeholder="Filter by season e.g. April 2026"
               value={pastSeason}
-              onChange={(e) => setPastSeason(e.target.value)}
+              onChange={(e) => { setPastSeason(e.target.value); pastSeasonRef.current = e.target.value; }}
               aria-label="Filter past season"
+              onKeyDown={(e) => e.key === 'Enter' && loadPastSeasons()}
             />
             <button className="retry-btn" onClick={loadPastSeasons}>Search</button>
           </div>
@@ -657,6 +711,22 @@ export default function Leaderboard({ currentUserUsername }) {
               })
             )}
           </div>
+
+          {/* Own rank when outside the loaded top list */}
+          {!loading && myEntry && (
+            <div className="my-rank-section" style={{ marginTop: '1rem' }}>
+              <p style={{ margin: '0 0 0.4rem', fontSize: '0.8rem', opacity: 0.7 }}>
+                Your rank (by Season Points)
+              </p>
+              <div className="leaderboard-table" role="table" aria-label="Your rank">
+                <PlayerRow
+                  player={{ ...myEntry, displayRank: myEntry.rank, trend: 'same' }}
+                  isMe
+                  onClick={handleRowClick}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Pagination */}
           {!loading && totalPages > 1 && (
