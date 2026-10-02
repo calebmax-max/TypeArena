@@ -1881,9 +1881,14 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               )}
             </div>
             {practicePage ? (
-              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined || (!useCustomText && !generatedContent?.passage)}>
-                {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : 'Start This Practice'}
-              </button>
+              <>
+                <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined || (!useCustomText && !generatedContent?.passage)}>
+                  {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : 'Start This Practice'}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={() => navigate('/play')}>
+                  Back to Play
+                </button>
+              </>
             ) : (
               <button data-tour="play-live-1v1" className="btn btn-primary" onClick={startLiveRace} disabled={loadingLive || currentUser === undefined}>
                 {(loadingLive || currentUser === undefined) ? <span className="arena-spinner" aria-label="Loading" /> : 'Join Live 1v1'}
