@@ -155,6 +155,7 @@ export default function TypeProfile() {
   const [withdrawMethod,  setWithdrawMethod]  = useState('paypal');
   const [walletNotice,  setWalletNotice]   = useState('');
   const [authNotice,    setAuthNotice]     = useState('');
+  const [authNoticeType, setAuthNoticeType] = useState('error');
   const [authLoading,   setAuthLoading]   = useState(false);
   const [showPassword,  setShowPassword]   = useState(false);
   const [termsAccepted, setTermsAccepted]  = useState(false);
@@ -240,6 +241,7 @@ export default function TypeProfile() {
     if (redirect && !currentUser) {
       setShowAuthForm(true);
       setAuthMode('login');
+      setAuthNoticeType('info');
       setAuthNotice('Sign in to continue joining your private room.');
     }
     if (params.get('signup') === '1' && !currentUser) {
@@ -247,10 +249,21 @@ export default function TypeProfile() {
       setAuthMode('signup');
     }
     const recoveryToken = params.get('reset');
-    if (recoveryToken && !currentUser) {
+    if (recoveryToken) {
+      // A reset link must always open the "new password" form. If this browser
+      // still has a signed-in session, drop it first - otherwise the logged-in
+      // profile renders and the reset form is never shown. (The backend also
+      // invalidates the old session once the password is changed.)
+      if (currentUser) {
+        localStorage.removeItem('typearena_user');
+        localStorage.removeItem('token');
+        window.dispatchEvent(new Event(USER_CHANGE_EVENT));
+        setCurrentUser(null);
+      }
       setResetToken(recoveryToken);
       setShowAuthForm(true);
       setAuthMode('reset');
+      setAuthNoticeType('info');
       setAuthNotice('Choose a new password for your TypeArena account.');
     }
     if (needsTopUp) {
@@ -330,10 +343,12 @@ export default function TypeProfile() {
     }
     setAuthLoading(true);
     setAuthNotice('');
+    setAuthNoticeType('error');
     try {
       if (authMode === 'forgot') {
         const result = await requestPasswordReset(formData.email);
-        setAuthNotice(result.message || 'If an account exists for that email, a reset link has been sent.');
+        setAuthNoticeType('success');
+        setAuthNotice('Reset link sent successfully. Check your email inbox (and spam folder) and open the link to set a new password.');
         setAuthLoading(false);
         return;
       }
@@ -342,6 +357,7 @@ export default function TypeProfile() {
         setAuthMode('login');
         setResetToken('');
         window.history.replaceState({}, document.title, window.location.pathname);
+        setAuthNoticeType('success');
         setAuthNotice(result.message || 'Password reset successfully. You can now sign in.');
         setFormData((current) => ({ ...current, password: '' }));
         setAuthLoading(false);
@@ -493,8 +509,8 @@ export default function TypeProfile() {
     setAuthMode(mode);
     setTermsAccepted(false);
     setAuthNotice('');
+    setAuthNoticeType('error');
     setShowAuthForm(true);
-    setAuthNotice('');
   };
 
   // ──────────────────────────────────────── Derived values ────────────────────────────────────────
@@ -582,7 +598,7 @@ export default function TypeProfile() {
                   <TermsConsent checked={termsAccepted} onChange={setTermsAccepted} />
                 )}
 
-                <Notice message={authNotice} type="error" />
+                <Notice message={authNotice} type={authNoticeType} />
 
                 <button type="submit" className="tp-btn tp-btn--primary" disabled={authLoading}>
                   {authLoading ? 'Please wait...' : authMode === 'login' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : authMode === 'forgot' ? 'Send Reset Link' : 'Set New Password'}
