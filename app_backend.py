@@ -5427,6 +5427,55 @@ def admin_tournament_participants(tournament_id: int):
         _return_connection(conn)
 
 
+@app.post('/api/admin/content/bulk')
+def admin_content_bulk():
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    payload = request.get_json(silent=True) or {}
+    raw_ids = payload.get('ids') or []
+    action = str(payload.get('action') or '').strip().lower()
+    try:
+        content_ids = sorted({int(value) for value in raw_ids if int(value) > 0})
+    except (TypeError, ValueError):
+        return jsonify({'message': 'Content ids must be numeric.'}), 400
+    if not content_ids:
+        return jsonify({'message': 'Select at least one passage.'}), 400
+    if action not in {'publish', 'archive', 'delete'}:
+        return jsonify({'message': 'Use publish, archive, or delete.'}), 400
+
+    conn = get_connection()
+    changed = 0
+    deleted = 0
+    archived = 0
+    skipped = []
+    try:
+        with conn.cursor() as cur:
+            _ensure_typing_content_table(cur)
+            for content_id in content_ids:
+                cur.execute('SELECT id, content_id, content_type FROM typing_content WHERE id=%s FOR UPDATE', (content_id,))
+                row = cur.fetchone()
+                if not row:
+                    skipped.append(content_id)
+                    continue
+                active_room = _content_in_active_room(str(row.get('content_id') or ''), cur)
+                if action == 'publish':
+                    cur.execute('UPDATE typing_content SET is_active=1, archived_at=NULL WHERE id=%s', (content_id,))
+                    changed += 1
+                elif action == 'archive':
+                    cur.execute('UPDATE typing_content SET is_active=0, archived_at=COALESCE(archived_at, %s) WHERE id=%s', (_daily_database_time(_nairobi_now()), content_id))
+                    archived += 1
+                elif active_room:
+                    cur.execute('UPDATE typing_content SET is_active=0 WHERE id=%s', (content_id,))
+                    skipped.append(content_id)
+                else:
+                    cur.execute('DELETE FROM typing_content WHERE id=%s', (content_id,))
+                    deleted += 1
+        conn.commit()
+        return jsonify({'message': f'Bulk {action} complete.', 'changedCount': changed, 'archivedCount': archived, 'deletedCount': deleted, 'skippedIds': skipped})
+    finally:
+        _return_connection(conn)
+
+
 @app.post('/api/admin/tournaments/<int:tournament_id>/force-start')
 def admin_force_start_tournament(tournament_id: int):
     if not _is_admin_request():
@@ -6208,6 +6257,18 @@ def admin_content_list():
                 '''
             )
             rows = cur.fetchall()
+            now = _nairobi_now().replace(tzinfo=None)
+            for row in rows:
+                if row.get('archived_at'):
+                    row['content_status'] = 'archived'
+                elif not row.get('is_active'):
+                    row['content_status'] = 'draft'
+                elif row.get('publish_at') and _parse_nairobi_datetime(row['publish_at']) and _parse_nairobi_datetime(row['publish_at']) > now:
+                    row['content_status'] = 'scheduled'
+                elif row.get('expiry_at') and _parse_nairobi_datetime(row['expiry_at']) and _parse_nairobi_datetime(row['expiry_at']) <= now:
+                    row['content_status'] = 'expired'
+                else:
+                    row['content_status'] = 'published'
         conn.commit()
         return jsonify(rows)
     finally:

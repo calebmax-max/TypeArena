@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   addFundsToAdminWallet,
+  bulkAdminContent,
   createAdminContent,
   deleteAdminContent,
   adminCreateTournament,
@@ -99,6 +100,9 @@ export default function AdminPanel() {
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
   const [contentTypeTab, setContentTypeTab] = useState('practice');
   const [practiceModeTab, setPracticeModeTab] = useState('all');
+  const [contentSearch, setContentSearch] = useState('');
+  const [contentStatusFilter, setContentStatusFilter] = useState('all');
+  const [selectedContentIds, setSelectedContentIds] = useState([]);
   const [marketplaceItems, setMarketplaceItems] = useState([]);
   const [marketplaceForm, setMarketplaceForm] = useState({ id: '', name: '', category: 'typingThemes', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
   const [editingMarketplaceId, setEditingMarketplaceId] = useState(null);
@@ -359,6 +363,18 @@ export default function AdminPanel() {
       setAdminContent((items) => items.filter((entry) => entry.id !== item.id));
       showNotice(result.message || 'Typing content deleted.');
     } catch (err) { showNotice(err.message || 'Could not delete typing content.'); }
+  };
+
+  const handleBulkContentAction = async (action) => {
+    if (!selectedContentIds.length) { showNotice('Select at least one passage first.'); return; }
+    const label = action === 'delete' ? 'delete' : action;
+    if (!window.confirm(`${label[0].toUpperCase()}${label.slice(1)} ${selectedContentIds.length} selected passage(s)?`)) return;
+    try {
+      const result = await bulkAdminContent(selectedContentIds, action);
+      await loadAdminData();
+      setSelectedContentIds([]);
+      showNotice(result.message || 'Bulk content update complete.');
+    } catch (err) { showNotice(err.message || 'Could not update selected passages.'); }
   };
 
   const handleAdminWalletTopUp = async (e) => {
@@ -1682,6 +1698,18 @@ export default function AdminPanel() {
                 </div>
                 <div className="ap-card">
                   <p className="ap-card-title">Managed Passages ({adminContent.length})</p>
+                  <div className="ap-two-col" style={{ marginBottom: 12 }}>
+                    <div className="ap-field">
+                      <label className="ap-label">Search passages</label>
+                      <input className="ap-input" value={contentSearch} onChange={e => setContentSearch(e.target.value)} placeholder="Search text, mode, or language" />
+                    </div>
+                    <div className="ap-field">
+                      <label className="ap-label">Status</label>
+                      <select className="ap-select" value={contentStatusFilter} onChange={e => setContentStatusFilter(e.target.value)}>
+                        <option value="all">All statuses</option><option value="published">Published</option><option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="archived">Archived</option><option value="expired">Expired</option>
+                      </select>
+                    </div>
+                  </div>
                   <div className="ap-tab-row">
                     {CONTENT_TYPE_TABS.map(tab => {
                       const count = adminContent.filter(i => i.content_type === tab.id).length;
@@ -1720,23 +1748,37 @@ export default function AdminPanel() {
                     const visibleContent = adminContent.filter((item) => {
                       if (item.content_type !== contentTypeTab) return false;
                       if (contentTypeTab === 'practice' && practiceModeTab !== 'all' && item.mode !== practiceModeTab) return false;
+                      if (contentStatusFilter !== 'all' && (item.content_status || (item.is_active ? 'published' : 'draft')) !== contentStatusFilter) return false;
+                      const query = contentSearch.trim().toLowerCase();
+                      if (query && ![item.passage, item.mode, item.language, item.content_type].some(value => String(value || '').toLowerCase().includes(query))) return false;
                       return true;
                     });
-                    return visibleContent.length ? visibleContent.map((item) => (
-                      <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
+                    return visibleContent.length ? <>
+                      <div className="ap-btn-row" style={{ marginBottom: 8 }}>
+                        <button className="ap-btn ap-btn-sm" type="button" onClick={() => setSelectedContentIds(visibleContent.map(item => item.id))}>Select visible</button>
+                        <button className="ap-btn ap-btn-sm" type="button" onClick={() => setSelectedContentIds([])}>Clear selection</button>
+                        <button className="ap-btn ap-btn-sm" type="button" disabled={!selectedContentIds.length} onClick={() => handleBulkContentAction('publish')}>Publish selected</button>
+                        <button className="ap-btn ap-btn-sm" type="button" disabled={!selectedContentIds.length} onClick={() => handleBulkContentAction('archive')}>Archive selected</button>
+                        <button className="ap-btn ap-btn-danger ap-btn-sm" type="button" disabled={!selectedContentIds.length} onClick={() => handleBulkContentAction('delete')}>Delete selected</button>
+                      </div>
+                      {visibleContent.map((item) => {
+                        const status = item.content_status || (item.is_active ? 'published' : 'draft');
+                        return <div key={item.id} style={{ borderTop: '1px solid var(--ap-border)', padding: '12px 0' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
                           <div>
+                            <label style={{ marginRight: 8 }}><input type="checkbox" checked={selectedContentIds.includes(item.id)} onChange={() => setSelectedContentIds(ids => ids.includes(item.id) ? ids.filter(id => id !== item.id) : [...ids, item.id])} /></label>
                             <strong>{['live', 'tournament'].includes(item.content_type) ? item.content_type : `${item.mode} / ${item.language} / ${item.content_type}`}</strong>
                             <div style={{ color: 'var(--ap-muted)', fontSize: '0.78rem', marginTop: 5 }}>{item.passage}</div>
                           </div>
-                          <span style={{ color: item.is_active ? 'var(--ap-accent)' : 'var(--ap-warn)', fontSize: '0.72rem' }}>{item.is_active ? 'Published' : 'Inactive'}</span>
+                          <span className={`ap-status-badge ${status === 'published' ? 'active' : status === 'scheduled' ? 'upcoming' : 'completed'}`}>{status}</span>
                         </div>
                         <div className="ap-btn-row" style={{ marginTop: 8 }}>
                           <button className="ap-btn ap-btn-sm" onClick={() => setContentForm({ id: item.id, contentType: item.content_type, mode: item.mode, language: item.language, passage: item.passage, isActive: Boolean(item.is_active) })}>Edit</button>
                           <button className="ap-btn ap-btn-danger ap-btn-sm" onClick={() => handleContentDelete(item)}>Delete</button>
                         </div>
-                      </div>
-                    )) : <div className="ap-empty">No passages in this category yet.</div>;
+                        </div>;
+                      })}
+                    </> : <div className="ap-empty">No passages match the current filters.</div>;
                   })()}
                 </div>
               </>

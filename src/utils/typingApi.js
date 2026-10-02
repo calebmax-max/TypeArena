@@ -889,6 +889,15 @@ export const deleteAdminContent = async (contentId) => {
   return await parseResponse(response);
 };
 
+export const bulkAdminContent = async (ids, action) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/content/bulk'), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify({ ids, action }),
+  });
+  return await parseResponse(response);
+};
+
 export const fetchAdminWallet = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/wallet'), {
