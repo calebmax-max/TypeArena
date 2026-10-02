@@ -35,6 +35,8 @@ import {
   fetchWalletWithdrawStatus,
   getStoredUserSnapshot,
   loginUser,
+  requestPasswordReset,
+  resetPassword,
   signupUser,
   updateUserProfile,
   verifyWalletTopupSession,
@@ -139,6 +141,7 @@ export default function TypeProfile() {
   const [currentUser,   setCurrentUser]   = useState(() => getStoredUserSnapshot());
   const [showAuthForm,  setShowAuthForm]   = useState(false);
   const [authMode,      setAuthMode]       = useState('login');
+  const [resetToken,    setResetToken]    = useState('');
   const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '' });
   const [raceHistory,   setRaceHistory]    = useState([]);
   const [walletHistory, setWalletHistory]  = useState([]);
@@ -243,6 +246,13 @@ export default function TypeProfile() {
       setShowAuthForm(true);
       setAuthMode('signup');
     }
+    const recoveryToken = params.get('reset');
+    if (recoveryToken && !currentUser) {
+      setResetToken(recoveryToken);
+      setShowAuthForm(true);
+      setAuthMode('reset');
+      setAuthNotice('Choose a new password for your TypeArena account.');
+    }
     if (needsTopUp) {
       setWalletNotice('Add enough funds to your wallet, then return to your private room invite.');
     }
@@ -321,6 +331,22 @@ export default function TypeProfile() {
     setAuthLoading(true);
     setAuthNotice('');
     try {
+      if (authMode === 'forgot') {
+        const result = await requestPasswordReset(formData.email);
+        setAuthNotice(result.message || 'If an account exists for that email, a reset link has been sent.');
+        setAuthLoading(false);
+        return;
+      }
+      if (authMode === 'reset') {
+        const result = await resetPassword(resetToken, formData.password);
+        setAuthMode('login');
+        setResetToken('');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setAuthNotice(result.message || 'Password reset successfully. You can now sign in.');
+        setFormData((current) => ({ ...current, password: '' }));
+        setAuthLoading(false);
+        return;
+      }
       const user = authMode === 'login'
         ? await loginUser(formData.email, formData.password)
         : await signupUser(
@@ -515,7 +541,9 @@ export default function TypeProfile() {
               </div>
             ) : (
               <form className="tp-form" onSubmit={handleAuthSubmit}>
-                <h2 className="tp-form__title">{authMode === 'login' ? 'Sign In' : 'Create Account'}</h2>
+                <h2 className="tp-form__title">
+                  {authMode === 'login' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : authMode === 'forgot' ? 'Reset Password' : 'Choose a New Password'}
+                </h2>
 
                 {authMode === 'signup' && (
                   <div className="tp-field">
@@ -525,13 +553,13 @@ export default function TypeProfile() {
                   </div>
                 )}
 
-                <div className="tp-field">
+                {authMode !== 'reset' && <div className="tp-field">
                   <label className="tp-field__label">Email</label>
                   <input className="tp-input" type="email" placeholder="you@example.com" value={formData.email}
                     onChange={(e) => setFormData((c) => ({ ...c, email: e.target.value }))} required />
-                </div>
+                </div>}
 
-                <div className="tp-field">
+                {authMode !== 'forgot' && <div className="tp-field">
                   <label className="tp-field__label">Password</label>
                   <div className="tp-input-row">
                     <input className="tp-input" type={showPassword ? 'text' : 'password'} placeholder="Enter your password" value={formData.password}
@@ -540,7 +568,7 @@ export default function TypeProfile() {
                       {showPassword ? 'Hide' : 'Show'}
                     </button>
                   </div>
-                </div>
+                </div>}
 
                 {authMode === 'signup' && (
                   <div className="tp-field">
@@ -557,11 +585,18 @@ export default function TypeProfile() {
                 <Notice message={authNotice} type="error" />
 
                 <button type="submit" className="tp-btn tp-btn--primary" disabled={authLoading}>
-                  {authLoading ? 'Signing in...' : (authMode === 'login' ? 'Sign In' : 'Create Account')}
+                  {authLoading ? 'Please wait...' : authMode === 'login' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : authMode === 'forgot' ? 'Send Reset Link' : 'Set New Password'}
                 </button>
-                <button type="button" className="tp-btn tp-btn--ghost" onClick={() => openAuthForm(authMode === 'login' ? 'signup' : 'login')}>
-                  {authMode === 'login' ? 'Create an account' : 'I already have an account'}
-                </button>
+                {authMode === 'login' && (
+                  <button type="button" className="tp-btn tp-btn--ghost" onClick={() => openAuthForm('forgot')}>
+                    Forgot password?
+                  </button>
+                )}
+                {(authMode === 'login' || authMode === 'signup') && (
+                  <button type="button" className="tp-btn tp-btn--ghost" onClick={() => openAuthForm(authMode === 'login' ? 'signup' : 'login')}>
+                    {authMode === 'login' ? 'Create an account' : 'I already have an account'}
+                  </button>
+                )}
                 <button type="button" className="tp-btn tp-btn--ghost" onClick={() => setShowAuthForm(false)}>
                   Back
                 </button>

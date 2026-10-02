@@ -1,6 +1,8 @@
 from __future__ import annotations
 import os
 import math
+import smtplib
+from email.message import EmailMessage
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from dotenv import load_dotenv
 load_dotenv()
@@ -120,6 +122,17 @@ STRIPE_BASE_URL = os.getenv('STRIPE_BASE_URL', 'https://api.stripe.com/v1')
 STRIPE_SUCCESS_URL = os.getenv('STRIPE_SUCCESS_URL', '').strip()
 STRIPE_CANCEL_URL = os.getenv('STRIPE_CANCEL_URL', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+
+PASSWORD_RESET_TTL_MINUTES = max(10, _env_int('PASSWORD_RESET_TTL_MINUTES', 30))
+PASSWORD_RESET_FRONTEND_URL = os.getenv('PASSWORD_RESET_FRONTEND_URL', '').strip()
+SMTP_HOST = os.getenv('SMTP_HOST', '').strip()
+SMTP_PORT = max(1, _env_int('SMTP_PORT', 587))
+SMTP_USERNAME = os.getenv('SMTP_USERNAME', '').strip()
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', SMTP_USERNAME).strip()
+SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'true').lower() != 'false'
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
+RESEND_FROM_EMAIL = os.getenv('RESEND_FROM_EMAIL', 'TypeArena <noreply@typearena.co.ke>').strip()
 
 LEADERBOARD_CACHE_TTL_MS = 60_000
 PUBLIC_STATS_CACHE_TTL_MS = 15_000
@@ -4950,6 +4963,83 @@ def _ensure_auth_token_column(cur) -> None:
         )
 
 
+_PASSWORD_RESET_COLUMNS_READY = False
+
+
+def _ensure_password_reset_columns(cur) -> None:
+    global _PASSWORD_RESET_COLUMNS_READY
+    if _PASSWORD_RESET_COLUMNS_READY:
+        return
+    cur.execute("SHOW COLUMNS FROM users LIKE 'password_reset_token_hash'")
+    if not cur.fetchone():
+        cur.execute('ALTER TABLE users ADD COLUMN password_reset_token_hash CHAR(64) NULL UNIQUE AFTER auth_token')
+    cur.execute("SHOW COLUMNS FROM users LIKE 'password_reset_expires_at'")
+    if not cur.fetchone():
+        cur.execute('ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME NULL AFTER password_reset_token_hash')
+    _PASSWORD_RESET_COLUMNS_READY = True
+
+
+def _send_password_reset_email(email: str, reset_url: str) -> None:
+    from html import escape as _escape
+
+    subject = 'Reset your TypeArena password'
+    text_body = (
+        'We received a request to reset your TypeArena password.\n\n'
+        f'Open this link within {PASSWORD_RESET_TTL_MINUTES} minutes:\n{reset_url}\n\n'
+        'If you did not request this, you can ignore this email.'
+    )
+
+    if RESEND_API_KEY:
+        safe_url = _escape(reset_url, quote=True)
+        html_body = (
+            '<p>We received a request to reset your TypeArena password.</p>'
+            f'<p><a href="{safe_url}">Reset your password</a></p>'
+            f'<p>This link expires in {PASSWORD_RESET_TTL_MINUTES} minutes. '
+            'If you did not request this, you can ignore this email.</p>'
+        )
+        body = json.dumps({
+            'from': RESEND_FROM_EMAIL,
+            'to': [email],
+            'subject': subject,
+            'html': html_body,
+            'text': text_body,
+        }).encode('utf-8')
+        req = urlrequest.Request(
+            'https://api.resend.com/emails',
+            data=body,
+            headers={
+                'Authorization': f'Bearer {RESEND_API_KEY}',
+                'Content-Type': 'application/json',
+                # Resend sits behind Cloudflare, which can block the default
+                # "Python-urllib" user agent with a 403 (error 1010).
+                'User-Agent': 'typearena-backend/1.0',
+            },
+            method='POST',
+        )
+        try:
+            with urlrequest.urlopen(req, timeout=15) as resp:
+                resp.read()
+        except urlerror.HTTPError as exc:
+            detail = exc.read().decode('utf-8', 'replace')
+            raise RuntimeError(f'Resend rejected the email ({exc.code}): {detail}') from exc
+        return
+
+    # Fallback: original SMTP delivery
+    if not SMTP_HOST or not SMTP_FROM_EMAIL:
+        raise RuntimeError('Password reset email delivery is not configured.')
+    message = EmailMessage()
+    message['Subject'] = subject
+    message['From'] = SMTP_FROM_EMAIL
+    message['To'] = email
+    message.set_content(text_body)
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        if SMTP_USE_TLS:
+            server.starttls()
+        if SMTP_USERNAME:
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.send_message(message)
+
+
 _TERMS_COLUMNS_READY = False
 
 
@@ -6626,6 +6716,83 @@ def auth_login():
             # server-side on every /api/admin/* request.
             safe_user['adminEmail'] = ADMIN_EMAIL
         return jsonify(safe_user)
+    finally:
+        _return_connection(conn)
+
+
+@app.post('/api/auth/request-password-reset')
+def request_password_reset():
+    """Start a password reset without revealing whether an email exists."""
+    payload = request.get_json(silent=True) or {}
+    email = str(payload.get('email') or '').strip().lower()
+    if not email or len(email) > 254:
+        return jsonify({'message': 'Enter a valid email address.'}), 400
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    expires_at = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_TTL_MINUTES)
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_auth_token_column(cur)
+            _ensure_password_reset_columns(cur)
+            cur.execute('SELECT id, email FROM users WHERE LOWER(email)=LOWER(%s)', (email,))
+            user = cur.fetchone()
+            if user:
+                cur.execute(
+                    'UPDATE users SET password_reset_token_hash=%s, password_reset_expires_at=%s WHERE id=%s',
+                    (token_hash, expires_at, user['id']),
+                )
+        conn.commit()
+
+        if user:
+            if not PASSWORD_RESET_FRONTEND_URL:
+                raise RuntimeError('PASSWORD_RESET_FRONTEND_URL is not configured.')
+            reset_base = PASSWORD_RESET_FRONTEND_URL.rstrip('/')
+            if not reset_base.endswith('/profile'):
+                reset_base = f'{reset_base}/profile'
+            separator = '&' if '?' in reset_base else '?'
+            reset_url = f'{reset_base}{separator}reset={urlparse.quote(token)}'
+            try:
+                _send_password_reset_email(str(user['email']), reset_url)
+            except Exception:
+                app.logger.exception('Could not send password reset email to %s', email)
+        return jsonify({'message': 'If an account exists for that email, a reset link has been sent.'})
+    finally:
+        _return_connection(conn)
+
+
+@app.post('/api/auth/reset-password')
+def reset_password():
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get('token') or '').strip()
+    password = str(payload.get('password') or '')
+    if not token or len(password) < 8:
+        return jsonify({'message': 'A valid reset link and a password of at least 8 characters are required.'}), 400
+
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            _ensure_password_reset_columns(cur)
+            cur.execute(
+                '''SELECT id FROM users
+                   WHERE password_reset_token_hash=%s
+                     AND password_reset_expires_at > UTC_TIMESTAMP()''',
+                (token_hash,),
+            )
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'message': 'This reset link is invalid or has expired. Request a new one.'}), 400
+            cur.execute(
+                '''UPDATE users
+                   SET password=%s, auth_token=NULL,
+                       password_reset_token_hash=NULL, password_reset_expires_at=NULL
+                   WHERE id=%s''',
+                (generate_password_hash(password), user['id']),
+            )
+        conn.commit()
+        return jsonify({'message': 'Password reset successfully. You can now sign in.'})
     finally:
         _return_connection(conn)
 

@@ -239,6 +239,24 @@ export const loginUser = async (email, password) => {
   }
 };
 
+export const requestPasswordReset = async (email) => {
+  const response = await apiFetch(buildApiUrl('/api/auth/request-password-reset'), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ email }),
+  });
+  return await parseResponse(response);
+};
+
+export const resetPassword = async (token, password) => {
+  const response = await apiFetch(buildApiUrl('/api/auth/reset-password'), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ token, password }),
+  });
+  return await parseResponse(response);
+};
+
 export const signupUser = async (username, email, password, phoneNumber, terms = {}) => {
   authGeneration += 1;
   try {
