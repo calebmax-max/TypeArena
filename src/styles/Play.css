@@ -162,6 +162,32 @@
   margin: 1.25rem 0;
 }
 
+.practice-actions {
+  align-items: stretch;
+}
+
+.practice-actions .practice-launcher {
+  flex: 1 1 220px;
+}
+
+.practice-actions .practice-launcher > .btn,
+.practice-actions > .btn {
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .practice-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .practice-actions .practice-launcher,
+  .practice-actions .practice-launcher > .btn,
+  .practice-actions > .btn {
+    width: 100%;
+  }
+}
+
 /* ── Practice launcher ───────────────────────────────────── */
 .practice-launcher {
   position: relative;

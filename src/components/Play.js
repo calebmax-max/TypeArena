@@ -1848,7 +1848,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </div></div>
           </div>
 
-          <div className="results-actions">
+          <div className={`results-actions${practicePage ? ' practice-actions' : ''}`}>
             <div className="practice-launcher">
               <button
                 data-tour={practicePage ? 'play-practice-mode' : 'play-start-practice'}
@@ -1934,6 +1934,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           )}
 
           {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? Feature #5: Custom text panel Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
+          {!practicePage && <>
           <div style={{ marginBottom:'0.75rem' }}>
             <button className="btn btn-outline-primary" onClick={() => setShowCustomTextPanel((v) => !v)}>
               Paste Custom Text
@@ -1977,6 +1978,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </span>
             )}
           </div>
+          </>}
 
           {practicePage && (
             <p className="results-challenge">
