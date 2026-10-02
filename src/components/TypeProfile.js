@@ -346,7 +346,7 @@ export default function TypeProfile() {
     setAuthNoticeType('error');
     try {
       if (authMode === 'forgot') {
-        const result = await requestPasswordReset(formData.email);
+        await requestPasswordReset(formData.email);
         setAuthNoticeType('success');
         setAuthNotice('Reset link sent successfully. Check your email inbox (and spam folder) and open the link to set a new password.');
         setAuthLoading(false);
