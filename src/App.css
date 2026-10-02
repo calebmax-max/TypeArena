@@ -4709,8 +4709,9 @@ img {
 .arena-nav .nav-link, .arena-nav__signout { border: 0; border-radius: 999px; color: rgba(255,255,255,0.78); padding: 0.65rem 0.85rem; text-decoration: none; font: inherit; cursor: pointer; background: transparent; }
 .arena-nav .nav-link:hover, .arena-nav .nav-link--active, .arena-nav__signout:hover { color: #fff; background: rgba(255,255,255,0.1); }
 .arena-nav__profile { margin-left: 0.35rem; background: rgba(240,188,71,0.16) !important; color: #f6d28b !important; }
-.arena-menu-toggle { display: none; width: 44px; height: 44px; padding: 0; border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; background: rgba(255,255,255,0.06); }
-.arena-menu-toggle span { display: block; width: 20px; height: 2px; margin: 4px auto; border-radius: 99px; background: #fff; transition: transform 0.2s ease, opacity 0.2s ease; }
+.arena-menu-toggle { display: none; width: auto; min-width: 78px; height: 44px; padding: 0 0.65rem; border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; background: rgba(255,255,255,0.06); align-items: center; justify-content: center; gap: 0.45rem; }
+.arena-menu-toggle > span:not(.arena-menu-toggle__label) { display: block; width: 20px; height: 2px; margin: 0; border-radius: 99px; background: #fff; transition: transform 0.2s ease, opacity 0.2s ease; }
+.arena-menu-toggle__label { display: inline-block; color: #fff; font-size: 0.78rem; font-weight: 700; line-height: 1; }
 .arena-footer { margin-top: 4rem; padding: 2.5rem 1.25rem 1.25rem; color: #fff; background: #081227; }
 .arena-footer__inner { width: min(1260px, 100%); margin: 0 auto; display: flex; justify-content: space-between; gap: 2rem; }
 .arena-footer strong { font-size: 1.15rem; }
@@ -4720,7 +4721,7 @@ img {
 .arena-footer a:hover { color: #f6d28b; }
 .arena-footer__bottom { width: min(1260px, 100%); max-width: none !important; margin: 2rem auto 0 !important; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.85rem; }
 @media (max-width: 820px) {
-  .arena-menu-toggle { display: block; }
+  .arena-menu-toggle { display: flex; }
   .arena-menu-toggle.is-open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
   .arena-menu-toggle.is-open span:nth-child(2) { opacity: 0; }
   .arena-menu-toggle.is-open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
