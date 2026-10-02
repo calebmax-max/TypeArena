@@ -282,7 +282,6 @@ export default function Home({ currentUser }) {
               <span className="pill">1v1 Live Races</span>
               <span className="pill">Private Rooms</span>
               <span className="pill">KES Wallet</span>
-              <span className="pill">Daily Tourneys</span>
             </div>
             <div className="hero-cta reveal">
               <Link to="/play" data-tour="home-start-typing" className="btn-primary-hero" onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Start Typing →</Link>

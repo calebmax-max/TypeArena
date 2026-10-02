@@ -165,7 +165,6 @@ export default function TypeProfile() {
 
   // ──────────────────────────────────────── Audio / experience settings (persisted in localStorage, read by Play) ────────────────────────────────────────
   const [soundEnabled,       setSoundEnabled]       = useState(() => localStorage.getItem('typearena_sound')       !== 'false');
-  const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
 
   const toggleSetting = (key, setter) => {
     setter((prev) => {
@@ -855,17 +854,6 @@ export default function TypeProfile() {
               </div>
 
               <div className="tp-section-head" style={{ marginTop: '2rem' }}>
-                <h3>Badge Image</h3>
-                <span className="tp-section-head__sub">Your profile badge is visible in races and standings</span>
-              </div>
-              <div className="tp-badge-editor">
-                <AvatarBadge initials={initials} size={110} />
-                <div className="tp-badge-editor__hint">
-                  <p>Click the badge to upload a custom photo.<br />Supports JPG, PNG, WebP. Saved to your TypeArena profile and visible in races and chat.</p>
-                </div>
-              </div>
-
-              <div className="tp-section-head" style={{ marginTop: '2rem' }}>
                 <h3>Arena Experience</h3>
                 <span className="tp-section-head__sub">These settings apply every time you enter the arena</span>
               </div>
@@ -879,19 +867,6 @@ export default function TypeProfile() {
                     className={`tp-toggle ${soundEnabled ? 'tp-toggle--on' : ''}`}
                     onClick={() => toggleSetting('typearena_sound', setSoundEnabled)}
                     aria-pressed={soundEnabled}
-                  >
-                    <span className="tp-toggle__knob" />
-                  </button>
-                </div>
-                <div className="tp-audio-row">
-                  <div className="tp-audio-row__info">
-                    <span className="tp-audio-row__label">Live Commentator</span>
-                    <span className="tp-audio-row__desc">Spoken commentary on milestones, streaks and finish</span>
-                  </div>
-                  <button
-                    className={`tp-toggle ${commentatorEnabled ? 'tp-toggle--on' : ''}`}
-                    onClick={() => toggleSetting('typearena_commentator', setCommentatorEnabled)}
-                    aria-pressed={commentatorEnabled}
                   >
                     <span className="tp-toggle__knob" />
                   </button>
