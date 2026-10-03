@@ -17,6 +17,7 @@ import {
   getStoredUserSnapshot,
   startRace,
   submitRaceResult,
+  submitSchoolAssignment,
 } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
 import InvitePlayerBox from './InvitePlayerBox';
@@ -908,6 +909,7 @@ export default function Play({ practicePage = false }){
     friendBattle,
     setFriendBattle,
     tournamentId,
+    schoolClassId: new URLSearchParams(location.search).get('schoolClassId'),
     initialRoomId,
     generatedContentPassage: generatedContent?.passage,
     redirectToProfile,
@@ -1001,7 +1003,12 @@ export default function Play({ practicePage = false }){
         };
 
         if (liveRoom?.id) {
-            await submitFinalLiveResult({ wpm, accuracy, finalData });
+            const completedRoom = await submitFinalLiveResult({ wpm, accuracy, finalData });
+            const assignmentId = new URLSearchParams(location.search).get('assignmentId');
+            if (assignmentId && completedRoom?.status === 'completed') {
+              const result = completedRoom?.results?.[currentUser?.id] || {};
+              submitSchoolAssignment(assignmentId, { raceId: liveRoom.id, wpm: result.wpm ?? wpm, accuracy: result.accuracy ?? accuracy }).catch((error) => console.warn('Assignment auto-submit failed:', error));
+            }
             return;
         }
 
@@ -1057,6 +1064,10 @@ export default function Play({ practicePage = false }){
           .catch((err) => {
             console.warn('submitRaceResult failed (non-fatal):', err);
           });
+        const assignmentId = new URLSearchParams(location.search).get('assignmentId');
+        if (assignmentId) {
+          submitSchoolAssignment(assignmentId, { raceId: finalData.id, wpm, accuracy }).catch((error) => console.warn('Assignment auto-submit failed:', error));
+        }
 
         // Ensure this passage is recorded as used so the next solo race won't repeat it
         recordUsedContentId(
@@ -1114,7 +1125,7 @@ export default function Play({ practicePage = false }){
         isSubmittingRef.current = false;
     }
 // Fix #9: removed timeLeft, typingText, replayFrames from deps Ã¯Â¿Â½?" read via refs above.
-}, [commentatorEnabled, currentUser?.name, currentUser?.username, customText, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, mode, submitFinalLiveResult, useCustomText]);
+}, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, customText, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, location.search, mode, submitFinalLiveResult, useCustomText]);
   const handleFinishRace = useCallback(() => {
     if (phase !== 'racing' || isSubmittingRef.current) {
       return;

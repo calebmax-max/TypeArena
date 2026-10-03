@@ -1,13 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   createSchoolAssignment,
   createSchoolClass,
   createSchoolOrganisation,
+  createSchoolRace,
   exportSchoolClass,
   fetchSchoolClass,
   fetchSchoolOverview,
   importSchoolLearners,
   joinSchoolClass,
+  fetchSchoolAssignments,
+  manageSchoolMember,
+  inviteSchoolTeacher,
+  regenerateSchoolJoinCode,
 } from '../utils/typingApi';
 
 const cardStyle = { background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 18, padding: 20 };
@@ -21,11 +27,14 @@ export default function SchoolDashboard({ currentUser }) {
   const [className, setClassName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [assignment, setAssignment] = useState({ title: '', instructions: '', targetWpm: '', targetAccuracy: '' });
+  const [learnerAssignments, setLearnerAssignments] = useState([]);
+  const [teacherEmail, setTeacherEmail] = useState('');
+  const [schoolRoom, setSchoolRoom] = useState(null);
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
-    try { setOverview(await fetchSchoolOverview()); } catch (error) { setNotice(error.message); }
+    try { setOverview(await fetchSchoolOverview()); setLearnerAssignments((await fetchSchoolAssignments()).assignments || []); } catch (error) { setNotice(error.message); }
   }, [currentUser?.id]);
   useEffect(() => { load(); }, [load]);
 
@@ -71,6 +80,11 @@ export default function SchoolDashboard({ currentUser }) {
           {!selected ? <><h2>Teacher and learner workspace</h2><p>Select a class to see progress, assignments, and class-safe reporting.</p><p style={{ opacity: .7 }}>Practice, public races, and free private rooms remain in the core TypeArena experience.</p></> : <>
             <h2>{selected.class.name}</h2><p>{selected.learners.length} learners · your role: {selected.role}</p>
             {['org_admin', 'teacher'].includes(selected.role) && <>
+              {selected.role === 'org_admin' && <div style={{ marginBottom: 16 }}><h3>Invite a teacher</h3><input style={inputStyle} type="email" value={teacherEmail} onChange={(e) => setTeacherEmail(e.target.value)} placeholder="teacher@school.org" /><button className="btn btn-secondary" onClick={() => run(async () => { await inviteSchoolTeacher(selected.class.organizationId, teacherEmail); setTeacherEmail(''); })}>Create invitation</button></div>}
+              <button className="btn btn-secondary" onClick={() => run(async () => { const result = await regenerateSchoolJoinCode(selected.class.id); setSelected((value) => ({ ...value, class: { ...value.class, joinCode: result.joinCode } })); })}>Regenerate join code</button>
+              <a className="btn btn-primary" style={{ marginLeft: 8 }} href={`/play?schoolClassId=${selected.class.id}`}>Start class race</a>
+              <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={async () => { try { const result = await createSchoolRace(selected.class.id); setSchoolRoom(result.room); setNotice(`Class room created. Invite code: ${result.room?.inviteCode || 'ready'}`); } catch (error) { setNotice(error.message); } }}>Create private class race</button>
+              {schoolRoom && <small style={{ display: 'block', margin: '8px 0', opacity: .8 }}>Invite code: <strong>{schoolRoom.inviteCode}</strong>. Only approved class members can join.</small>}
               <input style={inputStyle} value={className} onChange={(e) => setClassName(e.target.value)} placeholder="New class name" />
               <button className="btn btn-secondary" onClick={() => run(async () => { await createSchoolClass(selected.class.organizationId, className); setClassName(''); })}>Create another class</button>
               <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.1)' }}>
@@ -83,9 +97,11 @@ export default function SchoolDashboard({ currentUser }) {
               </div>
             </>}
             <h3 style={{ marginTop: 24 }}>Learner progress</h3>
+            {['org_admin', 'teacher'].includes(selected.role) && <div style={{ marginBottom: 10 }}>{selected.learners.map((learner) => <div key={`manage-${learner.id}`} style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 6 }}><button className="btn btn-secondary" style={{ padding: '5px 8px' }} onClick={() => run(async () => { await manageSchoolMember(selected.class.id, learner.id, 'suspend'); await chooseClass(selected.class.id); })}>Suspend {learner.username}</button><button className="btn btn-secondary" style={{ padding: '5px 8px' }} onClick={() => run(async () => { await manageSchoolMember(selected.class.id, learner.id, 'remove'); await chooseClass(selected.class.id); })}>Remove</button></div>)}</div>}
             {selected.learners.map((learner) => <div key={learner.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}><span>{learner.username}</span><span>{learner.wpm} WPM · {learner.accuracy}%</span></div>)}
             <h3 style={{ marginTop: 24 }}>Assignments</h3>
-            {(selected.assignments || []).map((item) => <div key={item.id} style={{ padding: 12, margin: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,.04)' }}><strong>{item.title}</strong><small style={{ display: 'block', opacity: .7 }}>Target: {item.targetWpm} WPM · {item.targetAccuracy}% accuracy</small></div>)}
+            {selected.role === 'learner' && <div style={{ padding: 12, marginBottom: 10, borderRadius: 10, background: 'rgba(99,202,183,.08)' }}><strong>Assignment status</strong>{learnerAssignments.filter((item) => item.className === selected.class.name).map((item) => <div key={item.id} style={{ marginTop: 8 }}>{item.title}: {item.status === 'completed' ? `Completed · ${item.wpm} WPM · ${item.accuracy}%` : <><span>Pending </span><a className="btn btn-primary" style={{ padding: '4px 8px', marginLeft: 6 }} href={`/play?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>Start</a></>}</div>)}</div>}
+            {(selected.assignments || []).map((item) => <div key={item.id} style={{ padding: 12, margin: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,.04)' }}><strong>{item.title}</strong><small style={{ display: 'block', opacity: .7 }}>Target: {item.targetWpm} WPM · {item.targetAccuracy}% accuracy</small>{selected.role === 'learner' && <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/practice?assignmentId=${item.id}`}>Start assignment</Link>}</div>)}
           </>}
         </div>
       </div>

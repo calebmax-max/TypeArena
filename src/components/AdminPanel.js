@@ -31,6 +31,7 @@ import {
   searchAdminUsers,
   sendAdminWalletTransfer,
   fetchAdminImpersonationLog,
+  fetchAdminSchoolOrganizations,
 } from '../utils/typingApi';
 
 const DEFAULT_SITE_MARQUEE_ITEMS = [
@@ -72,6 +73,7 @@ const NAV_ITEMS = [
   { id: 'content', label: 'Content', icon: 'C' },
   { id: 'marketplace', label: 'Marketplace', icon: 'MK' },
   { id: 'ai', label: 'AI Settings', icon: 'AI' },
+  { id: 'schools', label: 'Schools', icon: 'S' },
 ];
 
 export default function AdminPanel() {
@@ -109,6 +111,7 @@ export default function AdminPanel() {
   const [leaderboardTiers, setLeaderboardTiers] = useState(DEFAULT_LEADERBOARD_TIERS);
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
+  const [schoolOrganizations, setSchoolOrganizations] = useState([]);
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
   // Send money from the admin wallet to a user's wallet
   const [sendForm, setSendForm] = useState({ query: '', amount: '', note: '' });
@@ -155,8 +158,8 @@ export default function AdminPanel() {
   const noticeTimerRef = React.useRef(null);
 
   const loadAdminData = React.useCallback(async () => {
-    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, leaderboardData, marketplaceData] = await Promise.all([
-      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(),
+    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, leaderboardData, marketplaceData, schoolsData] = await Promise.all([
+      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(), fetchAdminSchoolOrganizations(),
     ]);
     setAnalytics(analyticsData);
     setTournaments(normalizeTournamentList(tournamentData));
@@ -165,6 +168,7 @@ export default function AdminPanel() {
     setAdminWallet(walletData);
     setAdminContent(Array.isArray(contentData) ? contentData : []);
     setMarketplaceItems(Array.isArray(marketplaceData?.items) ? marketplaceData.items : []);
+    setSchoolOrganizations(Array.isArray(schoolsData?.organizations) ? schoolsData.organizations : []);
     if (leaderboardData?.tiers) setLeaderboardTiers({ ...DEFAULT_LEADERBOARD_TIERS, ...leaderboardData.tiers });
   }, []);
 
@@ -1238,6 +1242,12 @@ export default function AdminPanel() {
             )}
 
             {/* WALLET */}
+            {activeSection === 'schools' && (
+              <section>
+                <div className="ap-section-header"><h1 className="ap-section-title">Schools</h1><p className="ap-section-sub">Organisation and class activity across School mode.</p></div>
+                <div className="ap-card"><div className="ap-table-wrap"><table className="ap-table"><thead><tr><th>Organisation</th><th>Members</th><th>Classes</th><th>Created</th></tr></thead><tbody>{schoolOrganizations.map((org) => <tr key={org.id}><td><strong>{org.name}</strong><div className="ap-muted">{org.slug}</div></td><td>{org.members}</td><td>{org.classes}</td><td>{org.createdAt ? new Date(org.createdAt).toLocaleDateString() : '—'}</td></tr>)}</tbody></table>{!schoolOrganizations.length && <div className="ap-empty">No organisations yet.</div>}</div></div>
+              </section>
+            )}
             {activeSection === 'wallet' && (
               <>
                 <div className="ap-section-header">

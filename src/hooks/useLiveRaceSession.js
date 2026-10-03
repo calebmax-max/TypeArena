@@ -30,6 +30,7 @@ export function useLiveRaceSession({
   friendBattle,
   setFriendBattle,
   tournamentId,
+  schoolClassId,
   initialRoomId,
   generatedContentPassage,
   redirectToProfile,
@@ -376,6 +377,7 @@ export function useLiveRaceSession({
         duration,
         excludeContentIds: getUsedContentIds(mode, language),
         tournamentId: tournamentId || undefined,
+        schoolClassId: schoolClassId || undefined,
       });
 
       recordClockSample(response.room, queueSentAt, Date.now());
@@ -405,6 +407,7 @@ export function useLiveRaceSession({
     redirectToProfile,
     recordClockSample,
     showNotice,
+    schoolClassId,
     startQueuedRoom,
     tournamentId,
   ]);
@@ -433,6 +436,7 @@ export function useLiveRaceSession({
         maxPlayers: friendBattle.maxPlayers,
         stakeAmount: friendBattle.stakeAmount,
         excludeContentIds: getUsedContentIds(mode, language),
+        schoolClassId: schoolClassId || undefined,
       });
 
       if (!response?.room) {
@@ -484,6 +488,7 @@ export function useLiveRaceSession({
     setFriendBattle,
     setPhase,
     showNotice,
+    schoolClassId,
     startQueuedRoom,
   ]);
 
@@ -645,6 +650,7 @@ export function useLiveRaceSession({
       persistLatestRaceResult(fallbackPayload);
       setRaceResult(fallbackPayload);
       setPhase('results');
+      return updatedRoom;
     } catch (error) {
       if (isLeavingRef.current) {
         return true;

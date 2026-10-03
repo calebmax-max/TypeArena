@@ -2937,6 +2937,7 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
         'maxPlayers': max(2, min(10, int(room.get('maxPlayers') or TOURNAMENT_MATCH_SIZE))),
         'hasPassword': bool(room.get('password')),
         'tournamentId': room.get('tournamentId'),
+        'schoolClassId': room.get('schoolClassId'),
         'spectators': 0,  # spectating was removed; key kept so older cached clients don't break
         'createdAt': room['createdAt'],
         'startedAt': room.get('startedAt'),
@@ -7968,6 +7969,23 @@ def queue_live_race():
             duration = int(payload.get('duration') or 60)
             tournament_id = payload.get('tournamentId')
             is_private = bool(payload.get('isPrivate'))
+            school_class_id = payload.get('schoolClassId')
+            if school_class_id:
+                try:
+                    school_class_id = int(school_class_id)
+                except (TypeError, ValueError):
+                    return jsonify({'message': 'School class is invalid.'}), 400
+                if not is_private:
+                    return jsonify({'message': 'School races must use a private room.'}), 400
+                cur.execute(
+                    """SELECT 1 FROM classes c JOIN organization_members om
+                       ON om.organization_id=c.organization_id
+                       WHERE c.id=%s AND c.active=1 AND om.user_id=%s
+                         AND om.status='active' AND om.role IN ('org_admin','teacher') LIMIT 1""",
+                    (school_class_id, user['id']),
+                )
+                if not cur.fetchone():
+                    return jsonify({'message': 'Only an organisation admin or teacher can create a class race.'}), 403
             requested_max_players = payload.get('maxPlayers', TOURNAMENT_MATCH_SIZE)
             try:
                 requested_max_players = int(requested_max_players)
@@ -8041,6 +8059,36 @@ def queue_live_race():
                     return jsonify({'message': 'Friend battle room not found.'}), 404
                 if room and room.get('password') and room.get('password') != room_password:
                     return jsonify({'message': 'Private room password is incorrect.'}), 403
+                if room and room.get('schoolClassId'):
+                    cur.execute(
+                        """SELECT 1 FROM class_members cm
+                           WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
+                           UNION SELECT 1 FROM classes c JOIN organization_members om
+                           ON om.organization_id=c.organization_id
+                           WHERE c.id=%s AND om.user_id=%s AND om.status='active'
+                             AND om.role IN ('org_admin','teacher') LIMIT 1""",
+                        (room['schoolClassId'], user['id'], room['schoolClassId'], user['id']),
+                    )
+                    if not cur.fetchone():
+                        return jsonify({'message': 'This classroom race is limited to approved class members.'}), 403
+                if room and school_class_id and int(room.get('schoolClassId') or 0) != school_class_id:
+                    return jsonify({'message': 'This room belongs to a different class.'}), 403
+                if room and room.get('schoolClassId'):
+                    cur.execute("SELECT id FROM class_members WHERE class_id=%s AND user_id=%s AND status='active'", (int(room['schoolClassId']), user['id']))
+                    if not cur.fetchone():
+                        return jsonify({'message': 'Only approved classmates can join this room.'}), 403
+                if room and room.get('schoolClassId'):
+                    cur.execute(
+                        """SELECT 1 FROM class_members cm
+                           WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
+                           UNION SELECT 1 FROM classes c JOIN organization_members om
+                           ON om.organization_id=c.organization_id
+                           WHERE c.id=%s AND om.user_id=%s AND om.status='active'
+                             AND om.role IN ('org_admin','teacher') LIMIT 1""",
+                        (room['schoolClassId'], user['id'], room['schoolClassId'], user['id']),
+                    )
+                    if not cur.fetchone():
+                        return jsonify({'message': 'This classroom race is limited to approved class members.'}), 403
                 # Freeze the roster when countdown starts so late invitees cannot be left out.
                 if room and room.get('status') != 'waiting' and all(str(existing.get('userId')) != str(user['id']) for existing in room.get('players', [])):
                     return jsonify({'message': 'This race has already started. Create or join a new room.'}), 409
@@ -8158,6 +8206,7 @@ def queue_live_race():
                         or room.get('language') != language
                         or room.get('duration') != duration
                         or room.get('tournamentId') != tournament_id
+                        or int(room.get('schoolClassId') or 0) != int(school_class_id or 0)
                     ):
                         continue
                     if any(existing['userId'] == user['id'] for existing in room.get('players', [])):
@@ -8220,6 +8269,9 @@ def queue_live_race():
                 'contentId': content.get('contentId'),
                 'totalContentCount': int(content.get('totalContentCount') or 0),
                 'tournamentId': tournament_id,
+                'schoolClassId': school_class_id,
+                'schoolClassId': school_class_id,
+                'schoolClassId': school_class_id,
                 'wpmMin': wpm_min if not is_private else None,
                 'wpmMax': wpm_max if not is_private else None,
                 'queueWpm': my_wpm if not is_private else None,
@@ -8270,6 +8322,15 @@ def get_live_race(room_id: str):
             expired = _finalize_live_room_if_expired(room, conn=conn)
             viewer = _get_user_from_header(conn)
             viewer_user_id = int(viewer['id']) if viewer else None
+            if room.get('schoolClassId'):
+                cur.execute(
+                    """SELECT 1 FROM class_members cm WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
+                       UNION SELECT 1 FROM classes c JOIN organization_members om ON om.organization_id=c.organization_id
+                       WHERE c.id=%s AND om.user_id=%s AND om.status='active' AND om.role IN ('org_admin','teacher') LIMIT 1""",
+                    (room['schoolClassId'], viewer_user_id or 0, room['schoolClassId'], viewer_user_id or 0),
+                )
+                if not cur.fetchone():
+                    return jsonify({'message': 'This classroom race is limited to approved class members.'}), 403
             if expired:
                 _save_live_room(cur, room)
             elif (
@@ -8311,6 +8372,15 @@ def get_live_race_by_invite(invite_code: str):
             conn.commit()
             viewer = _get_user_from_header(conn)
             viewer_user_id = int(viewer['id']) if viewer else None
+            if room.get('schoolClassId'):
+                cur.execute(
+                    """SELECT 1 FROM class_members cm WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
+                       UNION SELECT 1 FROM classes c JOIN organization_members om ON om.organization_id=c.organization_id
+                       WHERE c.id=%s AND om.user_id=%s AND om.status='active' AND om.role IN ('org_admin','teacher') LIMIT 1""",
+                    (room['schoolClassId'], viewer_user_id or 0, room['schoolClassId'], viewer_user_id or 0),
+                )
+                if not cur.fetchone():
+                    return jsonify({'message': 'This classroom race is limited to approved class members.'}), 403
             return jsonify(_serialize_live_room(room, viewer_user_id=viewer_user_id))
     finally:
         _return_connection(conn)
