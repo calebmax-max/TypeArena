@@ -814,7 +814,17 @@ export function useLiveRaceSession({
   // waiting after the local player submits. Without `phase` here, the old
   // effect never installed polling after a submit, so Socket.IO was the only
   // way the opponent's final result could arrive.
-  }, [finalizeRoomIfCompleted, inputRef, liveRoom?.id, phase, setPhase, syncRoomClock]);
+  }, [
+    clearTransientLiveState,
+    finalizeRoomIfCompleted,
+    inputRef,
+    liveRoom?.id,
+    phase,
+    recordClockSample,
+    setPhase,
+    showNotice,
+    syncRoomClock,
+  ]);
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown' && revealRemaining > 0) {
       showNotice('Opponent found!', 'success');
