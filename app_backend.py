@@ -8062,10 +8062,14 @@ def queue_live_race():
                 if room and room.get('schoolClassId'):
                     cur.execute(
                         """SELECT 1 FROM class_members cm
+                           JOIN classes c ON c.id=cm.class_id AND c.active=1
+                           JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                           JOIN organization_members learner ON learner.organization_id=c.organization_id
+                             AND learner.user_id=cm.user_id AND learner.role='learner' AND learner.status='active'
                            WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
-                           UNION SELECT 1 FROM classes c JOIN organization_members om
-                           ON om.organization_id=c.organization_id
-                           WHERE c.id=%s AND om.user_id=%s AND om.status='active'
+                           UNION SELECT 1 FROM classes c JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                           JOIN organization_members om ON om.organization_id=c.organization_id
+                           WHERE c.id=%s AND c.active=1 AND om.user_id=%s AND om.status='active'
                              AND om.role IN ('org_admin','teacher') LIMIT 1""",
                         (room['schoolClassId'], user['id'], room['schoolClassId'], user['id']),
                     )
@@ -8074,16 +8078,16 @@ def queue_live_race():
                 if room and school_class_id and int(room.get('schoolClassId') or 0) != school_class_id:
                     return jsonify({'message': 'This room belongs to a different class.'}), 403
                 if room and room.get('schoolClassId'):
-                    cur.execute("SELECT id FROM class_members WHERE class_id=%s AND user_id=%s AND status='active'", (int(room['schoolClassId']), user['id']))
-                    if not cur.fetchone():
-                        return jsonify({'message': 'Only approved classmates can join this room.'}), 403
-                if room and room.get('schoolClassId'):
                     cur.execute(
                         """SELECT 1 FROM class_members cm
+                           JOIN classes c ON c.id=cm.class_id AND c.active=1
+                           JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                           JOIN organization_members learner ON learner.organization_id=c.organization_id
+                             AND learner.user_id=cm.user_id AND learner.role='learner' AND learner.status='active'
                            WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
-                           UNION SELECT 1 FROM classes c JOIN organization_members om
-                           ON om.organization_id=c.organization_id
-                           WHERE c.id=%s AND om.user_id=%s AND om.status='active'
+                           UNION SELECT 1 FROM classes c JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                           JOIN organization_members om ON om.organization_id=c.organization_id
+                           WHERE c.id=%s AND c.active=1 AND om.user_id=%s AND om.status='active'
                              AND om.role IN ('org_admin','teacher') LIMIT 1""",
                         (room['schoolClassId'], user['id'], room['schoolClassId'], user['id']),
                     )
@@ -8324,9 +8328,16 @@ def get_live_race(room_id: str):
             viewer_user_id = int(viewer['id']) if viewer else None
             if room.get('schoolClassId'):
                 cur.execute(
-                    """SELECT 1 FROM class_members cm WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
-                       UNION SELECT 1 FROM classes c JOIN organization_members om ON om.organization_id=c.organization_id
-                       WHERE c.id=%s AND om.user_id=%s AND om.status='active' AND om.role IN ('org_admin','teacher') LIMIT 1""",
+                    """SELECT 1 FROM class_members cm
+                       JOIN classes c ON c.id=cm.class_id AND c.active=1
+                       JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                       JOIN organization_members learner ON learner.organization_id=c.organization_id
+                         AND learner.user_id=cm.user_id AND learner.role='learner' AND learner.status='active'
+                       WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
+                       UNION SELECT 1 FROM classes c JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                       JOIN organization_members om ON om.organization_id=c.organization_id
+                       WHERE c.id=%s AND c.active=1 AND om.user_id=%s AND om.status='active'
+                         AND om.role IN ('org_admin','teacher') LIMIT 1""",
                     (room['schoolClassId'], viewer_user_id or 0, room['schoolClassId'], viewer_user_id or 0),
                 )
                 if not cur.fetchone():
@@ -8374,9 +8385,16 @@ def get_live_race_by_invite(invite_code: str):
             viewer_user_id = int(viewer['id']) if viewer else None
             if room.get('schoolClassId'):
                 cur.execute(
-                    """SELECT 1 FROM class_members cm WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
-                       UNION SELECT 1 FROM classes c JOIN organization_members om ON om.organization_id=c.organization_id
-                       WHERE c.id=%s AND om.user_id=%s AND om.status='active' AND om.role IN ('org_admin','teacher') LIMIT 1""",
+                    """SELECT 1 FROM class_members cm
+                       JOIN classes c ON c.id=cm.class_id AND c.active=1
+                       JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                       JOIN organization_members learner ON learner.organization_id=c.organization_id
+                         AND learner.user_id=cm.user_id AND learner.role='learner' AND learner.status='active'
+                       WHERE cm.class_id=%s AND cm.user_id=%s AND cm.status='active'
+                       UNION SELECT 1 FROM classes c JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                       JOIN organization_members om ON om.organization_id=c.organization_id
+                       WHERE c.id=%s AND c.active=1 AND om.user_id=%s AND om.status='active'
+                         AND om.role IN ('org_admin','teacher') LIMIT 1""",
                     (room['schoolClassId'], viewer_user_id or 0, room['schoolClassId'], viewer_user_id or 0),
                 )
                 if not cur.fetchone():

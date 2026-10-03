@@ -375,6 +375,7 @@ export function useLiveRaceSession({
         mode,
         language,
         duration,
+        isPrivate: Boolean(schoolClassId),
         excludeContentIds: getUsedContentIds(mode, language),
         tournamentId: tournamentId || undefined,
         schoolClassId: schoolClassId || undefined,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import re
 import secrets
 from datetime import datetime
@@ -23,6 +24,7 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 slug VARCHAR(180) NOT NULL UNIQUE,
                 created_by INT NOT NULL,
                 created_at DATETIME NOT NULL,
+                active TINYINT(1) NOT NULL DEFAULT 1,
                 INDEX idx_org_created_by (created_by)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
@@ -103,6 +105,20 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
         )
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS assignment_attempts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                assignment_id INT NOT NULL,
+                user_id INT NOT NULL,
+                race_id VARCHAR(120) NULL,
+                wpm DECIMAL(7,2) NOT NULL DEFAULT 0,
+                accuracy DECIMAL(6,2) NOT NULL DEFAULT 0,
+                submitted_at DATETIME NOT NULL,
+                INDEX idx_assignment_attempts_user (assignment_id,user_id,submitted_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS school_invitations (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 organization_id INT NOT NULL,
@@ -132,7 +148,9 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
         )
         for statement in (
             "ALTER TABLE organizations ADD COLUMN settings_json TEXT NULL",
+            "ALTER TABLE organizations ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1",
             "ALTER TABLE assignments ADD COLUMN status ENUM('draft','published','archived') NOT NULL DEFAULT 'published'",
+            "ALTER TABLE class_members MODIFY status ENUM('active','pending','suspended','removed') NOT NULL DEFAULT 'active'",
         ):
             try:
                 cur.execute(statement)
@@ -158,9 +176,14 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
         return role in ('org_admin', 'teacher')
 
     def org_payload(row, role=None):
+        try:
+            settings = json.loads(row.get('settings_json') or '{}')
+        except (TypeError, ValueError):
+            settings = {}
         return {
             'id': int(row['id']), 'name': row['name'], 'slug': row['slug'],
             'role': role or row.get('role'), 'createdAt': row.get('created_at').isoformat() if row.get('created_at') else None,
+            'settings': settings,
         }
 
     def class_payload(row):
@@ -178,7 +201,7 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             return None, ('You do not have access to this organisation.', 403)
         cur.execute('SELECT * FROM organizations WHERE id=%s', (organization_id,))
         org = cur.fetchone()
-        if not org:
+        if not org or not org.get('active', 1):
             return None, ('Organisation not found.', 404)
         return role, None
 
@@ -203,15 +226,21 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 ensure_tables(cur)
                 cur.execute(
                     """SELECT o.*, m.role FROM organizations o JOIN organization_members m
-                       ON m.organization_id=o.id WHERE m.user_id=%s AND m.status='active' ORDER BY o.name""",
+                       ON m.organization_id=o.id WHERE m.user_id=%s AND m.status='active'
+                       AND o.active=1 ORDER BY o.name""",
                     (user['id'],),
                 )
                 orgs = [org_payload(row) for row in cur.fetchall()]
                 cur.execute(
-                    """SELECT c.*, COUNT(cm.id) learner_count FROM classes c
-                       JOIN class_members cm ON cm.class_id=c.id AND cm.status='active'
+                    """SELECT c.*, COUNT(DISTINCT CASE WHEN cm.status='active' AND learner_members.role='learner'
+                           AND learner_members.status='active' THEN cm.id END) learner_count
+                       FROM classes c
                        JOIN organization_members om ON om.organization_id=c.organization_id AND om.user_id=%s AND om.status='active'
-                       GROUP BY c.id ORDER BY c.created_at DESC""",
+                       JOIN organizations o ON o.id=c.organization_id AND o.active=1
+                       LEFT JOIN class_members cm ON cm.class_id=c.id
+                       LEFT JOIN organization_members learner_members ON learner_members.organization_id=c.organization_id
+                           AND learner_members.user_id=cm.user_id
+                       WHERE c.active=1 GROUP BY c.id ORDER BY c.created_at DESC""",
                     (user['id'],),
                 )
                 classes = [class_payload(row) for row in cur.fetchall()]
@@ -260,7 +289,6 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 code = secrets.token_hex(3).upper()
                 cur.execute('INSERT INTO classes (organization_id,teacher_id,name,join_code,created_at) VALUES (%s,%s,%s,%s,%s)', (organization_id, user['id'], name, code, now_db()))
                 class_id = cur.lastrowid
-                cur.execute("INSERT IGNORE INTO class_members (class_id,user_id,status,joined_at) VALUES (%s,%s,'active',%s)", (class_id, user['id'], now_db()))
             conn.commit()
             return jsonify({'class': {'id': class_id, 'organizationId': organization_id, 'teacherId': user['id'], 'name': name, 'joinCode': code, 'active': True, 'learnerCount': 0}}), 201
         finally: return_connection(conn)
@@ -276,9 +304,17 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             with conn.cursor() as cur:
                 ensure_tables(cur); cur.execute('SELECT * FROM classes WHERE join_code=%s AND active=1', (code,)); cls = cur.fetchone()
                 if not cls: return jsonify({'message': 'That join code is invalid or expired.'}), 404
+                cur.execute('SELECT settings_json FROM organizations WHERE id=%s AND active=1', (cls['organization_id'],))
+                org = cur.fetchone()
+                if not org: return jsonify({'message': 'Organisation is unavailable.'}), 404
+                try:
+                    settings = json.loads(org.get('settings_json') or '{}')
+                except (TypeError, ValueError):
+                    settings = {}
+                member_status = 'pending' if settings.get('requireLearnerApproval') else 'active'
                 cur.execute("INSERT INTO organization_members (organization_id,user_id,role,status,joined_at) VALUES (%s,%s,'learner','active',%s) ON DUPLICATE KEY UPDATE status='active'", (cls['organization_id'], user['id'], now_db()))
-                cur.execute("INSERT INTO class_members (class_id,user_id,status,joined_at) VALUES (%s,%s,'active',%s) ON DUPLICATE KEY UPDATE status='active'", (cls['id'], user['id'], now_db()))
-            conn.commit(); return jsonify({'message': 'You joined the class.', 'class': class_payload(cls)})
+                cur.execute("INSERT INTO class_members (class_id,user_id,status,joined_at) VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE status=IF(status='active','active',VALUES(status))", (cls['id'], user['id'], member_status, now_db()))
+            conn.commit(); return jsonify({'message': 'You joined the class.' if member_status == 'active' else 'Request sent. A teacher must approve your class membership.', 'status': member_status, 'class': class_payload(cls)})
         finally: return_connection(conn)
 
     @app.get('/api/school/classes/<int:class_id>')
@@ -288,12 +324,20 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             user = auth(conn)
             if not user: return jsonify({'message': 'Unauthorized'}), 401
             with conn.cursor() as cur:
-                ensure_tables(cur); cur.execute('SELECT * FROM classes WHERE id=%s', (class_id,)); cls = cur.fetchone()
+                ensure_tables(cur); cur.execute('SELECT * FROM classes WHERE id=%s AND active=1', (class_id,)); cls = cur.fetchone()
                 if not cls: return jsonify({'message': 'Class not found.'}), 404
                 role, error = require_org(cur, user, cls['organization_id'])
                 if error: return jsonify({'message': error[0]}), error[1]
-                cur.execute("SELECT u.id,u.username,u.email,u.wpm,u.accuracy,cm.joined_at FROM class_members cm JOIN users u ON u.id=cm.user_id WHERE cm.class_id=%s AND cm.status='active' ORDER BY u.username", (class_id,))
-                learners = [{'id': r['id'], 'username': r['username'], 'email': r['email'], 'wpm': float(r.get('wpm') or 0), 'accuracy': float(r.get('accuracy') or 0), 'joinedAt': r['joined_at'].isoformat() if r.get('joined_at') else None} for r in cur.fetchall()]
+                if role == 'learner':
+                    cur.execute("SELECT id FROM class_members WHERE class_id=%s AND user_id=%s AND status='active'", (class_id, user['id']))
+                    if not cur.fetchone(): return jsonify({'message': 'Your class membership is awaiting approval or is inactive.'}), 403
+                cur.execute("""SELECT u.id,u.username,u.email,u.wpm,u.accuracy,cm.joined_at,cm.status
+                    FROM class_members cm JOIN users u ON u.id=cm.user_id
+                    JOIN organization_members om ON om.organization_id=%s AND om.user_id=cm.user_id
+                    WHERE cm.class_id=%s AND om.role='learner' AND om.status='active'
+                      AND cm.status IN ('active','pending','suspended')
+                    ORDER BY FIELD(cm.status,'pending','active','suspended'),u.username""", (cls['organization_id'], class_id))
+                learners = [{'id': r['id'], 'username': r['username'], 'email': r['email'], 'wpm': float(r.get('wpm') or 0), 'accuracy': float(r.get('accuracy') or 0), 'status': r['status'], 'joinedAt': r['joined_at'].isoformat() if r.get('joined_at') else None} for r in cur.fetchall()]
                 cur.execute('SELECT * FROM assignments WHERE class_id=%s ORDER BY created_at DESC', (class_id,))
                 assignments = []
                 for r in cur.fetchall():
@@ -302,7 +346,20 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                     cur.execute(f"SELECT s.user_id,s.wpm,s.accuracy,s.race_id,s.submitted_at,u.username FROM assignment_submissions s JOIN users u ON u.id=s.user_id WHERE s.assignment_id=%s{submission_filter} ORDER BY s.submitted_at DESC", submission_params)
                     submissions = [{'userId': x['user_id'], 'username': x['username'], 'wpm': float(x['wpm'] or 0), 'accuracy': float(x['accuracy'] or 0), 'raceId': x.get('race_id'), 'submittedAt': x['submitted_at'].isoformat() if x.get('submitted_at') else None} for x in cur.fetchall()]
                     assignments.append({'id': r['id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'mode': r['mode'], 'status': r.get('status') or 'published', 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'submissions': submissions if role in ('org_admin', 'teacher') else [], 'mySubmission': submissions[0] if role not in ('org_admin', 'teacher') and submissions else None, 'completionCount': len(submissions) if role in ('org_admin', 'teacher') else int(bool(submissions))})
-            return jsonify({'class': class_payload(cls), 'role': role, 'learners': learners, 'assignments': assignments})
+            active_learners = [learner for learner in learners if learner['status'] == 'active']
+            return jsonify({
+                'class': class_payload(cls),
+                'role': role,
+                'learners': learners,
+                'assignments': assignments,
+                'analytics': {
+                    'learnerCount': len(active_learners),
+                    'pendingCount': sum(learner['status'] == 'pending' for learner in learners),
+                    'averageWpm': round(sum(learner['wpm'] for learner in active_learners) / len(active_learners), 1) if active_learners else 0,
+                    'assignmentCount': len(assignments),
+                    'completionCount': sum(item['completionCount'] for item in assignments) if role in ('org_admin', 'teacher') else sum(bool(item['mySubmission']) for item in assignments),
+                },
+            })
         finally: return_connection(conn)
 
     @app.post('/api/school/classes/<int:class_id>/assignments')
@@ -337,7 +394,9 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 if error: return jsonify({'message': error[0]}), error[1]
                 cur.execute("SELECT id FROM class_members WHERE class_id=%s AND user_id=%s AND status='active'", (assignment['class_id'], user['id']))
                 if not cur.fetchone(): return jsonify({'message': 'Join the class before submitting.'}), 403
-                cur.execute('INSERT INTO assignment_submissions (assignment_id,user_id,race_id,wpm,accuracy,submitted_at) VALUES (%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE race_id=VALUES(race_id),wpm=VALUES(wpm),accuracy=VALUES(accuracy),submitted_at=VALUES(submitted_at)', (assignment_id, user['id'], payload.get('raceId'), float(payload.get('wpm') or 0), float(payload.get('accuracy') or 0), now_db()))
+                submission_values = (assignment_id, user['id'], payload.get('raceId'), float(payload.get('wpm') or 0), float(payload.get('accuracy') or 0), now_db())
+                cur.execute('INSERT INTO assignment_attempts (assignment_id,user_id,race_id,wpm,accuracy,submitted_at) VALUES (%s,%s,%s,%s,%s,%s)', submission_values)
+                cur.execute('INSERT INTO assignment_submissions (assignment_id,user_id,race_id,wpm,accuracy,submitted_at) VALUES (%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE race_id=VALUES(race_id),wpm=VALUES(wpm),accuracy=VALUES(accuracy),submitted_at=VALUES(submitted_at)', submission_values)
             conn.commit(); return jsonify({'message': 'Assignment submitted.'})
         finally: return_connection(conn)
 
@@ -397,9 +456,66 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 ensure_tables(cur); acting_role, error = require_org(cur, user, organization_id, manage=True)
                 if error: return jsonify({'message': error[0]}), error[1]
                 if acting_role != 'org_admin': return jsonify({'message': 'Only organisation admins can change roles.'}), 403
+                cur.execute("SELECT COUNT(*) AS admins FROM organization_members WHERE organization_id=%s AND role='org_admin' AND status='active'", (organization_id,))
+                admin_count = int((cur.fetchone() or {}).get('admins') or 0)
+                cur.execute("SELECT role FROM organization_members WHERE organization_id=%s AND user_id=%s AND status='active'", (organization_id, member_id))
+                target = cur.fetchone()
+                if not target: return jsonify({'message': 'Member not found.'}), 404
+                if target['role'] == 'org_admin' and role != 'org_admin' and admin_count <= 1:
+                    return jsonify({'message': 'An organisation must retain at least one admin.'}), 409
                 cur.execute("UPDATE organization_members SET role=%s WHERE organization_id=%s AND user_id=%s AND status='active'", (role, organization_id, member_id))
-                if cur.rowcount == 0: return jsonify({'message': 'Member not found.'}), 404
             conn.commit(); return jsonify({'message': 'Member role updated.'})
+        finally: return_connection(conn)
+
+    @app.get('/api/school/organizations/<int:organization_id>/members')
+    def list_org_members(organization_id):
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                role, error = require_org(cur, user, organization_id)
+                if error: return jsonify({'message': error[0]}), error[1]
+                if role not in ('org_admin', 'teacher'):
+                    return jsonify({'message': 'Only organisation staff can view members.'}), 403
+                cur.execute("""SELECT u.id,u.username,u.email,om.role,om.status,om.joined_at
+                    FROM organization_members om JOIN users u ON u.id=om.user_id
+                    WHERE om.organization_id=%s AND om.status IN ('active','pending')
+                    ORDER BY FIELD(om.role,'org_admin','teacher','learner'),u.username""", (organization_id,))
+                members = [{
+                    'id': row['id'], 'username': row['username'], 'email': row['email'],
+                    'role': row['role'], 'status': row['status'],
+                    'joinedAt': row['joined_at'].isoformat() if row.get('joined_at') else None,
+                } for row in cur.fetchall()]
+            return jsonify({'members': members})
+        finally: return_connection(conn)
+
+    @app.delete('/api/school/organizations/<int:organization_id>/members/<int:member_id>')
+    def remove_org_member(organization_id, member_id):
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                acting_role, error = require_org(cur, user, organization_id, manage=True)
+                if error: return jsonify({'message': error[0]}), error[1]
+                if acting_role != 'org_admin':
+                    return jsonify({'message': 'Only organisation admins can remove organisation members.'}), 403
+                if int(user['id']) == int(member_id):
+                    return jsonify({'message': 'You cannot remove yourself from the organisation.'}), 409
+                cur.execute("SELECT role FROM organization_members WHERE organization_id=%s AND user_id=%s AND status='active'", (organization_id, member_id))
+                target = cur.fetchone()
+                if not target: return jsonify({'message': 'Member not found.'}), 404
+                if target['role'] == 'org_admin':
+                    cur.execute("SELECT COUNT(*) AS admins FROM organization_members WHERE organization_id=%s AND role='org_admin' AND status='active'", (organization_id,))
+                    if int((cur.fetchone() or {}).get('admins') or 0) <= 1:
+                        return jsonify({'message': 'An organisation must retain at least one admin.'}), 409
+                cur.execute("UPDATE organization_members SET status='removed' WHERE organization_id=%s AND user_id=%s", (organization_id, member_id))
+                cur.execute("UPDATE class_members cm JOIN classes c ON c.id=cm.class_id SET cm.status='removed' WHERE c.organization_id=%s AND cm.user_id=%s", (organization_id, member_id))
+            conn.commit()
+            return jsonify({'message': 'Member removed from the organisation.'})
         finally: return_connection(conn)
 
     @app.delete('/api/school/classes/<int:class_id>/members/<int:member_id>')
@@ -431,7 +547,15 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                     WHERE COALESCE(a.status,'published') <> 'archived' ORDER BY a.due_at IS NULL,a.due_at,a.created_at DESC""", (user['id'], user['id']))
                 items = []
                 for r in cur.fetchall():
-                    items.append({'id': r['id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'className': r['class_name'], 'organizationName': r['organization_name'], 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'status': 'completed' if r.get('submitted_at') else 'pending', 'wpm': float(r['submitted_wpm'] or 0) if r.get('submitted_at') else None, 'accuracy': float(r['submitted_accuracy'] or 0) if r.get('submitted_at') else None, 'raceId': r.get('race_id'), 'submittedAt': r['submitted_at'].isoformat() if r.get('submitted_at') else None})
+                    cur.execute("""SELECT wpm,accuracy,race_id,submitted_at FROM assignment_attempts
+                        WHERE assignment_id=%s AND user_id=%s ORDER BY submitted_at DESC""", (r['id'], user['id']))
+                    history = [{
+                        'wpm': float(attempt['wpm'] or 0),
+                        'accuracy': float(attempt['accuracy'] or 0),
+                        'raceId': attempt.get('race_id'),
+                        'submittedAt': attempt['submitted_at'].isoformat() if attempt.get('submitted_at') else None,
+                    } for attempt in cur.fetchall()]
+                    items.append({'id': r['id'], 'classId': r['class_id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'className': r['class_name'], 'organizationName': r['organization_name'], 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'status': 'completed' if r.get('submitted_at') else 'pending', 'wpm': float(r['submitted_wpm'] or 0) if r.get('submitted_at') else None, 'accuracy': float(r['submitted_accuracy'] or 0) if r.get('submitted_at') else None, 'raceId': r.get('race_id'), 'submittedAt': r['submitted_at'].isoformat() if r.get('submitted_at') else None, 'history': history})
             return jsonify({'assignments': items})
         finally: return_connection(conn)
 
@@ -444,15 +568,13 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             user = auth(conn)
             if not user: return jsonify({'message': 'Unauthorized'}), 401
             with conn.cursor() as cur:
-                ensure_tables(cur); cur.execute('SELECT organization_id FROM classes WHERE id=%s', (class_id,)); cls = cur.fetchone()
-                if not cls: return jsonify({'message': 'Class not found.'}), 404
-                _, error = require_org(cur, user, cls['organization_id'], manage=True)
+                ensure_tables(cur)
+                result, error = require_class(cur, user, class_id, manage=True)
                 if error: return jsonify({'message': error[0]}), error[1]
-                try: cur.execute("ALTER TABLE class_members MODIFY status ENUM('active','suspended','removed') NOT NULL DEFAULT 'active'")
-                except Exception: pass
+                cls, _ = result
                 status = 'active' if action in ('approve','restore') else ('suspended' if action == 'suspend' else 'removed')
                 cur.execute('UPDATE class_members SET status=%s WHERE class_id=%s AND user_id=%s', (status, class_id, user_id))
-                if action == 'remove': cur.execute("UPDATE organization_members SET status='removed' WHERE organization_id=%s AND user_id=%s AND role='learner'", (cls['organization_id'], user_id))
+                if cur.rowcount == 0: return jsonify({'message': 'Learner is not in this class.'}), 404
             conn.commit(); return jsonify({'message': f'Learner {action}d.', 'status': status})
         finally: return_connection(conn)
 
@@ -465,23 +587,99 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             user = auth(conn)
             if not user: return jsonify({'message': 'Unauthorized'}), 401
             with conn.cursor() as cur:
-                ensure_tables(cur); _, error = require_org(cur, user, organization_id, manage=True)
+                ensure_tables(cur); role, error = require_org(cur, user, organization_id, manage=True)
                 if error: return jsonify({'message': error[0]}), error[1]
+                if role != 'org_admin': return jsonify({'message': 'Only organisation admins can invite teachers.'}), 403
                 token = secrets.token_urlsafe(30)
-                cur.execute("INSERT INTO school_invitations (organization_id,email,role,token,invited_by,created_at) VALUES (%s,%s,'teacher',%s,%s,%s)", (organization_id,email,token,user['id'],now_db()))
+                cur.execute("INSERT INTO school_invitations (organization_id,email,role,token,invited_by,created_at,expires_at) VALUES (%s,%s,'teacher',%s,%s,%s,DATE_ADD(%s, INTERVAL 14 DAY))", (organization_id,email,token,user['id'],now_db(),now_db()))
             conn.commit(); return jsonify({'message': 'Teacher invitation created.', 'invitation': {'email': email, 'token': token}}), 201
+        finally: return_connection(conn)
+
+    @app.get('/api/school/invitations')
+    def list_my_school_invitations():
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            email = str(user.get('email') or '').strip().lower()
+            if not email: return jsonify({'invitations': []})
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute("""SELECT i.token,i.email,i.role,i.class_id,o.id organization_id,o.name organization_name,
+                    c.name class_name,i.created_at,i.expires_at
+                    FROM school_invitations i JOIN organizations o ON o.id=i.organization_id AND o.active=1
+                    LEFT JOIN classes c ON c.id=i.class_id
+                    WHERE LOWER(i.email)=LOWER(%s) AND i.status='pending'
+                      AND (i.expires_at IS NULL OR i.expires_at>%s)
+                    ORDER BY i.created_at DESC""", (email, now_db()))
+                invitations = [{
+                    'token': row['token'], 'email': row['email'], 'role': row['role'],
+                    'organizationId': row['organization_id'], 'organizationName': row['organization_name'],
+                    'classId': row['class_id'], 'className': row.get('class_name'),
+                    'createdAt': row['created_at'].isoformat() if row.get('created_at') else None,
+                } for row in cur.fetchall()]
+            return jsonify({'invitations': invitations})
+        finally: return_connection(conn)
+
+    @app.post('/api/school/invitations/accept')
+    def accept_school_invitation():
+        payload = request.get_json(silent=True) or {}
+        token = str(payload.get('token') or '').strip()
+        if not token: return jsonify({'message': 'Invitation token is required.'}), 400
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            email = str(user.get('email') or '').strip().lower()
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute("""SELECT * FROM school_invitations WHERE token=%s AND status='pending'
+                    AND LOWER(email)=LOWER(%s) AND (expires_at IS NULL OR expires_at>%s) FOR UPDATE""",
+                    (token, email, now_db()))
+                invitation = cur.fetchone()
+                if not invitation:
+                    return jsonify({'message': 'Invitation is invalid, expired, or belongs to another account.'}), 404
+                cur.execute('SELECT active FROM organizations WHERE id=%s', (invitation['organization_id'],))
+                org = cur.fetchone()
+                if not org or not org.get('active'):
+                    return jsonify({'message': 'This organisation is unavailable.'}), 404
+                invited_role = invitation['role']
+                member_role = 'teacher' if invited_role == 'teacher' else 'learner'
+                cur.execute("""INSERT INTO organization_members (organization_id,user_id,role,status,joined_at)
+                    VALUES (%s,%s,%s,'active',%s)
+                    ON DUPLICATE KEY UPDATE role=IF(status='active',role,VALUES(role)),status='active'""",
+                    (invitation['organization_id'], user['id'], member_role, now_db()))
+                if invitation.get('class_id') and member_role == 'learner':
+                    cur.execute('SELECT settings_json FROM organizations WHERE id=%s', (invitation['organization_id'],))
+                    settings_row = cur.fetchone() or {}
+                    try:
+                        settings = json.loads(settings_row.get('settings_json') or '{}')
+                    except (TypeError, ValueError):
+                        settings = {}
+                    status = 'pending' if settings.get('requireLearnerApproval') else 'active'
+                    cur.execute("""INSERT INTO class_members (class_id,user_id,status,joined_at)
+                        VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE status=VALUES(status)""",
+                        (invitation['class_id'], user['id'], status, now_db()))
+                cur.execute("UPDATE school_invitations SET status='accepted' WHERE id=%s", (invitation['id'],))
+            conn.commit()
+            return jsonify({'message': 'Invitation accepted.', 'role': member_role})
         finally: return_connection(conn)
 
     @app.post('/api/school/organizations/<int:organization_id>/settings')
     def update_org_settings(organization_id):
-        payload = request.get_json(silent=True) or {}; conn = get_connection()
+        payload = request.get_json(silent=True) or {}
+        settings = payload.get('settings')
+        if not isinstance(settings, dict):
+            return jsonify({'message': 'Settings must be an object.'}), 400
+        conn = get_connection()
         try:
             user = auth(conn)
             if not user: return jsonify({'message': 'Unauthorized'}), 401
             with conn.cursor() as cur:
-                ensure_tables(cur); _, error = require_org(cur, user, organization_id, manage=True)
+                ensure_tables(cur); role, error = require_org(cur, user, organization_id, manage=True)
                 if error: return jsonify({'message': error[0]}), error[1]
-                cur.execute('UPDATE organizations SET settings_json=%s WHERE id=%s', (str(payload.get('settings') or '{}'), organization_id))
+                if role != 'org_admin': return jsonify({'message': 'Only organisation admins can change settings.'}), 403
+                cur.execute('UPDATE organizations SET settings_json=%s WHERE id=%s', (json.dumps(settings), organization_id))
             conn.commit(); return jsonify({'message': 'Organisation settings saved.'})
         finally: return_connection(conn)
 
@@ -496,7 +694,13 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 if not cls: return jsonify({'message': 'Class not found.'}), 404
                 _, error = require_org(cur, user, cls['organization_id'], manage=True)
                 if error: return jsonify({'message': error[0]}), error[1]
-                code = secrets.token_hex(3).upper(); cur.execute('UPDATE classes SET join_code=%s WHERE id=%s', (code,class_id))
+                for _ in range(10):
+                    code = secrets.token_hex(3).upper()
+                    cur.execute('SELECT id FROM classes WHERE join_code=%s AND id<>%s', (code, class_id))
+                    if not cur.fetchone(): break
+                else:
+                    return jsonify({'message': 'Could not generate a unique join code. Please try again.'}), 503
+                cur.execute('UPDATE classes SET join_code=%s WHERE id=%s', (code,class_id))
             conn.commit(); return jsonify({'joinCode': code})
         finally: return_connection(conn)
 
@@ -507,8 +711,69 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             user = auth(conn)
             if not (user and admin_email and is_admin_email(user.get('email') or '')): return jsonify({'message': 'Forbidden'}), 403
             with conn.cursor() as cur:
-                ensure_tables(cur); cur.execute("""SELECT o.id,o.name,o.slug,o.created_at,COUNT(DISTINCT om.user_id) members,COUNT(DISTINCT c.id) classes FROM organizations o LEFT JOIN organization_members om ON om.organization_id=o.id AND om.status='active' LEFT JOIN classes c ON c.organization_id=o.id AND c.active=1 GROUP BY o.id ORDER BY o.name""")
-                return jsonify({'organizations': [{'id': r['id'], 'name': r['name'], 'slug': r['slug'], 'members': int(r['members'] or 0), 'classes': int(r['classes'] or 0), 'createdAt': r['created_at'].isoformat() if r.get('created_at') else None} for r in cur.fetchall()]})
+                ensure_tables(cur); cur.execute("""SELECT o.id,o.name,o.slug,o.created_at,o.active,COUNT(DISTINCT CASE WHEN om.status='active' THEN om.user_id END) members,COUNT(DISTINCT CASE WHEN c.active=1 THEN c.id END) classes FROM organizations o LEFT JOIN organization_members om ON om.organization_id=o.id LEFT JOIN classes c ON c.organization_id=o.id GROUP BY o.id ORDER BY o.name""")
+                return jsonify({'organizations': [{'id': r['id'], 'name': r['name'], 'slug': r['slug'], 'members': int(r['members'] or 0), 'classes': int(r['classes'] or 0), 'active': bool(r.get('active', 1)), 'createdAt': r['created_at'].isoformat() if r.get('created_at') else None} for r in cur.fetchall()]})
+        finally: return_connection(conn)
+
+    @app.get('/api/admin/school/organizations/<int:organization_id>')
+    def admin_school_organization_details(organization_id):
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not (user and admin_email and is_admin_email(user.get('email') or '')): return jsonify({'message': 'Forbidden'}), 403
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('SELECT id,name,active FROM organizations WHERE id=%s', (organization_id,))
+                org = cur.fetchone()
+                if not org: return jsonify({'message': 'Organisation not found.'}), 404
+                cur.execute("""SELECT c.id,c.name,c.active,c.join_code,COUNT(DISTINCT CASE WHEN cm.status='active'
+                    AND om.role='learner' AND om.status='active' THEN cm.user_id END) learner_count
+                    FROM classes c LEFT JOIN class_members cm ON cm.class_id=c.id
+                    LEFT JOIN organization_members om ON om.organization_id=c.organization_id AND om.user_id=cm.user_id
+                    WHERE c.organization_id=%s GROUP BY c.id ORDER BY c.name""", (organization_id,))
+                classes = [{'id': row['id'], 'name': row['name'], 'active': bool(row.get('active', 1)), 'joinCode': row['join_code'], 'learnerCount': int(row.get('learner_count') or 0)} for row in cur.fetchall()]
+                cur.execute("""SELECT u.id,u.username,u.email,om.role,om.status FROM organization_members om
+                    JOIN users u ON u.id=om.user_id WHERE om.organization_id=%s ORDER BY u.username""", (organization_id,))
+                members = [{'id': row['id'], 'username': row['username'], 'email': row['email'], 'role': row['role'], 'status': row['status']} for row in cur.fetchall()]
+            return jsonify({'organization': {'id': org['id'], 'name': org['name'], 'active': bool(org['active'])}, 'classes': classes, 'members': members})
+        finally: return_connection(conn)
+
+    @app.patch('/api/admin/school/organizations/<int:organization_id>')
+    def admin_update_school_organization(organization_id):
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload.get('active'), bool):
+            return jsonify({'message': 'Active must be a boolean.'}), 400
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not (user and admin_email and is_admin_email(user.get('email') or '')): return jsonify({'message': 'Forbidden'}), 403
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('SELECT id FROM organizations WHERE id=%s', (organization_id,))
+                if not cur.fetchone(): return jsonify({'message': 'Organisation not found.'}), 404
+                cur.execute('UPDATE organizations SET active=%s WHERE id=%s', (int(payload['active']), organization_id))
+                if not payload['active']:
+                    cur.execute('UPDATE classes SET active=0 WHERE organization_id=%s', (organization_id,))
+            conn.commit()
+            return jsonify({'message': 'Organisation updated.'})
+        finally: return_connection(conn)
+
+    @app.patch('/api/admin/school/classes/<int:class_id>')
+    def admin_update_school_class(class_id):
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload.get('active'), bool):
+            return jsonify({'message': 'Active must be a boolean.'}), 400
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not (user and admin_email and is_admin_email(user.get('email') or '')): return jsonify({'message': 'Forbidden'}), 403
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('SELECT id FROM classes WHERE id=%s', (class_id,))
+                if not cur.fetchone(): return jsonify({'message': 'Class not found.'}), 404
+                cur.execute('UPDATE classes SET active=%s WHERE id=%s', (int(payload['active']), class_id))
+            conn.commit()
+            return jsonify({'message': 'Class updated.'})
         finally: return_connection(conn)
 
     @app.post('/api/school/classes/<int:class_id>/import')

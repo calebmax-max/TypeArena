@@ -1274,6 +1274,8 @@ export const fetchSchoolInvitations = (classId) => schoolRequest(`/api/school/cl
 export const updateSchoolMemberRole = (organizationId, userId, role) => schoolRequest(`/api/school/organizations/${organizationId}/members/${userId}`, {
   method: 'PATCH', body: JSON.stringify({ role }),
 });
+export const fetchSchoolOrganizationMembers = (organizationId) => schoolRequest(`/api/school/organizations/${organizationId}/members`);
+export const removeSchoolOrganizationMember = (organizationId, userId) => schoolRequest(`/api/school/organizations/${organizationId}/members/${userId}`, { method: 'DELETE' });
 export const removeSchoolMember = (classId, userId) => schoolRequest(`/api/school/classes/${classId}/members/${userId}`, { method: 'DELETE' });
 export const createSchoolRace = (classId, payload = {}) => queueLiveRace({ ...payload, isPrivate: true, schoolClassId: classId, stakeAmount: 0 });
 export const fetchSchoolClass = (classId) => schoolRequest(`/api/school/classes/${classId}`);
@@ -1287,8 +1289,13 @@ export const fetchSchoolAssignments = () => schoolRequest('/api/school/assignmen
 export const manageSchoolMember = (classId, userId, action) => schoolRequest(`/api/school/classes/${classId}/members/${userId}/${action}`, { method: 'POST' });
 export const inviteSchoolTeacher = (organizationId, email) => schoolRequest(`/api/school/organizations/${organizationId}/teachers/invite`, { method: 'POST', body: JSON.stringify({ email }) });
 export const updateSchoolOrganisationSettings = (organizationId, settings) => schoolRequest(`/api/school/organizations/${organizationId}/settings`, { method: 'POST', body: JSON.stringify({ settings }) });
+export const fetchSchoolInvitationsForMe = () => schoolRequest('/api/school/invitations');
+export const acceptSchoolInvitation = (token) => schoolRequest('/api/school/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
 export const regenerateSchoolJoinCode = (classId) => schoolRequest(`/api/school/classes/${classId}/regenerate-code`, { method: 'POST' });
 export const fetchAdminSchoolOrganizations = () => schoolRequest('/api/admin/school/organizations');
+export const fetchAdminSchoolOrganization = (organizationId) => schoolRequest(`/api/admin/school/organizations/${organizationId}`);
+export const setAdminSchoolOrganizationActive = (organizationId, active) => schoolRequest(`/api/admin/school/organizations/${organizationId}`, { method: 'PATCH', body: JSON.stringify({ active }) });
+export const setAdminSchoolClassActive = (classId, active) => schoolRequest(`/api/admin/school/classes/${classId}`, { method: 'PATCH', body: JSON.stringify({ active }) });
 export const importSchoolLearners = (classId, csv) => schoolRequest(`/api/school/classes/${classId}/import`, {
   method: 'POST', body: JSON.stringify({ csv }),
 });

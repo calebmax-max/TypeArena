@@ -1005,9 +1005,14 @@ export default function Play({ practicePage = false }){
         if (liveRoom?.id) {
             const completedRoom = await submitFinalLiveResult({ wpm, accuracy, finalData });
             const assignmentId = new URLSearchParams(location.search).get('assignmentId');
-            if (assignmentId && completedRoom?.status === 'completed') {
-              const result = completedRoom?.results?.[currentUser?.id] || {};
-              submitSchoolAssignment(assignmentId, { raceId: liveRoom.id, wpm: result.wpm ?? wpm, accuracy: result.accuracy ?? accuracy }).catch((error) => console.warn('Assignment auto-submit failed:', error));
+            if (assignmentId) {
+              const result = completedRoom?.players?.find((player) => String(player.userId) === String(currentUser?.id))?.result || {};
+              try {
+                await submitSchoolAssignment(assignmentId, { raceId: liveRoom.id, wpm: result.wpm ?? wpm, accuracy: result.accuracy ?? accuracy });
+              } catch (error) {
+                console.error('Assignment auto-submit failed:', error);
+                showNotice('Race finished, but assignment submission failed. Please retry from School mode.', 'error');
+              }
             }
             return;
         }
@@ -1066,7 +1071,10 @@ export default function Play({ practicePage = false }){
           });
         const assignmentId = new URLSearchParams(location.search).get('assignmentId');
         if (assignmentId) {
-          submitSchoolAssignment(assignmentId, { raceId: finalData.id, wpm, accuracy }).catch((error) => console.warn('Assignment auto-submit failed:', error));
+          submitSchoolAssignment(assignmentId, { raceId: finalData.id, wpm, accuracy }).catch((error) => {
+            console.error('Assignment auto-submit failed:', error);
+            showNotice('Race finished, but assignment submission failed. Please retry from School mode.', 'error');
+          });
         }
 
         // Ensure this passage is recorded as used so the next solo race won't repeat it
@@ -1125,7 +1133,7 @@ export default function Play({ practicePage = false }){
         isSubmittingRef.current = false;
     }
 // Fix #9: removed timeLeft, typingText, replayFrames from deps Ã¯Â¿Â½?" read via refs above.
-}, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, customText, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, location.search, mode, submitFinalLiveResult, useCustomText]);
+}, [commentatorEnabled, currentUser?.id, currentUser?.name, currentUser?.username, customText, duration, generatedContent, isLeavingRef, isSubmittingRef, language, liveRoom, location.search, mode, showNotice, submitFinalLiveResult, useCustomText]);
   const handleFinishRace = useCallback(() => {
     if (phase !== 'racing' || isSubmittingRef.current) {
       return;

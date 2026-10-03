@@ -1,27 +1,55 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  acceptSchoolInvitation,
   createSchoolAssignment,
   createSchoolClass,
   createSchoolOrganisation,
   createSchoolRace,
   exportSchoolClass,
+  fetchSchoolAssignments,
   fetchSchoolClass,
+  fetchSchoolInvitationsForMe,
+  fetchSchoolOrganizationMembers,
   fetchSchoolOverview,
   importSchoolLearners,
-  joinSchoolClass,
-  fetchSchoolAssignments,
-  manageSchoolMember,
   inviteSchoolTeacher,
+  joinSchoolClass,
+  manageSchoolMember,
   regenerateSchoolJoinCode,
+  removeSchoolOrganizationMember,
+  updateSchoolMemberRole,
+  updateSchoolOrganisationSettings,
 } from '../utils/typingApi';
 
-const cardStyle = { background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 18, padding: 20 };
-const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,.14)', background: '#111827', color: 'inherit', marginBottom: 10 };
+const cardStyle = {
+  background: 'rgba(255,255,255,.04)',
+  border: '1px solid rgba(255,255,255,.1)',
+  borderRadius: 18,
+  padding: 20,
+};
+const inputStyle = {
+  width: '100%',
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid rgba(255,255,255,.14)',
+  background: '#111827',
+  color: 'inherit',
+  marginBottom: 10,
+};
+const views = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'assignments', label: 'Assignments' },
+  { id: 'members', label: 'People' },
+  { id: 'settings', label: 'Organisation settings' },
+];
 
 export default function SchoolDashboard({ currentUser }) {
   const [overview, setOverview] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState('');
+  const [organizationMembers, setOrganizationMembers] = useState([]);
+  const [invitations, setInvitations] = useState([]);
   const [notice, setNotice] = useState('');
   const [orgName, setOrgName] = useState('');
   const [className, setClassName] = useState('');
@@ -29,19 +57,111 @@ export default function SchoolDashboard({ currentUser }) {
   const [assignment, setAssignment] = useState({ title: '', instructions: '', targetWpm: '', targetAccuracy: '' });
   const [learnerAssignments, setLearnerAssignments] = useState([]);
   const [teacherEmail, setTeacherEmail] = useState('');
+  const [teacherInvite, setTeacherInvite] = useState('');
   const [schoolRoom, setSchoolRoom] = useState(null);
+  const [activeView, setActiveView] = useState('overview');
+  const [requireLearnerApproval, setRequireLearnerApproval] = useState(false);
   const fileRef = useRef(null);
+
+  const selectedOrganization = (overview?.organizations || []).find(
+    (organization) => String(organization.id) === String(selectedOrganizationId)
+  );
 
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
-    try { setOverview(await fetchSchoolOverview()); setLearnerAssignments((await fetchSchoolAssignments()).assignments || []); } catch (error) { setNotice(error.message); }
+    try {
+      const [overviewData, assignmentData, invitationData] = await Promise.all([
+        fetchSchoolOverview(),
+        fetchSchoolAssignments(),
+        fetchSchoolInvitationsForMe(),
+      ]);
+      setOverview(overviewData);
+      setLearnerAssignments(assignmentData.assignments || []);
+      setInvitations(invitationData.invitations || []);
+      setSelectedOrganizationId((current) => {
+        if ((overviewData.organizations || []).some((organization) => String(organization.id) === String(current))) return current;
+        return overviewData.organizations?.[0] ? String(overviewData.organizations[0].id) : '';
+      });
+    } catch (error) {
+      setNotice(error.message);
+    }
   }, [currentUser?.id]);
+
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    setRequireLearnerApproval(Boolean(selectedOrganization?.settings?.requireLearnerApproval));
+  }, [selectedOrganization]);
+
   const chooseClass = async (id) => {
-    try { setSelected(await fetchSchoolClass(id)); } catch (error) { setNotice(error.message); }
+    try {
+      setSelected(await fetchSchoolClass(id));
+      setActiveView('overview');
+      setNotice('');
+    } catch (error) {
+      setNotice(error.message);
+    }
   };
-  const run = async (fn) => { try { await fn(); await load(); setNotice('Saved.'); } catch (error) { setNotice(error.message); } };
+
+  const refreshMembers = async (organizationId = selectedOrganizationId) => {
+    if (!organizationId) {
+      setOrganizationMembers([]);
+      return;
+    }
+    const result = await fetchSchoolOrganizationMembers(organizationId);
+    setOrganizationMembers(result.members || []);
+  };
+
+  const run = async (fn, successMessage = 'Saved.') => {
+    try {
+      const result = await fn();
+      await load();
+      if (selected?.class?.id) await chooseClass(selected.class.id);
+      setNotice(typeof successMessage === 'function' ? successMessage(result) : successMessage);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+
+  const selectOrganization = async (organizationId) => {
+    setSelectedOrganizationId(String(organizationId));
+    setSelected(null);
+    setOrganizationMembers([]);
+    if (organizationId) {
+      try {
+        await refreshMembers(organizationId);
+      } catch (error) {
+        setNotice(error.message);
+      }
+    }
+  };
+
+  const acceptInvitation = async (token) => {
+    await run(async () => {
+      await acceptSchoolInvitation(token);
+    }, 'Invitation accepted. Your school space has been added.');
+  };
+
+  const performMemberAction = async (userId, action) => {
+    if (!selected?.class?.id) return;
+    await run(async () => {
+      await manageSchoolMember(selected.class.id, userId, action);
+    }, `Learner ${action}d.`);
+  };
+
+  const exportClass = async () => {
+    try {
+      const blob = await exportSchoolClass(selected.class.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `typearena-class-${selected.class.id}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
 
   if (!currentUser?.id) {
     return <div className="profile-container"><section className="auth-section"><h1>School mode</h1><p>Sign in first to join a class or create an organisation.</p></section></div>;
@@ -54,56 +174,361 @@ export default function SchoolDashboard({ currentUser }) {
         <h1>Classes, assignments, progress.</h1>
         <p>Keep school racing private, measurable, and free of stakes or withdrawals.</p>
       </section>
-      {notice && <div className="auth-notice" style={{ marginBottom: 18 }}>{notice}</div>}
+      {notice && <div className="auth-notice" role="status" style={{ marginBottom: 18 }}>{notice}</div>}
+
+      {invitations.length > 0 && (
+        <section style={{ ...cardStyle, marginBottom: 18 }}>
+          <h2>School invitations</h2>
+          {invitations.map((invitation) => (
+            <div key={invitation.token} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+              <span>{invitation.organizationName}{invitation.className ? ` · ${invitation.className}` : ''} · {invitation.role}</span>
+              <button className="btn btn-primary" onClick={() => acceptInvitation(invitation.token)}>Accept invitation</button>
+            </div>
+          ))}
+        </section>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 18 }}>
-        <div style={cardStyle}>
+        <form style={cardStyle} onSubmit={(event) => {
+          event.preventDefault();
+          run(async () => {
+            const result = await createSchoolOrganisation(orgName);
+            setOrgName('');
+            await load();
+            if (result?.organization?.id) setSelectedOrganizationId(String(result.organization.id));
+          }, 'Organisation created. Select it to create your first class.');
+        }}>
           <h2>Create an organisation</h2>
           <p>Start a school or training-centre workspace.</p>
-          <input style={inputStyle} value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Organisation name" />
-          <button className="btn btn-primary" onClick={() => run(async () => { await createSchoolOrganisation(orgName); setOrgName(''); })}>Create organisation</button>
-        </div>
-        <div style={cardStyle}>
+          <input style={inputStyle} value={orgName} onChange={(event) => setOrgName(event.target.value)} placeholder="Organisation name" required minLength={2} maxLength={160} />
+          <button className="btn btn-primary" type="submit">Create organisation</button>
+        </form>
+        <form style={cardStyle} onSubmit={(event) => {
+          event.preventDefault();
+          run(async () => {
+            const result = await joinSchoolClass(joinCode);
+            setJoinCode('');
+            return result;
+          }, (result) => result?.message || 'Class join request processed.');
+        }}>
           <h2>Join a class</h2>
           <p>Use the code shared by your teacher.</p>
-          <input style={inputStyle} value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="Six-character code" />
-          <button className="btn btn-primary" onClick={() => run(async () => { await joinSchoolClass(joinCode); setJoinCode(''); })}>Join class</button>
-        </div>
+          <input style={inputStyle} value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="Six-character code" />
+          <button className="btn btn-primary" type="submit">Join class</button>
+        </form>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,.7fr) minmax(320px,1.3fr)', gap: 18 }}>
-        <div style={cardStyle}>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,.7fr) minmax(320px,1.3fr)', gap: 18, alignItems: 'start' }}>
+        <aside style={cardStyle}>
           <h2>Your school spaces</h2>
-          {(overview?.organizations || []).map((org) => <div key={org.id} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}><strong>{org.name}</strong><small style={{ display: 'block', opacity: .65 }}>{org.role}</small></div>)}
+          {!overview?.organizations?.length && <p>Create an organisation or accept an invitation to get started.</p>}
+          {(overview?.organizations || []).map((organization) => (
+            <button
+              key={organization.id}
+              type="button"
+              onClick={() => selectOrganization(organization.id)}
+              aria-pressed={String(organization.id) === String(selectedOrganizationId)}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: 12, margin: '8px 0', borderRadius: 10, border: '1px solid rgba(255,255,255,.12)', background: String(organization.id) === String(selectedOrganizationId) ? 'rgba(99,202,183,.16)' : 'transparent', color: 'inherit' }}
+            >
+              <strong>{organization.name}</strong>
+              <small style={{ display: 'block', opacity: .65 }}>{organization.role}</small>
+            </button>
+          ))}
+
+          {selectedOrganization && ['org_admin', 'teacher'].includes(selectedOrganization.role) && (
+            <form style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.1)' }} onSubmit={(event) => {
+              event.preventDefault();
+              run(async () => {
+                await createSchoolClass(selectedOrganization.id, className);
+                setClassName('');
+              }, 'Class created.');
+            }}>
+              <h3>Create a class</h3>
+              <input style={inputStyle} value={className} onChange={(event) => setClassName(event.target.value)} placeholder="Class name" required maxLength={160} />
+              <button className="btn btn-secondary" type="submit">Create class</button>
+            </form>
+          )}
+
           <h3 style={{ marginTop: 22 }}>Classes</h3>
-          {(overview?.classes || []).map((item) => <button key={item.id} type="button" onClick={() => chooseClass(item.id)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: 12, margin: '8px 0', borderRadius: 10, border: '1px solid rgba(255,255,255,.12)', background: selected?.class?.id === item.id ? 'rgba(99,202,183,.16)' : 'transparent', color: 'inherit' }}>{item.name}<small style={{ display: 'block', opacity: .65 }}>{item.learnerCount} learners · code {item.joinCode}</small></button>)}
-        </div>
-        <div style={cardStyle}>
-          {!selected ? <><h2>Teacher and learner workspace</h2><p>Select a class to see progress, assignments, and class-safe reporting.</p><p style={{ opacity: .7 }}>Practice, public races, and free private rooms remain in the core TypeArena experience.</p></> : <>
-            <h2>{selected.class.name}</h2><p>{selected.learners.length} learners · your role: {selected.role}</p>
-            {['org_admin', 'teacher'].includes(selected.role) && <>
-              {selected.role === 'org_admin' && <div style={{ marginBottom: 16 }}><h3>Invite a teacher</h3><input style={inputStyle} type="email" value={teacherEmail} onChange={(e) => setTeacherEmail(e.target.value)} placeholder="teacher@school.org" /><button className="btn btn-secondary" onClick={() => run(async () => { await inviteSchoolTeacher(selected.class.organizationId, teacherEmail); setTeacherEmail(''); })}>Create invitation</button></div>}
-              <button className="btn btn-secondary" onClick={() => run(async () => { const result = await regenerateSchoolJoinCode(selected.class.id); setSelected((value) => ({ ...value, class: { ...value.class, joinCode: result.joinCode } })); })}>Regenerate join code</button>
-              <a className="btn btn-primary" style={{ marginLeft: 8 }} href={`/play?schoolClassId=${selected.class.id}`}>Start class race</a>
-              <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={async () => { try { const result = await createSchoolRace(selected.class.id); setSchoolRoom(result.room); setNotice(`Class room created. Invite code: ${result.room?.inviteCode || 'ready'}`); } catch (error) { setNotice(error.message); } }}>Create private class race</button>
-              {schoolRoom && <small style={{ display: 'block', margin: '8px 0', opacity: .8 }}>Invite code: <strong>{schoolRoom.inviteCode}</strong>. Only approved class members can join.</small>}
-              <input style={inputStyle} value={className} onChange={(e) => setClassName(e.target.value)} placeholder="New class name" />
-              <button className="btn btn-secondary" onClick={() => run(async () => { await createSchoolClass(selected.class.organizationId, className); setClassName(''); })}>Create another class</button>
-              <div style={{ marginTop: 18, paddingTop: 18, borderTop: '1px solid rgba(255,255,255,.1)' }}>
-                <h3>New assignment</h3>
-                <input style={inputStyle} value={assignment.title} onChange={(e) => setAssignment({ ...assignment, title: e.target.value })} placeholder="Assignment title" />
-                <input style={inputStyle} value={assignment.instructions} onChange={(e) => setAssignment({ ...assignment, instructions: e.target.value })} placeholder="Instructions" />
-                <div style={{ display: 'flex', gap: 8 }}><input style={inputStyle} type="number" value={assignment.targetWpm} onChange={(e) => setAssignment({ ...assignment, targetWpm: e.target.value })} placeholder="Target WPM" /><input style={inputStyle} type="number" value={assignment.targetAccuracy} onChange={(e) => setAssignment({ ...assignment, targetAccuracy: e.target.value })} placeholder="Target %" /></div>
-                <button className="btn btn-primary" onClick={() => run(async () => { await createSchoolAssignment(selected.class.id, assignment); setAssignment({ title: '', instructions: '', targetWpm: '', targetAccuracy: '' }); })}>Create assignment</button>
-                <div style={{ marginTop: 16 }}><button className="btn btn-secondary" onClick={() => fileRef.current?.click()}>Import learners CSV</button><input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => run(async () => { const result = await importSchoolLearners(selected.class.id, String(reader.result || '')); setNotice(`${result.message} ${result.unmatched?.length ? `${result.unmatched.length} email(s) were not found.` : ''}`); }); reader.readAsText(file); }} /><button className="btn btn-secondary" style={{ marginLeft: 8 }} onClick={async () => { const blob = await exportSchoolClass(selected.class.id); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `typearena-class-${selected.class.id}.csv`; a.click(); URL.revokeObjectURL(url); }}>Export CSV</button></div>
-              </div>
-            </>}
-            <h3 style={{ marginTop: 24 }}>Learner progress</h3>
-            {['org_admin', 'teacher'].includes(selected.role) && <div style={{ marginBottom: 10 }}>{selected.learners.map((learner) => <div key={`manage-${learner.id}`} style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 6 }}><button className="btn btn-secondary" style={{ padding: '5px 8px' }} onClick={() => run(async () => { await manageSchoolMember(selected.class.id, learner.id, 'suspend'); await chooseClass(selected.class.id); })}>Suspend {learner.username}</button><button className="btn btn-secondary" style={{ padding: '5px 8px' }} onClick={() => run(async () => { await manageSchoolMember(selected.class.id, learner.id, 'remove'); await chooseClass(selected.class.id); })}>Remove</button></div>)}</div>}
-            {selected.learners.map((learner) => <div key={learner.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}><span>{learner.username}</span><span>{learner.wpm} WPM · {learner.accuracy}%</span></div>)}
-            <h3 style={{ marginTop: 24 }}>Assignments</h3>
-            {selected.role === 'learner' && <div style={{ padding: 12, marginBottom: 10, borderRadius: 10, background: 'rgba(99,202,183,.08)' }}><strong>Assignment status</strong>{learnerAssignments.filter((item) => item.className === selected.class.name).map((item) => <div key={item.id} style={{ marginTop: 8 }}>{item.title}: {item.status === 'completed' ? `Completed · ${item.wpm} WPM · ${item.accuracy}%` : <><span>Pending </span><a className="btn btn-primary" style={{ padding: '4px 8px', marginLeft: 6 }} href={`/play?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>Start</a></>}</div>)}</div>}
-            {(selected.assignments || []).map((item) => <div key={item.id} style={{ padding: 12, margin: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,.04)' }}><strong>{item.title}</strong><small style={{ display: 'block', opacity: .7 }}>Target: {item.targetWpm} WPM · {item.targetAccuracy}% accuracy</small>{selected.role === 'learner' && <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/practice?assignmentId=${item.id}`}>Start assignment</Link>}</div>)}
-          </>}
-        </div>
+          {(overview?.classes || [])
+            .filter((item) => !selectedOrganizationId || String(item.organizationId) === String(selectedOrganizationId))
+            .map((item) => (
+              <button key={item.id} type="button" onClick={() => chooseClass(item.id)} aria-pressed={selected?.class?.id === item.id} style={{ display: 'block', width: '100%', textAlign: 'left', padding: 12, margin: '8px 0', borderRadius: 10, border: '1px solid rgba(255,255,255,.12)', background: selected?.class?.id === item.id ? 'rgba(99,202,183,.16)' : 'transparent', color: 'inherit' }}>
+                {item.name}<small style={{ display: 'block', opacity: .65 }}>{item.learnerCount} learners · code {item.joinCode}</small>
+              </button>
+            ))}
+        </aside>
+
+        <main style={cardStyle}>
+          {!selected ? (
+            <>
+              <h2>{selectedOrganization ? selectedOrganization.name : 'Teacher and learner workspace'}</h2>
+              {selectedOrganization && (
+                <nav aria-label="Organisation sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '16px 0 22px' }}>
+                  {views.filter((view) => view.id !== 'assignments').map((view) => (
+                    <button key={view.id} type="button" className={activeView === view.id ? 'btn btn-primary' : 'btn btn-secondary'} aria-pressed={activeView === view.id} onClick={async () => {
+                      setActiveView(view.id);
+                      if (view.id === 'members') {
+                        try { await refreshMembers(selectedOrganization.id); } catch (error) { setNotice(error.message); }
+                      }
+                    }}>{view.label}</button>
+                  ))}
+                </nav>
+              )}
+              {!selectedOrganization && <p>Select an organisation or class to see class progress, assignments, and learner reports.</p>}
+              {selectedOrganization && activeView === 'overview' && <p>Select a class to see its progress, or create your first class using the form to the left.</p>}
+              {selectedOrganization && activeView === 'members' && (
+                <>
+                  <h3>Organisation members</h3>
+                  {selectedOrganization.role === 'org_admin' && (
+                    <form onSubmit={(event) => {
+                      event.preventDefault();
+                      run(async () => {
+                        const result = await inviteSchoolTeacher(selectedOrganization.id, teacherEmail);
+                        setTeacherInvite(result.invitation?.token || '');
+                        setTeacherEmail('');
+                      }, 'Teacher invitation created. The invited teacher can accept after signing in with that email.');
+                    }}>
+                      <input style={inputStyle} type="email" value={teacherEmail} onChange={(event) => setTeacherEmail(event.target.value)} placeholder="teacher@school.org" required />
+                      <button className="btn btn-secondary" type="submit">Invite a teacher</button>
+                      {teacherInvite && <small style={{ display: 'block', marginTop: 8 }}>Invitation token: <code>{teacherInvite}</code></small>}
+                    </form>
+                  )}
+                  {organizationMembers.map((member) => (
+                    <div key={member.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+                      <span>{member.username} · {member.email} · {member.role}</span>
+                      {selectedOrganization.role === 'org_admin' && <span style={{ display: 'flex', gap: 8 }}>
+                        <select aria-label={`Role for ${member.username}`} value={member.role} onChange={async (event) => {
+                          try {
+                            await updateSchoolMemberRole(selectedOrganization.id, member.id, event.target.value);
+                            await refreshMembers(selectedOrganization.id);
+                            setNotice('Member role updated.');
+                          } catch (error) { setNotice(error.message); }
+                        }}>
+                          <option value="org_admin">Admin</option><option value="teacher">Teacher</option><option value="learner">Learner</option>
+                        </select>
+                        <button className="btn btn-secondary" onClick={() => run(async () => {
+                          await removeSchoolOrganizationMember(selectedOrganization.id, member.id);
+                          await refreshMembers(selectedOrganization.id);
+                        }, 'Member removed from the organisation.')}>Remove</button>
+                      </span>}
+                    </div>
+                  ))}
+                  {!organizationMembers.length && <p>No members to show.</p>}
+                </>
+              )}
+              {selectedOrganization && activeView === 'settings' && (
+                <>
+                  <h3>Organisation settings</h3>
+                  {selectedOrganization.role === 'org_admin' ? (
+                    <form onSubmit={(event) => {
+                      event.preventDefault();
+                      run(() => updateSchoolOrganisationSettings(selectedOrganization.id, { requireLearnerApproval }), 'Organisation settings updated.');
+                    }}>
+                      <label style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+                        <input type="checkbox" checked={requireLearnerApproval} onChange={(event) => setRequireLearnerApproval(event.target.checked)} />
+                        Require staff approval for learners joining with a class code
+                      </label>
+                      <button className="btn btn-primary" type="submit">Save settings</button>
+                    </form>
+                  ) : <p>Only organisation admins can change settings.</p>}
+                </>
+              )}
+              {selectedOrganization && activeView === 'assignments' && <p>Select a class to see assignments.</p>}
+              {selectedOrganization && <p style={{ opacity: .7 }}>Practice, public races, and free private rooms remain in the core TypeArena experience.</p>}
+            </>
+          ) : (
+            <>
+              <h2>{selected.class.name}</h2>
+              <p>{selected.analytics?.learnerCount ?? selected.learners.filter((learner) => learner.status === 'active').length} learners · your role: {selected.role}</p>
+              <nav aria-label="School dashboard sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '16px 0 22px' }}>
+                {views.map((view) => (
+                  <button key={view.id} type="button" className={activeView === view.id ? 'btn btn-primary' : 'btn btn-secondary'} aria-pressed={activeView === view.id} onClick={async () => {
+                    setActiveView(view.id);
+                    if (view.id === 'members' && selectedOrganization) {
+                      try { await refreshMembers(selectedOrganization.id); } catch (error) { setNotice(error.message); }
+                    }
+                  }}>{view.label}</button>
+                ))}
+              </nav>
+
+              {activeView === 'overview' && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 10, marginBottom: 20 }}>
+                    <div style={cardStyle}><small>Active learners</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.learnerCount ?? selected.learners.length}</strong></div>
+                    <div style={cardStyle}><small>Pending approvals</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.pendingCount ?? 0}</strong></div>
+                    <div style={cardStyle}><small>Average WPM</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.averageWpm ?? 0}</strong></div>
+                    <div style={cardStyle}><small>Completed assignments</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.completionCount ?? 0}</strong></div>
+                  </div>
+                  {['org_admin', 'teacher'].includes(selected.role) && (
+                    <div style={{ marginBottom: 20 }}>
+                      <h3>Class tools</h3>
+                      <button className="btn btn-secondary" onClick={() => run(async () => {
+                        const result = await regenerateSchoolJoinCode(selected.class.id);
+                        setSelected((value) => ({ ...value, class: { ...value.class, joinCode: result.joinCode } }));
+                      }, 'Join code regenerated.')}>Regenerate join code</button>
+                      <a className="btn btn-primary" style={{ marginLeft: 8 }} href={`/play?schoolClassId=${selected.class.id}`}>Start class race</a>
+                      <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={async () => {
+                        try {
+                          const result = await createSchoolRace(selected.class.id);
+                          setSchoolRoom(result.room);
+                          setNotice(`Class room created. Invite code: ${result.room?.inviteCode || 'ready'}`);
+                        } catch (error) {
+                          setNotice(error.message);
+                        }
+                      }}>Create private class race</button>
+                      {schoolRoom && <small style={{ display: 'block', margin: '8px 0', opacity: .8 }}>Invite code: <strong>{schoolRoom.inviteCode}</strong>. Only approved classmates and school staff can join.</small>}
+                    </div>
+                  )}
+                  <h3>Learner progress</h3>
+                  {selected.learners.length === 0 && <p>No learners have joined this class yet.</p>}
+                  {selected.learners.map((learner) => (
+                    <div key={learner.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+                      <span>{learner.username} <small style={{ opacity: .65 }}>({learner.status})</small></span>
+                      <span>{learner.wpm} WPM · {learner.accuracy}%</span>
+                      {['org_admin', 'teacher'].includes(selected.role) && (
+                        <span style={{ display: 'flex', gap: 6 }}>
+                          {learner.status === 'pending' && <button className="btn btn-secondary" onClick={() => performMemberAction(learner.id, 'approve')}>Approve</button>}
+                          {learner.status === 'suspended' && <button className="btn btn-secondary" onClick={() => performMemberAction(learner.id, 'restore')}>Restore</button>}
+                          {learner.status === 'active' && <button className="btn btn-secondary" onClick={() => performMemberAction(learner.id, 'suspend')}>Suspend</button>}
+                          <button className="btn btn-secondary" onClick={() => performMemberAction(learner.id, 'remove')}>Remove</button>
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {activeView === 'assignments' && (
+                <>
+                  {selected.role !== 'learner' && (
+                    <section style={{ marginBottom: 20 }}>
+                      <h3>New assignment</h3>
+                      <input style={inputStyle} value={assignment.title} onChange={(event) => setAssignment({ ...assignment, title: event.target.value })} placeholder="Assignment title" />
+                      <input style={inputStyle} value={assignment.instructions} onChange={(event) => setAssignment({ ...assignment, instructions: event.target.value })} placeholder="Instructions" />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input style={inputStyle} type="number" min="0" value={assignment.targetWpm} onChange={(event) => setAssignment({ ...assignment, targetWpm: event.target.value })} placeholder="Target WPM" />
+                        <input style={inputStyle} type="number" min="0" max="100" value={assignment.targetAccuracy} onChange={(event) => setAssignment({ ...assignment, targetAccuracy: event.target.value })} placeholder="Target %" />
+                      </div>
+                      <button className="btn btn-primary" onClick={() => run(async () => {
+                        await createSchoolAssignment(selected.class.id, assignment);
+                        setAssignment({ title: '', instructions: '', targetWpm: '', targetAccuracy: '' });
+                      }, 'Assignment created.')}>Create assignment</button>
+                      <div style={{ marginTop: 16 }}>
+                        <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}>Import learners CSV</button>
+                        <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => run(async () => {
+                            const result = await importSchoolLearners(selected.class.id, String(reader.result || ''));
+                            setNotice(`${result.message}${result.invitations?.length ? ` Invite links were created for ${result.invitations.length} new email(s); recipients can accept after creating an account with that email.` : ''}`);
+                          }, 'Learner import complete.');
+                          reader.onerror = () => setNotice('Could not read the selected CSV file.');
+                          reader.readAsText(file);
+                          event.target.value = '';
+                        }} />
+                        <button className="btn btn-secondary" style={{ marginLeft: 8 }} onClick={exportClass}>Export CSV</button>
+                      </div>
+                    </section>
+                  )}
+                  <h3>{selected.role === 'learner' ? 'Assignment completion history' : 'Assignment analytics'}</h3>
+                  {selected.role === 'learner' && learnerAssignments.filter((item) => Number(item.classId) === Number(selected.class.id)).map((item) => (
+                    <div key={item.id} style={{ padding: 12, margin: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,.04)' }}>
+                      <strong>{item.title}</strong>
+                      <div>{item.status === 'completed' ? `Completed · ${item.wpm} WPM · ${item.accuracy}% accuracy` : 'Pending'}</div>
+                      {item.submittedAt && <small>Submitted {new Date(item.submittedAt).toLocaleString()}</small>}
+                      {item.history?.length > 0 && (
+                        <details style={{ marginTop: 8 }}>
+                          <summary>{item.history.length} attempt(s)</summary>
+                          {item.history.map((attempt, index) => <small key={`${attempt.raceId || 'attempt'}-${attempt.submittedAt || index}`} style={{ display: 'block' }}>Attempt {item.history.length - index}: {attempt.wpm} WPM · {attempt.accuracy}% · {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : 'time unavailable'}</small>)}
+                        </details>
+                      )}
+                      {item.status !== 'completed' && <div><Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/play?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>Start assignment</Link></div>}
+                    </div>
+                  ))}
+                  {(selected.assignments || []).map((item) => (
+                    <div key={item.id} style={{ padding: 12, margin: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,.04)' }}>
+                      <strong>{item.title}</strong>
+                      <small style={{ display: 'block', opacity: .7 }}>Target: {item.targetWpm} WPM · {item.targetAccuracy}% accuracy</small>
+                      {selected.role === 'learner' && item.mySubmission && <small style={{ display: 'block' }}>Latest result: {item.mySubmission.wpm} WPM · {item.mySubmission.accuracy}% accuracy{item.mySubmission.submittedAt ? ` · ${new Date(item.mySubmission.submittedAt).toLocaleString()}` : ''}</small>}
+                      {['org_admin', 'teacher'].includes(selected.role) && <small style={{ display: 'block' }}>{item.completionCount} submission(s) · {item.submissions?.length || 0} result(s) shown</small>}
+                      {selected.role === 'learner' && <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/play?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>{item.mySubmission ? 'Retake assignment' : 'Start assignment'}</Link>}
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {activeView === 'members' && (
+                <>
+                  <h3>Organisation members</h3>
+                  {selected.role === 'org_admin' && (
+                    <form onSubmit={(event) => {
+                      event.preventDefault();
+                      run(async () => {
+                        const result = await inviteSchoolTeacher(selectedOrganization.id, teacherEmail);
+                        setTeacherInvite(result.invitation?.token || '');
+                        setTeacherEmail('');
+                      }, 'Teacher invitation created. The invited teacher can accept it after signing in with that email.');
+                    }}>
+                      <input style={inputStyle} type="email" value={teacherEmail} onChange={(event) => setTeacherEmail(event.target.value)} placeholder="teacher@school.org" required />
+                      <button className="btn btn-secondary" type="submit">Invite a teacher</button>
+                      {teacherInvite && <small style={{ display: 'block', marginTop: 8 }}>Invitation token: <code>{teacherInvite}</code>. Share it securely with the invited teacher.</small>}
+                    </form>
+                  )}
+                  {organizationMembers.map((member) => (
+                    <div key={member.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+                      <span>{member.username} · {member.email}</span>
+                      <span>{member.status}</span>
+                      {selected.role === 'org_admin' && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <select aria-label={`Role for ${member.username}`} value={member.role} onChange={async (event) => {
+                            try {
+                              await updateSchoolMemberRole(selectedOrganization.id, member.id, event.target.value);
+                              await refreshMembers(selectedOrganization.id);
+                              setNotice('Member role updated.');
+                            } catch (error) {
+                              setNotice(error.message);
+                            }
+                          }}>
+                            <option value="org_admin">Admin</option>
+                            <option value="teacher">Teacher</option>
+                            <option value="learner">Learner</option>
+                          </select>
+                          <button className="btn btn-secondary" onClick={() => run(async () => {
+                            await removeSchoolOrganizationMember(selectedOrganization.id, member.id);
+                            await refreshMembers(selectedOrganization.id);
+                          }, 'Member removed from the organisation.')}>Remove</button>
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {!organizationMembers.length && <p>No members to show.</p>}
+                </>
+              )}
+
+              {activeView === 'settings' && (
+                <>
+                  <h3>Organisation settings</h3>
+                  {selected.role !== 'org_admin' ? <p>Only organisation admins can change settings.</p> : (
+                    <form onSubmit={(event) => {
+                      event.preventDefault();
+                      run(async () => {
+                        await updateSchoolOrganisationSettings(selectedOrganization.id, { requireLearnerApproval });
+                      }, 'Organisation settings updated.');
+                    }}>
+                      <label style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+                        <input type="checkbox" checked={requireLearnerApproval} onChange={(event) => setRequireLearnerApproval(event.target.checked)} />
+                        Require staff approval for learners joining with a class code
+                      </label>
+                      <button className="btn btn-primary" type="submit">Save settings</button>
+                    </form>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </main>
       </div>
     </div>
   );

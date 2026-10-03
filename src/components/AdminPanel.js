@@ -32,6 +32,9 @@ import {
   sendAdminWalletTransfer,
   fetchAdminImpersonationLog,
   fetchAdminSchoolOrganizations,
+  fetchAdminSchoolOrganization,
+  setAdminSchoolOrganizationActive,
+  setAdminSchoolClassActive,
 } from '../utils/typingApi';
 
 const DEFAULT_SITE_MARQUEE_ITEMS = [
@@ -112,6 +115,7 @@ export default function AdminPanel() {
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [schoolOrganizations, setSchoolOrganizations] = useState([]);
+  const [selectedSchoolOrganization, setSelectedSchoolOrganization] = useState(null);
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
   // Send money from the admin wallet to a user's wallet
   const [sendForm, setSendForm] = useState({ query: '', amount: '', note: '' });
@@ -1245,7 +1249,65 @@ export default function AdminPanel() {
             {activeSection === 'schools' && (
               <section>
                 <div className="ap-section-header"><h1 className="ap-section-title">Schools</h1><p className="ap-section-sub">Organisation and class activity across School mode.</p></div>
-                <div className="ap-card"><div className="ap-table-wrap"><table className="ap-table"><thead><tr><th>Organisation</th><th>Members</th><th>Classes</th><th>Created</th></tr></thead><tbody>{schoolOrganizations.map((org) => <tr key={org.id}><td><strong>{org.name}</strong><div className="ap-muted">{org.slug}</div></td><td>{org.members}</td><td>{org.classes}</td><td>{org.createdAt ? new Date(org.createdAt).toLocaleDateString() : '—'}</td></tr>)}</tbody></table>{!schoolOrganizations.length && <div className="ap-empty">No organisations yet.</div>}</div></div>
+                <div className="ap-card">
+                  <div className="ap-table-wrap">
+                    <table className="ap-table">
+                      <thead><tr><th>Organisation</th><th>Members</th><th>Classes</th><th>Status</th><th>Created</th><th>Manage</th></tr></thead>
+                      <tbody>{schoolOrganizations.map((org) => <tr key={org.id}>
+                        <td><strong>{org.name}</strong><div className="ap-muted">{org.slug}</div></td>
+                        <td>{org.members}</td><td>{org.classes}</td><td>{org.active ? 'Active' : 'Disabled'}</td>
+                        <td>{org.createdAt ? new Date(org.createdAt).toLocaleDateString() : '—'}</td>
+                        <td style={{ display: 'flex', gap: 8 }}>
+                          <button className="btn btn-secondary" onClick={async () => {
+                            try {
+                              setSelectedSchoolOrganization(await fetchAdminSchoolOrganization(org.id));
+                            } catch (error) {
+                              showNotice(error.message || 'Could not load organisation details.');
+                            }
+                          }}>Details</button>
+                          <button className="btn btn-secondary" onClick={async () => {
+                            try {
+                              await setAdminSchoolOrganizationActive(org.id, !org.active);
+                              setSchoolOrganizations(await fetchAdminSchoolOrganizations().then((data) => data.organizations || []));
+                              showNotice(org.active ? 'Organisation and its classes disabled.' : 'Organisation enabled. Classes can be re-enabled below.');
+                            } catch (error) {
+                              showNotice(error.message || 'Could not update organisation.');
+                            }
+                          }}>{org.active ? 'Disable' : 'Enable'}</button>
+                        </td>
+                      </tr>)}</tbody>
+                    </table>
+                    {!schoolOrganizations.length && <div className="ap-empty">No organisations yet.</div>}
+                  </div>
+                </div>
+                {selectedSchoolOrganization && (
+                  <div className="ap-card" style={{ marginTop: 16 }}>
+                    <div className="ap-section-header">
+                      <h2 className="ap-section-title">{selectedSchoolOrganization.organization.name}</h2>
+                      <button className="btn btn-secondary" onClick={() => setSelectedSchoolOrganization(null)}>Close</button>
+                    </div>
+                    <h3>Classes</h3>
+                    {!selectedSchoolOrganization.classes.length && <div className="ap-empty">No classes.</div>}
+                    {selectedSchoolOrganization.classes.map((schoolClass) => <div key={schoolClass.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.1)' }}>
+                      <span><strong>{schoolClass.name}</strong><small style={{ display: 'block' }}>{schoolClass.learnerCount} active learners · code {schoolClass.joinCode}</small></span>
+                      <button className="btn btn-secondary" onClick={async () => {
+                        try {
+                          await setAdminSchoolClassActive(schoolClass.id, !schoolClass.active);
+                          setSelectedSchoolOrganization(await fetchAdminSchoolOrganization(selectedSchoolOrganization.organization.id));
+                          setSchoolOrganizations(await fetchAdminSchoolOrganizations().then((data) => data.organizations || []));
+                          showNotice(schoolClass.active ? 'Class disabled.' : 'Class enabled.');
+                        } catch (error) {
+                          showNotice(error.message || 'Could not update class.');
+                        }
+                      }}>{schoolClass.active ? 'Disable class' : 'Enable class'}</button>
+                    </div>)}
+                    <h3 style={{ marginTop: 18 }}>Members</h3>
+                    {!selectedSchoolOrganization.members.length && <div className="ap-empty">No members.</div>}
+                    {selectedSchoolOrganization.members.map((member) => <div key={member.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,.1)' }}>
+                      {member.username} · {member.email} · {member.role} · {member.status}
+                    </div>)}
+                  </div>
+                )}
               </section>
             )}
             {activeSection === 'wallet' && (
