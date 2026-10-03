@@ -31,6 +31,7 @@ from flask import Flask, jsonify, request, send_from_directory, Response
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
+from school_features import register_school_routes
 try:
     from flask_compress import Compress
 except ImportError:  # pragma: no cover - only hit if the dependency isn't installed yet
@@ -57,6 +58,7 @@ ALLOWED_ORIGINS = (
     else '*'
 )
 CORS(app, origins=ALLOWED_ORIGINS)
+
 
 # Uploads are no longer used; keep request bodies small.
 MAX_REQUEST_BYTES = int(os.getenv('TYPEARENA_MAX_REQUEST_BYTES', str(2 * 1024 * 1024)))
@@ -2888,7 +2890,12 @@ def _serialize_live_room(room: Dict[str, Any], viewer_user_id: Optional[int] = N
     winner_user_id = room.get('winnerUserId')
     winner_username = ''
     for player in room.get('players', []):
-        result = room.get('results', {}).get(player['userId'], {})
+        result_map = room.get('results', {}) or {}
+        # JSON object keys are strings after a database round-trip, while
+        # newly-created rooms use integer user ids. Accept both forms so a
+        # result can never appear attached to the wrong participant (or vanish
+        # from one client's serialized room).
+        result = result_map.get(player['userId']) or result_map.get(str(player['userId'])) or {}
         if winner_user_id is not None and str(player['userId']) == str(winner_user_id):
             winner_username = str(player.get('username') or '')
         players.append(
@@ -7988,14 +7995,9 @@ def queue_live_race():
             if wpm_min is not None and wpm_max is not None and wpm_min > wpm_max:
                 wpm_min, wpm_max = wpm_max, wpm_min
             my_wpm = _safe_float(user.get('wpm') or 0)
-            # Only private rooms can carry a stake - public 1v1 matchmaking
-            # stays cash-free, same reasoning as winner_prize above (a
-            # client could otherwise queue into a random public match with
-            # a forged {"stakeAmount": ...}). The host who creates the room
-            # sets the stake for everyone in it; minimum is 0 (free play),
-            # there is no maximum - a joiner who does not want to pay it
-            # simply does not join that room. See _debit_user_balance calls
-            # below for where the host and each joiner are actually charged.
+            # Money features are retired from the core TypeArena product.
+            # Keep the legacy field readable for older clients, but refuse any
+            # non-zero stake at the API boundary so private rooms remain free.
             stake_amount = 0.0
             if is_private:
                 try:
@@ -8003,7 +8005,10 @@ def queue_live_race():
                 except (TypeError, ValueError):
                     return jsonify({'message': 'Stake amount must be a valid number.'}), 400
                 if not math.isfinite(stake_amount) or stake_amount < 0:
-                    return jsonify({'message': 'Stake amount cannot be negative.'}), 400
+                    return jsonify({'message': 'Private rooms are free. Stake amount must be 0.'}), 400
+                if stake_amount > 0:
+                    return jsonify({'message': 'Stakes have been removed. Private rooms are free to play.'}), 400
+                stake_amount = 0.0
 
             # Only query store items when actually needed (custom invite code check)
             if is_private and invite_code:
@@ -10729,6 +10734,21 @@ def frontend_routes(path: str):
     return _frontend_file_response(path)
 
 
+# School mode is intentionally separate from the legacy money/tournament
+# surfaces. It owns organisations, classes, assignments, and learner reports
+# while reusing the existing authenticated user and race-history tables.
+_ensure_school_tables = register_school_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+    now_db=lambda: _now_db(),
+    now_iso=lambda: _now_iso(),
+    is_admin_email=lambda email: _is_admin_email(email),
+    admin_email=ADMIN_EMAIL,
+)
+
+
 def _bootstrap_db() -> None:
     """Create all required tables and columns once at startup."""
     try:
@@ -10748,6 +10768,7 @@ def _bootstrap_db() -> None:
                 _ensure_admin_wallet_transactions_table(cur)
                 _ensure_admin_user_transfers_table(cur)
                 _ensure_admin_impersonation_log_table(cur)
+                _ensure_school_tables(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_terms_acceptance_columns(cur)
                 _ensure_user_equipped_columns(cur)

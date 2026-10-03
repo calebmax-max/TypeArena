@@ -8,3 +8,5 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.14.3
+      - key: TYPEARENA_SOCKETIO_ASYNC_MODE
+        value: gevent

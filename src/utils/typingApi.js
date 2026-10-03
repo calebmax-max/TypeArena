@@ -333,8 +333,9 @@ export const joinTournament = async (tournamentId) => {
 
 export const fetchLeaderboard = async (limit = 100) => {
   try {
-    const response = await apiFetch(buildApiUrl(`/api/leaderboard?limit=${limit}`), {
+    const response = await apiFetch(buildApiUrl(`/api/leaderboard?limit=${limit}&_=${Date.now()}`), {
       headers: buildHeaders(),
+      cache: 'no-store',
     });
     return await parseResponse(response);
   } catch (error) {
@@ -1245,4 +1246,39 @@ export const purchaseStoreBundle = async (bundleId) => {
     setStoredUser(data.user);
   }
   return data;
+};
+
+// --- Organisation and classroom APIs ---
+const schoolRequest = async (path, options = {}) => {
+  const response = await apiFetch(buildApiUrl(path), {
+    ...options,
+    headers: { ...buildHeaders(), ...(options.headers || {}) },
+  });
+  return parseResponse(response);
+};
+
+export const fetchSchoolOverview = () => schoolRequest('/api/school/overview');
+export const createSchoolOrganisation = (name) => schoolRequest('/api/school/organizations', {
+  method: 'POST', body: JSON.stringify({ name }),
+});
+export const createSchoolClass = (organizationId, name) => schoolRequest(`/api/school/organizations/${organizationId}/classes`, {
+  method: 'POST', body: JSON.stringify({ name }),
+});
+export const joinSchoolClass = (joinCode) => schoolRequest('/api/school/classes/join', {
+  method: 'POST', body: JSON.stringify({ joinCode }),
+});
+export const fetchSchoolClass = (classId) => schoolRequest(`/api/school/classes/${classId}`);
+export const createSchoolAssignment = (classId, payload) => schoolRequest(`/api/school/classes/${classId}/assignments`, {
+  method: 'POST', body: JSON.stringify(payload),
+});
+export const submitSchoolAssignment = (assignmentId, payload) => schoolRequest(`/api/school/assignments/${assignmentId}/submit`, {
+  method: 'POST', body: JSON.stringify(payload),
+});
+export const importSchoolLearners = (classId, csv) => schoolRequest(`/api/school/classes/${classId}/import`, {
+  method: 'POST', body: JSON.stringify({ csv }),
+});
+export const exportSchoolClass = async (classId) => {
+  const response = await apiFetch(buildApiUrl(`/api/school/classes/${classId}/export`), { headers: buildHeaders() });
+  if (!response.ok) return parseResponse(response);
+  return response.blob();
 };

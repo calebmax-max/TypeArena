@@ -784,6 +784,10 @@ export function useLiveRaceSession({
           }
         }, 5000)
       : null;
+    // Socket.IO is the fast path, but the room API is the authoritative
+    // recovery path. Keep polling while queued/waiting so a missed socket
+    // completion event cannot leave one participant with a private/stale
+    // result screen.
     const roomRefreshInterval = (phase === 'queued' || phase === 'waiting')
       ? window.setInterval(() => {
           if (isLeavingRef.current) return;
@@ -806,8 +810,10 @@ export function useLiveRaceSession({
       liveRaceSocket.off('connect', joinRoom);
       liveRaceSocket.disconnect();
     };
-  // Keep the socket subscription stable; the latest room/player state is read through refs in callbacks.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Recreate the recovery interval when the phase changes from racing to
+  // waiting after the local player submits. Without `phase` here, the old
+  // effect never installed polling after a submit, so Socket.IO was the only
+  // way the opponent's final result could arrive.
   }, [finalizeRoomIfCompleted, inputRef, liveRoom?.id, phase, setPhase, syncRoomClock]);
   useEffect(() => {
     if (phase === 'queued' && liveRoom?.status === 'countdown' && revealRemaining > 0) {

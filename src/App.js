@@ -17,15 +17,14 @@ import { fetchSiteMarquee, fetchCurrentUser } from './utils/typingApi';
 import { preloadPlayContent } from './utils/navigationPrefetch';
 import Play from './components/Play';
 import TrainingPage from './components/TrainingPage';
-import Tournaments from './components/Tournaments';
 import Leaderboard from './components/Leaderboard';
 import Profile from './components/TypeProfile';
 import AdminPanel from './components/AdminPanel';
-import Marketplace from './components/Marketplace';
 import Results from './components/Results';
 import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
+import SchoolDashboard from './components/SchoolDashboard';
 
 
 
@@ -36,7 +35,7 @@ const SITE_MARQUEE_CHANGE_EVENT = 'typearena-site-marquee-changed';
 const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Product Update',
   'Private friend battles are live now.',
-  'Wallet top-up, tournaments, and marketplace are active.',
+  'School mode now supports classes, assignments, and learner progress.',
 ];
 
 // Network failures and API error responses are expected on flaky connections
@@ -261,9 +260,8 @@ function AppLayout() {
           <nav id="arena-primary-nav" className={`arena-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
             <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
             <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}>Training</NavLink>
-            <NavLink data-tour="nav-tournaments" to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
             <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
-            <NavLink to="/marketplace" className={navLinkClassName}>Marketplace</NavLink>
+            <NavLink to="/school" className={navLinkClassName}>School</NavLink>
             <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
             {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout">Sign Out</button>}
           </nav>
@@ -286,9 +284,8 @@ function AppLayout() {
           <Route path="/play" element={<Play />} />
           <Route path="/training" element={<TrainingPage />} />
           <Route path="/practice" element={<Play practicePage />} />
-          <Route path="/tournaments" element={<Tournaments />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
-          <Route path="/marketplace" element={<Marketplace />} />
+          <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/results/:raceId" element={<Results />} />
@@ -299,7 +296,7 @@ function AppLayout() {
       <footer className="arena-footer">
         <div className="arena-footer__inner">
           <div><strong>TypeArena</strong><p>Skill-based typing races for people who like a little pressure.</p></div>
-          <div className="arena-footer__links"><Link to="/play">Play a race</Link><Link to="/tournaments">Tournaments</Link><Link to="/leaderboard">Leaderboard</Link><Link to="/profile">Your profile</Link></div>
+          <div className="arena-footer__links"><Link to="/play">Play a race</Link><Link to="/school">School mode</Link><Link to="/leaderboard">Leaderboard</Link><Link to="/profile">Your profile</Link></div>
         </div>
         <p className="arena-footer__bottom">&copy; 2026 TypeArena. Compete. Type. Win.</p>
       </footer>
