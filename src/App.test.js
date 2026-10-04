@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -70,6 +70,8 @@ test('renders the current TypeArena navigation and home content', async () => {
   expect(screen.getAllByText(/typearena/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/private friend battles are live now/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/sign in/i).length).toBeGreaterThan(0);
+  expect(within(screen.getByRole('navigation', { name: 'Primary navigation' }))
+    .getByRole('link', { name: 'Tournaments' })).toHaveAttribute('href', '/tournaments');
 });
 
 test('registers the tournaments page at /tournaments', () => {
