@@ -35,6 +35,11 @@ from school_features import register_school_routes
 from foundation_features import per_key_error_counts, register_foundation_routes
 from progression_features import award_race_progress, register_progression_routes
 from certification_features import register_certification_routes
+from sponsored_event_features import (
+    complete_sponsored_event_attempt,
+    record_sponsored_event_attempt,
+    register_sponsored_event_routes,
+)
 try:
     from flask_compress import Compress
 except ImportError:  # pragma: no cover - only hit if the dependency isn't installed yet
@@ -3673,6 +3678,9 @@ def _fetch_all_tournaments(cur) -> list[Dict[str, Any]]:
                 WHERE tj.tournament_id = t.id AND tj.paid_amount = 0
             ) AS waiting_players
         FROM tournaments t
+        WHERE NOT EXISTS (
+            SELECT 1 FROM sponsored_events se WHERE se.tournament_id = t.id
+        )
         ORDER BY t.id DESC
         ''',
     )
@@ -9072,6 +9080,7 @@ def get_tournaments():
         user = _get_user_from_header(conn)
         owned_items = set(_owned_store_items_for_user(conn, int(user.get('id') or 0))) if user else set()
         with conn.cursor() as cur:
+            _ensure_sponsored_event_tables(cur)
             _ensure_tournament_duration_column(cur)
             _sync_tournament_statuses(cur)
             rows = _fetch_all_tournaments(cur)
@@ -9100,6 +9109,13 @@ def join_tournament(tournament_id: int):
             return jsonify({'message': 'Please sign in first to join this tournament.'}), 401
 
         with conn.cursor() as cur:
+            _ensure_sponsored_event_tables(cur)
+            cur.execute(
+                'SELECT 1 FROM sponsored_events WHERE tournament_id=%s LIMIT 1',
+                (tournament_id,),
+            )
+            if cur.fetchone():
+                return jsonify({'message': 'Sponsored events use free entry. Join from the sponsored events section.'}), 400
             _sync_tournament_statuses(cur)
             tournament = _fetch_tournament_with_counts(cur, tournament_id, lock=True)
             if not tournament:
@@ -10539,6 +10555,10 @@ def start_race():
             duration_limit = None
 
         issued = issue_race_token(user_id=user['id'], target_text=target_text, mode=mode, duration_limit_s=duration_limit)
+        with conn.cursor() as cur:
+            _ensure_sponsored_event_tables(cur)
+            record_sponsored_event_attempt(cur, user_id=int(user['id']), race_token=issued['token'])
+        conn.commit()
         return jsonify(issued), 201
     finally:
         _return_connection(conn)
@@ -10612,6 +10632,17 @@ def submit_race():
             # race_history.anti_cheat_flags for review.
             hard_reject_prefixes = ('keystroke_timing_too_uniform', 'wpm_exceeds_human_ceiling', 'missing_keystroke_log')
             if any(flag.startswith(prefix) for flag in anti_cheat_flags for prefix in hard_reject_prefixes):
+                if race_token:
+                    with conn.cursor() as cur:
+                        complete_sponsored_event_attempt(
+                            cur,
+                            user_id=int(user['id']),
+                            race_token=str(race_token),
+                            race_code=race_code,
+                            wpm=wpm,
+                            verified=False,
+                        )
+                    conn.commit()
                 return jsonify({
                     'message': 'This race could not be verified and was not recorded.',
                     'flags': anti_cheat_flags,
@@ -10669,6 +10700,15 @@ def submit_race():
                 anti_cheat_flags=anti_cheat_flags,
                 key_errors=key_errors,
             )
+            if race_token:
+                complete_sponsored_event_attempt(
+                    cur,
+                    user_id=int(user['id']),
+                    race_token=str(race_token),
+                    race_code=race_code,
+                    wpm=wpm,
+                    verified=verification_method == 'server_verified' and not anti_cheat_flags,
+                )
 
         conn.commit()
 
@@ -10904,6 +10944,14 @@ _ensure_certification_tables = register_certification_routes(
     score_typed_text=lambda *args, **kwargs: _score_typed_text(*args, **kwargs),
 )
 
+_ensure_sponsored_event_tables = register_sponsored_event_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+    is_admin_email=lambda email: _is_admin_email(email),
+)
+
 
 def _bootstrap_db() -> None:
     """Create all required tables and columns once at startup."""
@@ -10928,6 +10976,7 @@ def _bootstrap_db() -> None:
                 _ensure_foundation_tables(cur)
                 _ensure_progression_tables(cur)
                 _ensure_certification_tables(cur)
+                _ensure_sponsored_event_tables(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_terms_acceptance_columns(cur)
                 _ensure_user_equipped_columns(cur)

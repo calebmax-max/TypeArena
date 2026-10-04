@@ -770,6 +770,108 @@ export const fetchTournamentWinner = async (tournamentId) => {
   }
 };
 
+export const fetchSponsoredEvents = async () => {
+  const response = await apiFetch(buildApiUrl('/api/sponsored-events'));
+  return parseResponse(response);
+};
+
+export const trackSponsoredEventMetric = async (eventId, metric) => {
+  const response = await apiFetch(buildApiUrl(`/api/sponsored-events/${eventId}/metrics`), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ metric }),
+  });
+  return parseResponse(response);
+};
+
+export const joinSponsoredEvent = async (eventId, termsHash) => {
+  const response = await apiFetch(buildApiUrl(`/api/sponsored-events/${eventId}/join`), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ termsAccepted: true, termsHash }),
+  });
+  return parseResponse(response);
+};
+
+export const fetchSponsoredEventStandings = async (eventId) => {
+  const response = await apiFetch(buildApiUrl(`/api/sponsored-events/${eventId}/standings`));
+  return parseResponse(response);
+};
+
+export const submitSponsoredEventDispute = async (eventId, message) => {
+  const response = await apiFetch(buildApiUrl(`/api/sponsored-events/${eventId}/disputes`), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ message }),
+  });
+  return parseResponse(response);
+};
+
+export const fetchAdminSponsoredEvents = async () => {
+  const response = await apiFetch(buildApiUrl('/api/admin/sponsored-events'), {
+    headers: buildAdminHeaders(),
+  });
+  return parseResponse(response);
+};
+
+export const createAdminSponsoredEvent = async (payload) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/sponsored-events'), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+};
+
+export const updateAdminSponsoredEvent = async (eventId, payload) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}`), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+};
+
+export const fetchAdminSponsoredEventReport = async (eventId) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/report`), {
+    headers: buildAdminHeaders(),
+  });
+  return parseResponse(response);
+};
+
+export const refreshAdminSponsoredEventStandings = async (eventId) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/standings/refresh`), {
+    method: 'POST',
+    headers: buildAdminHeaders(),
+  });
+  return parseResponse(response);
+};
+
+export const updateAdminSponsoredPrize = async (eventId, place, payload) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/prizes/${place}`), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+};
+
+export const fetchAdminSponsoredEventDisputes = async (eventId) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/disputes`), {
+    headers: buildAdminHeaders(),
+  });
+  return parseResponse(response);
+};
+
+export const resolveAdminSponsoredEventDispute = async (eventId, disputeId, payload) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/disputes/${disputeId}`), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+};
+
 export const fetchAdminAnalytics = async () => {
   try {
     const response = await apiFetch(buildApiUrl('/api/admin/analytics'), {

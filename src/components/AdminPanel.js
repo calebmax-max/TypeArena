@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import SponsoredEventsAdmin from './SponsoredEventsAdmin';
 import {
   addFundsToAdminWallet,
   bulkAdminContent,
@@ -73,6 +74,7 @@ const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: 'OV' },
   { id: 'wallet', label: 'Wallet', icon: 'W' },
   { id: 'tournaments', label: 'Tournaments', icon: 'T' },
+  { id: 'sponsoredEvents', label: 'Sponsor Events', icon: 'SE' },
   { id: 'players', label: 'Top Players', icon: 'P' },
   { id: 'leaderboard', label: 'Leaderboard', icon: 'L' },
   { id: 'content', label: 'Content', icon: 'C' },
@@ -1647,6 +1649,8 @@ export default function AdminPanel() {
                 </div>
               </>
             )}
+
+            {activeSection === 'sponsoredEvents' && <SponsoredEventsAdmin />}
 
             {/* TOP PLAYERS */}
             {activeSection === 'players' && (

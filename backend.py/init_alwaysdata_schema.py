@@ -127,6 +127,101 @@ SCHEMA_SQL = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """,
     """
+    CREATE TABLE IF NOT EXISTS sponsored_events (
+        tournament_id INT PRIMARY KEY,
+        sponsor_name VARCHAR(150) NOT NULL,
+        sponsor_logo_url VARCHAR(1000) NULL,
+        powered_by VARCHAR(150) NULL,
+        sponsor_message TEXT NULL,
+        sponsor_link VARCHAR(1000) NULL,
+        starts_at DATETIME NOT NULL,
+        ends_at DATETIME NOT NULL,
+        eligibility TEXT NOT NULL,
+        rules TEXT NOT NULL,
+        funding_pledged DECIMAL(12,2) NOT NULL DEFAULT 0,
+        funding_received DECIMAL(12,2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_sponsored_event_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+        KEY idx_sponsored_events_schedule (starts_at, ends_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sponsored_event_entries (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tournament_id INT NOT NULL,
+        user_id INT NOT NULL,
+        terms_accepted_at DATETIME NOT NULL,
+        terms_hash CHAR(64) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_sponsored_event_entry (tournament_id, user_id),
+        KEY idx_sponsored_event_entries_user (user_id, tournament_id),
+        CONSTRAINT fk_sponsored_entry_event FOREIGN KEY (tournament_id) REFERENCES sponsored_events(tournament_id) ON DELETE CASCADE,
+        CONSTRAINT fk_sponsored_entry_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sponsored_event_attempts (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tournament_id INT NOT NULL,
+        user_id INT NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        race_code VARCHAR(80) NULL,
+        wpm DECIMAL(6,2) NULL,
+        status ENUM('started','completed','rejected') NOT NULL DEFAULT 'started',
+        started_at DATETIME NOT NULL,
+        completed_at DATETIME NULL,
+        UNIQUE KEY uq_sponsored_event_token (tournament_id, token_hash),
+        UNIQUE KEY uq_sponsored_event_race (tournament_id, race_code),
+        KEY idx_sponsored_event_attempts_score (tournament_id, status, user_id),
+        CONSTRAINT fk_sponsored_attempt_event FOREIGN KEY (tournament_id) REFERENCES sponsored_events(tournament_id) ON DELETE CASCADE,
+        CONSTRAINT fk_sponsored_attempt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sponsored_event_metrics (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tournament_id INT NOT NULL,
+        metric_type ENUM('event_page_view','results_view','sponsor_impression') NOT NULL,
+        user_id INT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_sponsored_event_metrics (tournament_id, metric_type),
+        CONSTRAINT fk_sponsored_metric_event FOREIGN KEY (tournament_id) REFERENCES sponsored_events(tournament_id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sponsored_event_prizes (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tournament_id INT NOT NULL,
+        place TINYINT UNSIGNED NOT NULL,
+        prize_description VARCHAR(255) NOT NULL,
+        prize_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+        status ENUM('pending','under_review','approved','paid','disputed') NOT NULL DEFAULT 'pending',
+        winner_user_id INT NULL,
+        admin_note TEXT NULL,
+        paid_at DATETIME NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_sponsored_event_prize_place (tournament_id, place),
+        CONSTRAINT fk_sponsored_prize_event FOREIGN KEY (tournament_id) REFERENCES sponsored_events(tournament_id) ON DELETE CASCADE,
+        CONSTRAINT fk_sponsored_prize_winner FOREIGN KEY (winner_user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sponsored_event_disputes (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tournament_id INT NOT NULL,
+        user_id INT NOT NULL,
+        message TEXT NOT NULL,
+        status ENUM('open','resolved','rejected') NOT NULL DEFAULT 'open',
+        admin_response TEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        resolved_at DATETIME NULL,
+        KEY idx_sponsored_event_disputes (tournament_id, status),
+        CONSTRAINT fk_sponsored_dispute_event FOREIGN KEY (tournament_id) REFERENCES sponsored_events(tournament_id) ON DELETE CASCADE,
+        CONSTRAINT fk_sponsored_dispute_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
     CREATE TABLE IF NOT EXISTS typing_content (
         id INT AUTO_INCREMENT PRIMARY KEY,
         content_id VARCHAR(80) NOT NULL UNIQUE,

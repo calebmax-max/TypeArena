@@ -48,6 +48,10 @@ Authenticated clients can read progression with `GET /api/progression`, read rec
 
 The certification assessment uses the current passage configured by platform admins in Admin Panel → Content → Certification Test Passage. An attempt pins that exact passage and uses it for the three-minute test, even if an admin later edits the configured text. An attempt requires a signed-in account, is limited to one start every 30 days, and is scored on the server; passing requires at least 40 WPM, 95% accuracy, and 600 typed characters. Copy/paste, passage changes, missing telemetry, window switching, and other anti-cheat signals are recorded; flagged attempts do not issue certificates unless a platform admin approves them after review. Public verification uses `GET /api/certificates/verify/<certificateId>` and exposes only the certificate ID, player display name, WPM, accuracy, test date, and validity statement. The test UI is available at `/certification`; certificate verification pages are at `/verify/<certificateId>`. Payment and downloadable PDF/QR generation are deferred.
 
+## Sponsored tournaments
+
+Platform admins can create and manage sponsor-funded, free-entry tournaments in Admin Panel → Sponsor Events. Each event includes sponsor branding, its schedule, eligibility and rules, top-three prize details, and manually recorded pledged/received funding. Only signed-in players can enter after accepting the current event rules. Verified solo races started and completed before the event closes add their WPM to the player's event points; flagged, unverified, and late-finishing races do not score. Standings are ranked by total WPM, then the earlier qualifying result. Admins finalize the podium after the event and review/record prize payments manually; TypeArena does not automatically pay prizes. Participants can dispute results for seven days after close. Sponsor reports contain aggregate participant, race, page-view, results-view, and sponsor-impression counts; no individual participant data is included in that report.
+
 Backend health check:
 
 ```powershell

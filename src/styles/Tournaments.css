@@ -456,9 +456,169 @@
   opacity: 0.8;
 }
 
+.sponsored-events-section {
+  margin: 0 0 1.5rem;
+}
+
+.sponsored-events-section > h2 {
+  color: var(--tp-gold);
+  font-family: var(--tp-font-head);
+  margin-bottom: 0.25rem;
+}
+
+.sponsored-events-section > p {
+  color: var(--tp-muted);
+  margin: 0 0 0.85rem;
+}
+
+.sponsored-events-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 1rem;
+}
+
+.sponsored-event-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.1rem;
+  color: var(--tp-text);
+  background: linear-gradient(145deg, rgba(35, 29, 18, 0.92), var(--tp-surface));
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  border-radius: 16px;
+}
+
+.sponsored-event-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.sponsored-event-brand img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.sponsored-event-brand h3 {
+  margin: 0.1rem 0;
+  font-family: var(--tp-font-head);
+  font-size: 1.05rem;
+}
+
+.sponsored-event-brand p,
+.sponsored-event-description,
+.sponsored-event-message,
+.sponsored-event-dates,
+.sponsored-event-policy {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--tp-muted);
+}
+
+.sponsored-powered-by {
+  color: var(--tp-gold);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sponsored-event-message {
+  padding: 0.55rem;
+  color: var(--tp-text);
+  background: rgba(255, 209, 102, 0.08);
+  border-radius: 8px;
+}
+
+.sponsored-event-policy {
+  color: var(--tp-accent);
+}
+
+.sponsored-event-prizes {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.sponsored-event-prizes > div,
+.sponsored-event-meta,
+.sponsored-event-standings > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.sponsored-event-prizes > div {
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--tp-border);
+}
+
+.sponsored-event-prizes span:last-child {
+  color: var(--tp-gold);
+  white-space: nowrap;
+}
+
+.sponsored-event-meta {
+  color: var(--tp-muted);
+}
+
+.sponsored-event-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sponsored-event-actions button {
+  flex: 1;
+  min-width: 135px;
+  padding: 0.55rem 0.7rem;
+  color: #04100a;
+  font-weight: 700;
+  background: var(--tp-gold);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sponsored-event-actions button.sponsored-secondary {
+  color: var(--tp-text);
+  background: var(--tp-surface-2);
+  border: 1px solid var(--tp-border-2);
+}
+
+.sponsored-event-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.sponsored-event-standings {
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--tp-border-2);
+}
+
+.sponsored-event-standings h4 {
+  margin: 0 0 0.45rem;
+}
+
+.sponsored-event-standings > div {
+  padding: 0.3rem 0;
+}
+
+.sponsored-event-standings > div span:last-child,
+.sponsored-event-standings > p {
+  color: var(--tp-muted);
+  font-size: 0.7rem;
+}
+
 /* ── Responsive ── */
 @media (max-width: 640px) {
   .tournaments-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sponsored-events-grid {
     grid-template-columns: 1fr;
   }
 
