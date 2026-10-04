@@ -3,8 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as schoolApi from '../utils/typingApi';
 import SchoolDashboard from './SchoolDashboard';
 
+const mockNavigate = jest.fn();
+
 jest.mock('react-router-dom', () => ({
   Link: ({ children, to, ...props }) => <a href={to} {...props}>{children}</a>,
+  useNavigate: () => mockNavigate,
 }));
 
 jest.mock('../utils/typingApi', () => ({
@@ -55,4 +58,29 @@ test('organisation admins can create their first class without selecting an exis
   await waitFor(() => expect(schoolApi.createSchoolClass).toHaveBeenCalledWith(7, 'Room A'));
   expect(await screen.findByText('Room A', { selector: 'button' })).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Class created.');
+});
+
+test('start class race creates a private room and opens its lobby', async () => {
+  schoolApi.fetchSchoolOverview.mockResolvedValue({
+    organizations: [{ id: 7, name: 'North School', role: 'org_admin', settings: {} }],
+    classes: [{ id: 11, organizationId: 7, name: 'Room A', learnerCount: 1, joinCode: 'A1B2C3' }],
+  });
+  schoolApi.fetchSchoolAssignments.mockResolvedValue({ assignments: [] });
+  schoolApi.fetchSchoolInvitationsForMe.mockResolvedValue({ invitations: [] });
+  schoolApi.fetchSchoolClass.mockResolvedValue({
+    class: { id: 11, organizationId: 7, name: 'Room A' },
+    role: 'org_admin',
+    learners: [{ id: 15, username: 'student', wpm: 30, accuracy: 95, status: 'active' }],
+    assignments: [],
+    analytics: { learnerCount: 1, pendingCount: 0, averageWpm: 30, completionCount: 0 },
+  });
+  schoolApi.createSchoolRace.mockResolvedValue({ room: { id: 'class-room-11' } });
+
+  render(<SchoolDashboard currentUser={{ id: 3 }} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Room A/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Start class race' }));
+
+  await waitFor(() => expect(schoolApi.createSchoolRace).toHaveBeenCalledWith(11));
+  expect(mockNavigate).toHaveBeenCalledWith('/play?room=class-room-11&schoolClassId=11');
 });

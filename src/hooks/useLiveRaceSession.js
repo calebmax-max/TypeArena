@@ -734,7 +734,18 @@ export function useLiveRaceSession({
     let cancelled = false;
     fetchLiveRaceRoom(initialRoomId).then((room) => {
       if (!cancelled && room?.players?.some((player) => String(player.userId) === String(currentUser.id))) {
-        startQueuedRoom(room, { message: 'Tournament lobby locked. Race starts shortly.', type: 'success' }, room.mode, room.language);
+        const isClassRoom = Boolean(room.schoolClassId);
+        startQueuedRoom(
+          room,
+          {
+            message: isClassRoom
+              ? 'Class race room is ready. Share the student join link and wait for them to connect.'
+              : 'Tournament lobby locked. Race starts shortly.',
+            type: isClassRoom ? 'info' : 'success',
+          },
+          room.mode,
+          room.language
+        );
       }
     }).catch((error) => showNotice(error.message || 'Could not open the tournament room.', 'error'));
     return () => { cancelled = true; };

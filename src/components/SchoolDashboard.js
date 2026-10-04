@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   acceptSchoolInvitation,
   createSchoolAssignment,
@@ -45,6 +45,7 @@ const views = [
 ];
 
 export default function SchoolDashboard({ currentUser }) {
+  const navigate = useNavigate();
   const [overview, setOverview] = useState(null);
   const [selected, setSelected] = useState(null);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState('');
@@ -59,6 +60,7 @@ export default function SchoolDashboard({ currentUser }) {
   const [teacherEmail, setTeacherEmail] = useState('');
   const [teacherInvite, setTeacherInvite] = useState('');
   const [schoolRoom, setSchoolRoom] = useState(null);
+  const [creatingSchoolRoom, setCreatingSchoolRoom] = useState(false);
   const [activeView, setActiveView] = useState('overview');
   const [requireLearnerApproval, setRequireLearnerApproval] = useState(false);
   const fileRef = useRef(null);
@@ -160,6 +162,20 @@ export default function SchoolDashboard({ currentUser }) {
       URL.revokeObjectURL(url);
     } catch (error) {
       setNotice(error.message);
+    }
+  };
+
+  const startClassRace = async () => {
+    if (!selected?.class?.id || creatingSchoolRoom) return;
+    setCreatingSchoolRoom(true);
+    try {
+      const result = await createSchoolRace(selected.class.id);
+      if (!result?.room?.id) throw new Error('The class race room was not created. Please try again.');
+      navigate(`/play?room=${encodeURIComponent(result.room.id)}&schoolClassId=${encodeURIComponent(selected.class.id)}`);
+    } catch (error) {
+      setNotice(error.message || 'Could not create the class race room.');
+    } finally {
+      setCreatingSchoolRoom(false);
     }
   };
 
@@ -367,7 +383,9 @@ export default function SchoolDashboard({ currentUser }) {
                         const result = await regenerateSchoolJoinCode(selected.class.id);
                         setSelected((value) => ({ ...value, class: { ...value.class, joinCode: result.joinCode } }));
                       }, 'Join code regenerated.')}>Regenerate join code</button>
-                      <a className="btn btn-primary" style={{ marginLeft: 8 }} href={`/play?schoolClassId=${selected.class.id}`}>Start class race</a>
+                      <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={startClassRace} disabled={creatingSchoolRoom}>
+                        {creatingSchoolRoom ? 'Creating room...' : 'Start class race'}
+                      </button>
                       <button className="btn btn-primary" style={{ marginLeft: 8 }} onClick={async () => {
                         try {
                           const result = await createSchoolRace(selected.class.id);

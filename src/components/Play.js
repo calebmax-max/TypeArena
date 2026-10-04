@@ -2123,6 +2123,34 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                   )}
                 </p>
               )}
+              {liveRoom?.schoolClassId && liveRoom?.isPrivate && liveRoom?.status === 'waiting' && (
+                <section aria-label="Class race invitation" style={{ margin: '16px auto', maxWidth: 560 }}>
+                  <p className="results-challenge">
+                    Share this join code with an approved student. The race will start when the host presses Start Race after the student joins.
+                  </p>
+                  <p><strong>Student join code:</strong> <code>{liveRoom.inviteCode}</code></p>
+                  <p style={{ overflowWrap: 'anywhere' }}>
+                    <strong>Join link:</strong>{' '}
+                    <code>{`${window.location.origin}/play?invite=${encodeURIComponent(liveRoom.inviteCode || '')}&autoJoin=1`}</code>
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={async () => {
+                      const joinLink = `${window.location.origin}/play?invite=${encodeURIComponent(liveRoom.inviteCode || '')}&autoJoin=1`;
+                      try {
+                        if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable. Copy the join link shown above.');
+                        await navigator.clipboard.writeText(joinLink);
+                        showNotice('Student join link copied.', 'success');
+                      } catch (error) {
+                        showNotice(error.message || 'Could not copy the student join link.', 'error');
+                      }
+                    }}
+                  >
+                    Copy student join link
+                  </button>
+                </section>
+              )}
             </>
           )}
           {liveRoom?.isPrivate && liveRoom?.players?.length > 0 && (
@@ -2178,6 +2206,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               <button className="btn btn-primary" onClick={hostStartFriendBattle} disabled={loadingLive || (liveRoom?.players?.length || 0) < 2}>
                 {loadingLive ? 'Starting...' : 'Start Race'}
               </button>
+            )}
+            {liveRoom?.schoolClassId && liveRoom?.status === 'waiting' && (liveRoom?.players?.length || 0) < 2 && (
+              <p className="results-challenge" style={{ flexBasis: '100%' }}>Waiting for a student to join. Start Race will be available when at least two players are in the room.</p>
             )}
             {liveRoom?.isPrivate && String(liveRoom?.hostUserId) === String(currentUser?.id) && (
               <button className="btn btn-outline-danger" onClick={cancelPrivateRoom} disabled={loadingLive}>
