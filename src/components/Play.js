@@ -488,7 +488,7 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
   const [phase, setPhase] = useState('lobby');
   const [mode, setMode] = useState('standard');
   const [language, setLanguage] = useState('english');
-  const [duration, setDuration] = useState(60);
+  const [duration, setDuration] = useState(isSponsoredEvent ? 90 : 60);
   const [typingText, setTypingText] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
   const [contentLoading, setContentLoading] = useState(false);
@@ -1097,7 +1097,11 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
             }
             const officialWpm = typeof serverResult.wpm === 'number' ? serverResult.wpm : undefined;
             const officialAccuracy = typeof serverResult.accuracy === 'number' ? serverResult.accuracy : undefined;
-            if (officialWpm === undefined && officialAccuracy === undefined) return;
+            if (
+              officialWpm === undefined
+              && officialAccuracy === undefined
+              && serverResult.sponsoredEventAttemptQualified === undefined
+            ) return;
             setRaceResult((prev) => {
               // Guard against a late response landing on a race that's no
               // longer the one being displayed (e.g. the player already
@@ -1109,6 +1113,7 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
                 ...prev,
                 wpm: nextWpm,
                 accuracy: nextAccuracy,
+                sponsoredEventAttemptQualified: serverResult.sponsoredEventAttemptQualified,
                 shareText: `I typed ${Math.round(nextWpm)} WPM on TypeArena.`,
                 antiCheatFlags: serverResult.flags || prev.antiCheatFlags,
               };
@@ -1397,7 +1402,6 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
     showNotice(null);
     setRaceOver(false);
     setTimeLeft(duration);
-    raceStartedAtRef.current = Date.now();
     // Always reset race-session state for a clean start (same as startPracticeRace)
     setStreak(0);
     setWpmHistory([]);
@@ -1483,6 +1487,7 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
       });
     }
 
+    raceStartedAtRef.current = Date.now();
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
   }, [commentatorEnabled, currentUser, customText, duration, eventId, generatedContent, isLeavingRef, isSponsoredEvent, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showNotice, sponsoredEventLoading, sponsoredEventReady, useCustomText]);
@@ -1646,16 +1651,17 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     // appended since the last change, so a normal keypress logs 1 char and a
     // paste/autofill logs a multi-char chunk the backend flags as paste-like.
     keystrokeLoggerRef.current?.record(diffAppendedChars(typingText, value));
-    const src = liveRoom?.text || (useCustomText && customText ? customText : null) || generatedContent?.passage || '';
+    const src = liveRoom?.text || practiceSourceTextRef.current
+      || (useCustomText && customText ? customText : null)
+      || generatedContent?.passage
+      || '';
     // Fix #12: cap input at source length Ã¯Â¿Â½?" typing past the end silently inflated
     // WPM because extra characters contributed to the character count but were
     // never visible or penalised in the accuracy calculation.
     if (src && value.length > src.length) return;
 
-    // Bug 1 fix: finish the race immediately when the player types the last character.
-    // Without this, the race only ended when the countdown timer hit 0, so a player
-    // who completed the passage early would sit idle until the clock ran out, and
-    // their WPM was calculated against the full duration rather than their actual time.
+    // Finish as soon as the player types the final character; event attempts
+    // use their actual elapsed time, capped by the signed 90-second limit.
     if (src && value.length === src.length && !isSubmittingRef.current && !raceOver) {
       const finalFrame = { typedText: value, timestamp: new Date().toISOString() };
       // State effects run after this event; update refs first so the final
@@ -1793,10 +1799,10 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     || 'Type fast, type clean, and own the round.';
   // Covers controlled-input/IME updates that may bypass the direct onChange check.
   useEffect(() => {
-    if (phase === 'racing' && !raceOver && sourceText && typingText.length >= sourceText.length) {
+    if (!isSponsoredEvent && phase === 'racing' && !raceOver && sourceText && typingText.length >= sourceText.length) {
       handleFinishRace();
     }
-  }, [handleFinishRace, phase, raceOver, sourceText, typingText.length]);
+  }, [handleFinishRace, isSponsoredEvent, phase, raceOver, sourceText, typingText.length]);
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? NEW #E: ghost position Ã¯Â¿Â½?" character the ghost has reached Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   const updateMobileTypingSettings = useCallback((patch) => {
     setMobileTypingSettings((current) => {
@@ -1944,6 +1950,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                 : 'Practice and compete in live typing battles'}
             </h2>
             <div className="challenge-toolbar__actions">
+              {isSponsoredEvent ? (
+                <p className="sponsored-race-requirements">
+                  Up to 90 seconds · At least 95% accuracy to qualify · Only your best qualifying WPM counts
+                </p>
+              ) : (
               <div className="duration-switch">
                 {[30, 60, 120].map((item) => (
                   <button
@@ -1966,7 +1977,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                     if (v) setDuration(v);
                   }}
                 />
-              </div></div>
+              </div>
+              )}
+            </div>
           </div>
 
           <div className={`results-actions${practicePage ? ' practice-actions' : ''}`}>
@@ -2021,7 +2034,9 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           <p className="results-challenge arena-shortcut-hint">
             {contentLoading
               ? 'Generating race content...'
-              : `Current mode: ${MODE_CONFIG.find((item) => item.id === mode)?.label || 'Standard'} - ${duration}s - Press Enter to start - Press ? for shortcuts`}
+              : isSponsoredEvent
+                ? 'Event race: up to 90 seconds · minimum 95% accuracy'
+                : `Current mode: ${MODE_CONFIG.find((item) => item.id === mode)?.label || 'Standard'} - ${duration}s - Press Enter to start - Press ? for shortcuts`}
           </p>
 
           {/* Ã¯Â¿Â½"?Ã¯Â¿Â½"? NEW #B: Keyboard shortcut overlay Ã¯Â¿Â½"?Ã¯Â¿Â½"? */}
@@ -2513,6 +2528,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               </div>
             </div>
           </div>
+          {isSponsoredEvent && (
+            <p className="sponsored-race-requirements">
+              This event race ends when you finish the passage or press Finish. The maximum time is 90 seconds.
+            </p>
+          )}
 
           {liveRoom && (
             liveRoom.players?.length > 2 ? (
@@ -2633,7 +2653,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
           </React.Suspense>
 
           <div className="results-actions">
-            <button className="btn btn-danger" onClick={handleFinishRace} disabled={isSubmittingRef.current}>
+            <button className="btn btn-danger" onClick={handleFinishRace} disabled={isSubmittingRef.current || (isSponsoredEvent && timeLeft > 0)}>
               Finish Race
             </button>
           </div>
@@ -2648,6 +2668,15 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             <span />
           </div>
           <h1>Race Complete</h1>
+          {isSponsoredEvent && (
+            <p className="sponsored-race-result">
+              {raceResult.sponsoredEventAttemptQualified === true
+                ? `Qualified event attempt: ${Number(raceResult.wpm).toFixed(1)} WPM. Your event points are your best verified race at 95% accuracy or higher, not a sum.`
+                : raceResult.sponsoredEventAttemptQualified === false
+                  ? 'This race did not qualify. Event races must be verified, finish within 90 seconds, and reach at least 95% accuracy.'
+                  : 'Checking whether your race qualifies for the event...'}
+            </p>
+          )}
           <p className="results-challenge">
             {raceResult?.winnerUserId
               ? `Winner: ${raceResult.winnerUsername || winnerName || 'Pending'}`

@@ -36,6 +36,7 @@ from foundation_features import per_key_error_counts, register_foundation_routes
 from progression_features import award_race_progress, register_progression_routes
 from certification_features import register_certification_routes
 from sponsored_event_features import (
+    SPONSORED_RACE_DURATION_SECONDS,
     complete_sponsored_event_attempt,
     record_sponsored_event_attempt,
     register_sponsored_event_routes,
@@ -10559,6 +10560,7 @@ def start_race():
                 sponsored_event_id = int(sponsored_event_id)
             except (TypeError, ValueError):
                 return jsonify({'message': 'Sponsored event id must be a valid number.'}), 400
+            duration_limit = SPONSORED_RACE_DURATION_SECONDS
 
         issued = issue_race_token(user_id=user['id'], target_text=target_text, mode=mode, duration_limit_s=duration_limit)
         with conn.cursor() as cur:
@@ -10655,6 +10657,9 @@ def submit_race():
                             race_token=str(race_token),
                             race_code=race_code,
                             wpm=wpm,
+                            accuracy=accuracy,
+                            duration_seconds=time_spent_seconds,
+                            duration_limit_seconds=token_body.get('dl'),
                             verified=False,
                         )
                     conn.commit()
@@ -10698,6 +10703,7 @@ def submit_race():
         # purposes, but it is intentionally never credited to users.balance.
         earnings = int(max(50, round(wpm * 3)))
         now_dt = datetime.utcnow()
+        sponsored_event_attempt_qualified = None
 
         with conn.cursor() as cur:
             updated_user = _apply_user_performance_update(
@@ -10716,12 +10722,15 @@ def submit_race():
                 key_errors=key_errors,
             )
             if race_token:
-                complete_sponsored_event_attempt(
+                sponsored_event_attempt_qualified = complete_sponsored_event_attempt(
                     cur,
                     user_id=int(user['id']),
                     race_token=str(race_token),
                     race_code=race_code,
                     wpm=wpm,
+                    accuracy=accuracy,
+                    duration_seconds=time_spent_seconds,
+                    duration_limit_seconds=token_body.get('dl'),
                     verified=verification_method == 'server_verified' and not anti_cheat_flags,
                 )
 
@@ -10745,6 +10754,7 @@ def submit_race():
                 'timestamp': now_dt.isoformat() + 'Z',
                 'verificationMethod': verification_method,
                 'antiCheatFlags': anti_cheat_flags,
+                'sponsoredEventAttemptQualified': sponsored_event_attempt_qualified,
                 'perKeyErrors': key_errors,
                 # The authoritative numbers from _apply_user_performance_update
                 # (see the note there): read these instead of recomputing a

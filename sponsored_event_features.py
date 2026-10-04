@@ -13,6 +13,8 @@ from flask import Flask, jsonify, request
 
 EVENT_METRICS = {'event_page_view', 'results_view', 'sponsor_impression'}
 MAX_EVENT_AMOUNT = 9_999_999_999.99
+SPONSORED_RACE_DURATION_SECONDS = 90
+SPONSORED_MIN_ACCURACY = 95.0
 PRIZE_STATUSES = {'pending', 'under_review', 'approved', 'paid', 'disputed'}
 PRIZE_TRANSITIONS = {
     'pending': {'under_review'},
@@ -79,6 +81,8 @@ def ensure_sponsored_event_schema(cur) -> None:
             token_hash CHAR(64) NOT NULL,
             race_code VARCHAR(80) NULL,
             wpm DECIMAL(6,2) NULL,
+            accuracy DECIMAL(5,2) NULL,
+            duration_seconds SMALLINT UNSIGNED NULL,
             status ENUM('started','completed','rejected') NOT NULL DEFAULT 'started',
             started_at DATETIME NOT NULL,
             completed_at DATETIME NULL,
@@ -92,6 +96,14 @@ def ensure_sponsored_event_schema(cur) -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         '''
     )
+    cur.execute("SHOW COLUMNS FROM sponsored_event_attempts LIKE 'accuracy'")
+    if not cur.fetchone():
+        cur.execute('ALTER TABLE sponsored_event_attempts ADD COLUMN accuracy DECIMAL(5,2) NULL AFTER wpm')
+    cur.execute("SHOW COLUMNS FROM sponsored_event_attempts LIKE 'duration_seconds'")
+    if not cur.fetchone():
+        cur.execute(
+            'ALTER TABLE sponsored_event_attempts ADD COLUMN duration_seconds SMALLINT UNSIGNED NULL AFTER accuracy'
+        )
     cur.execute(
         '''
         CREATE TABLE IF NOT EXISTS sponsored_event_metrics (
@@ -374,10 +386,13 @@ def complete_sponsored_event_attempt(
     race_token: str,
     race_code: str,
     wpm: float,
+    accuracy: float,
+    duration_seconds: Optional[float],
+    duration_limit_seconds: Optional[int],
     verified: bool,
-) -> None:
+) -> Optional[bool]:
     if not race_token:
-        return
+        return None
     token_hash = hashlib.sha256(race_token.encode('utf-8')).hexdigest()
     cur.execute(
         '''
@@ -389,17 +404,35 @@ def complete_sponsored_event_attempt(
         ''',
         (user_id, token_hash),
     )
-    for row in cur.fetchall():
-        if verified and datetime.utcnow() < row['ends_at']:
+    event_attempts = cur.fetchall()
+    if not event_attempts:
+        return None
+    all_qualified = True
+    for row in event_attempts:
+        qualified = (
+            verified
+            and accuracy >= SPONSORED_MIN_ACCURACY
+            and duration_seconds is not None
+            and 0 < duration_seconds <= SPONSORED_RACE_DURATION_SECONDS
+            and duration_limit_seconds == SPONSORED_RACE_DURATION_SECONDS
+            and datetime.utcnow() < row['ends_at']
+        )
+        if qualified:
             cur.execute(
                 '''
                 UPDATE sponsored_event_attempts
-                SET status='completed', race_code=%s, wpm=%s, completed_at=UTC_TIMESTAMP()
+                SET status='completed', race_code=%s, wpm=%s, accuracy=%s,
+                    duration_seconds=%s, completed_at=UTC_TIMESTAMP()
                 WHERE tournament_id=%s AND user_id=%s AND token_hash=%s AND status='started'
                 ''',
-                (race_code, round(wpm, 2), row['tournament_id'], user_id, token_hash),
+                (
+                    race_code, round(wpm, 2), round(accuracy, 2),
+                    max(1, math.ceil(duration_seconds)),
+                    row['tournament_id'], user_id, token_hash,
+                ),
             )
         else:
+            all_qualified = False
             cur.execute(
                 '''
                 UPDATE sponsored_event_attempts
@@ -408,24 +441,37 @@ def complete_sponsored_event_attempt(
                 ''',
                 (row['tournament_id'], user_id, token_hash),
             )
+    return all_qualified
 
 
 def _rankings(cur, event_id: int, limit: Optional[int] = None) -> list[Dict[str, Any]]:
     query = '''
-        SELECT a.user_id, u.username,
-               ROUND(SUM(a.wpm), 2) AS points,
+        SELECT best.user_id, u.username, ROUND(best.points, 2) AS points,
                COUNT(*) AS race_count,
-               MIN(a.completed_at) AS first_qualifying_at
+               MIN(CASE WHEN a.wpm=best.points THEN a.completed_at END) AS first_qualifying_at
         FROM sponsored_event_attempts a
-        JOIN users u ON u.id=a.user_id
+        JOIN (
+            SELECT user_id, MAX(wpm) AS points
+            FROM sponsored_event_attempts
+            WHERE tournament_id=%s AND status='completed'
+              AND accuracy >= %s AND duration_seconds > 0
+              AND duration_seconds <= %s
+            GROUP BY user_id
+        ) best ON best.user_id=a.user_id AND a.wpm <= best.points
+        JOIN users u ON u.id=best.user_id
         WHERE a.tournament_id=%s AND a.status='completed'
-        GROUP BY a.user_id, u.username
-        ORDER BY points DESC, first_qualifying_at ASC, a.user_id ASC
+          AND a.accuracy >= %s AND a.duration_seconds > 0
+          AND a.duration_seconds <= %s
+        GROUP BY best.user_id, u.username, best.points
+        ORDER BY points DESC, first_qualifying_at ASC, best.user_id ASC
     '''
-    params: tuple[Any, ...] = (event_id,)
+    params: tuple[Any, ...] = (
+        event_id, SPONSORED_MIN_ACCURACY, SPONSORED_RACE_DURATION_SECONDS,
+        event_id, SPONSORED_MIN_ACCURACY, SPONSORED_RACE_DURATION_SECONDS,
+    )
     if limit is not None:
         query += ' LIMIT %s'
-        params = (event_id, limit)
+        params += (limit,)
     cur.execute(query, params)
     return cur.fetchall()
 

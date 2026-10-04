@@ -175,7 +175,7 @@ function SponsoredEventCard({ event, currentUser, onEnter, onNotice }) {
         {new Date(event.endsAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
       </p>
       <p className="sponsored-event-policy">
-        Free entry · Verified races finished before close count · unlimited races · ties go to the earlier qualifying result
+        Free entry · races up to 90 seconds · 95% minimum accuracy · best qualifying WPM counts · ties go to the earlier score
       </p>
       <div className="sponsored-event-prizes">
         {event.prizes.map((prize) => (
@@ -188,7 +188,7 @@ function SponsoredEventCard({ event, currentUser, onEnter, onNotice }) {
       </div>
       <div className="sponsored-event-meta">
         <span>{event.participants} signed-in participants</span>
-        <span>{event.raceCompletions} verified races completed</span>
+        <span>{event.raceCompletions} qualifying event races</span>
       </div>
       {event.sponsorLink && <a href={event.sponsorLink} target="_blank" rel="noreferrer">Visit sponsor</a>}
       <div className="sponsored-event-actions">
@@ -210,10 +210,10 @@ function SponsoredEventCard({ event, currentUser, onEnter, onNotice }) {
           {standings.length ? standings.slice(0, 10).map((row) => (
             <div key={`${row.place}-${row.username}`}>
               <span>{row.place}. {row.username}</span>
-              <span>{Number(row.points).toLocaleString()} points · {row.races} races</span>
+              <span>Best: {Number(row.points).toLocaleString()} WPM · {row.races} qualifying races</span>
             </div>
           )) : <p>No verified race points yet.</p>}
-          <p>Points are the sum of each verified race’s WPM. Ties are ordered by the earlier qualifying result.</p>
+          <p>Event points equal your best verified race of up to 90 seconds at 95% accuracy or higher. Finish the passage or press Finish to end early. More races are retries, not extra points. Ties go to the player who first reached that best WPM.</p>
         </div>
       )}
     </article>

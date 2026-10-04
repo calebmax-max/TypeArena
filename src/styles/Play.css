@@ -44,6 +44,21 @@
   overflow-x: hidden;
 }
 
+.sponsored-race-requirements,
+.sponsored-race-result {
+  padding: 0.8rem 1rem;
+  border: 1px solid rgba(79, 255, 176, 0.35);
+  border-radius: 10px;
+  background: rgba(79, 255, 176, 0.08);
+  color: var(--arena-text);
+  line-height: 1.5;
+}
+
+.sponsored-race-result {
+  margin: 0.75rem 0;
+  text-align: center;
+}
+
 /* Subtle noise texture overlay */
 .play-container::before {
   content: '';

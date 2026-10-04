@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from sponsored_event_features import (
+    _rankings,
     complete_sponsored_event_attempt,
     record_sponsored_event_attempt,
     validate_event_payload,
@@ -54,6 +55,15 @@ class EventStartCursor:
         return {'tournament_id': 42} if self.eligible else None
 
 
+class RankingCursor:
+    def execute(self, query, params):
+        self.query = query
+        self.params = params
+
+    def fetchall(self):
+        return []
+
+
 class SponsoredEventFeatureTests(unittest.TestCase):
     def test_payload_accepts_free_entry_prize_details(self):
         event = validate_event_payload(event_payload())
@@ -95,11 +105,32 @@ class SponsoredEventFeatureTests(unittest.TestCase):
             race_token='race-token',
             race_code='race-1',
             wpm=72.345,
+            accuracy=98,
+            duration_seconds=90,
+            duration_limit_seconds=90,
             verified=True,
         )
         completed_update = active_event.statements[-1]
         self.assertIn("SET status='completed'", completed_update[0])
-        self.assertEqual(completed_update[1], ('race-1', 72.34, 7, 9, hashlib.sha256(b'race-token').hexdigest()))
+        self.assertEqual(
+            completed_update[1],
+            ('race-1', 72.34, 98, 90, 7, 9, hashlib.sha256(b'race-token').hexdigest()),
+        )
+
+        early_finish_cursor = AttemptCursor(datetime.utcnow() + timedelta(days=1))
+        complete_sponsored_event_attempt(
+            early_finish_cursor,
+            user_id=9,
+            race_token='early-finish-token',
+            race_code='race-1b',
+            wpm=73,
+            accuracy=98,
+            duration_seconds=45.2,
+            duration_limit_seconds=90,
+            verified=True,
+        )
+        self.assertIn("SET status='completed'", early_finish_cursor.statements[-1][0])
+        self.assertEqual(early_finish_cursor.statements[-1][1][3], 46)
 
         closed_event = AttemptCursor(datetime.utcnow() - timedelta(seconds=1))
         complete_sponsored_event_attempt(
@@ -108,6 +139,9 @@ class SponsoredEventFeatureTests(unittest.TestCase):
             race_token='late-race-token',
             race_code='race-2',
             wpm=85,
+            accuracy=99,
+            duration_seconds=90,
+            duration_limit_seconds=90,
             verified=True,
         )
         self.assertIn("SET status='rejected'", closed_event.statements[-1][0])
@@ -121,10 +155,71 @@ class SponsoredEventFeatureTests(unittest.TestCase):
             race_token='flagged-token',
             race_code='race-3',
             wpm=200,
+            accuracy=99,
+            duration_seconds=90,
+            duration_limit_seconds=90,
             verified=False,
         )
 
         self.assertIn("SET status='rejected'", cursor.statements[-1][0])
+
+    def test_attempts_require_accuracy_and_signed_90_second_limit(self):
+        low_accuracy_cursor = AttemptCursor(datetime.utcnow() + timedelta(days=1))
+        result = complete_sponsored_event_attempt(
+            low_accuracy_cursor,
+            user_id=9,
+            race_token='low-accuracy',
+            race_code='race-4',
+            wpm=85,
+            accuracy=94.9,
+            duration_seconds=45,
+            duration_limit_seconds=90,
+            verified=True,
+        )
+        self.assertFalse(result)
+        self.assertIn("SET status='rejected'", low_accuracy_cursor.statements[-1][0])
+
+        wrong_duration_cursor = AttemptCursor(datetime.utcnow() + timedelta(days=1))
+        result = complete_sponsored_event_attempt(
+            wrong_duration_cursor,
+            user_id=9,
+            race_token='wrong-duration',
+            race_code='race-5',
+            wpm=85,
+            accuracy=99,
+            duration_seconds=45,
+            duration_limit_seconds=60,
+            verified=True,
+        )
+        self.assertFalse(result)
+        self.assertIn("SET status='rejected'", wrong_duration_cursor.statements[-1][0])
+
+        over_limit_cursor = AttemptCursor(datetime.utcnow() + timedelta(days=1))
+        result = complete_sponsored_event_attempt(
+            over_limit_cursor,
+            user_id=9,
+            race_token='over-limit',
+            race_code='race-6',
+            wpm=85,
+            accuracy=99,
+            duration_seconds=90.5,
+            duration_limit_seconds=90,
+            verified=True,
+        )
+        self.assertFalse(result)
+        self.assertIn("SET status='rejected'", over_limit_cursor.statements[-1][0])
+
+    def test_rankings_use_best_qualifying_race_not_sum(self):
+        cursor = RankingCursor()
+
+        _rankings(cursor, 42)
+
+        self.assertIn('MAX(wpm)', cursor.query)
+        self.assertIn('accuracy >= %s', cursor.query)
+        self.assertIn('duration_seconds > 0', cursor.query)
+        self.assertIn('duration_seconds <= %s', cursor.query)
+        self.assertNotIn('SUM(a.wpm)', cursor.query)
+        self.assertIn('ORDER BY points DESC, first_qualifying_at ASC', cursor.query)
 
     def test_event_race_is_scoped_to_an_active_entered_event(self):
         cursor = EventStartCursor()

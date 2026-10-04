@@ -168,6 +168,8 @@ SCHEMA_SQL = [
         token_hash CHAR(64) NOT NULL,
         race_code VARCHAR(80) NULL,
         wpm DECIMAL(6,2) NULL,
+        accuracy DECIMAL(5,2) NULL,
+        duration_seconds SMALLINT UNSIGNED NULL,
         status ENUM('started','completed','rejected') NOT NULL DEFAULT 'started',
         started_at DATETIME NOT NULL,
         completed_at DATETIME NULL,

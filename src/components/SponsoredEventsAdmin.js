@@ -200,7 +200,7 @@ export default function SponsoredEventsAdmin() {
 
       <form className="ap-card" onSubmit={saveEvent}>
         <p className="ap-card-title">{form.id ? 'Edit Sponsored Tournament' : 'Create Sponsored Tournament'}</p>
-        <p className="ap-muted">Entry is always free. Verified races started and completed before the event closes add their WPM to player points.</p>
+        <p className="ap-muted">Entry is free. Each player’s best verified race of up to 90 seconds counts at 95% accuracy or higher; finishing the passage or pressing Finish ends the race early.</p>
         <div className="ap-two-col">
           {[
             ['Tournament name', 'name', 'text'],
@@ -275,7 +275,7 @@ export default function SponsoredEventsAdmin() {
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <strong>{event.name}</strong>
-                <div className="ap-muted">{event.sponsorName} · {event.status} · {event.participants} participants · {event.raceCompletions} verified races</div>
+                <div className="ap-muted">{event.sponsorName} · {event.status} · {event.participants} participants · {event.raceCompletions} qualifying race attempts</div>
                 <div className="ap-muted">Funding: KES {event.fundingReceived.toLocaleString()} received / KES {event.fundingPledged.toLocaleString()} pledged</div>
               </div>
               <div className="ap-btn-row">
