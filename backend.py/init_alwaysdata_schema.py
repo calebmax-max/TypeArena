@@ -105,9 +105,14 @@ SCHEMA_SQL = [
     INSERT IGNORE INTO subscription_plans
         (plan_key, display_name, amount, billing_period_days, is_active)
     VALUES
-        ('pro_monthly', 'Pro Monthly', NULL, 30, 0),
-        ('pro_annual', 'Pro Annual', NULL, 365, 0),
-        ('pro', 'Pro', NULL, NULL, 0);
+        ('pro_monthly', 'Pro Monthly', 199.00, 30, 1),
+        ('pro_annual', 'Pro Annual', 1499.00, 365, 1),
+        ('pro', 'Pro', 199.00, 30, 1)
+    ON DUPLICATE KEY UPDATE
+        display_name = VALUES(display_name),
+        amount = VALUES(amount),
+        billing_period_days = VALUES(billing_period_days),
+        is_active = VALUES(is_active);
     """,
     """
     CREATE TABLE IF NOT EXISTS subscriptions (

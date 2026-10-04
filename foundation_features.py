@@ -93,9 +93,33 @@ def ensure_foundation_schema(cur, admin_email: str = '') -> None:
         INSERT IGNORE INTO subscription_plans
             (plan_key, display_name, amount, billing_period_days, is_active)
         VALUES
-            ('pro_monthly', 'Pro Monthly', NULL, 30, 0),
-            ('pro_annual', 'Pro Annual', NULL, 365, 0),
-            ('pro', 'Pro', NULL, NULL, 0)
+            ('pro_monthly', 'Pro Monthly', 199.00, 30, 1),
+            ('pro_annual', 'Pro Annual', 1499.00, 365, 1),
+            ('pro', 'Pro', 199.00, 30, 1)
+        '''
+    )
+    cur.execute(
+        '''
+        UPDATE subscription_plans
+        SET amount = CASE plan_key
+            WHEN 'pro_monthly' THEN 199.00
+            WHEN 'pro_annual' THEN 1499.00
+            WHEN 'pro' THEN 199.00
+            ELSE amount
+        END,
+            billing_period_days = CASE plan_key
+            WHEN 'pro_monthly' THEN 30
+            WHEN 'pro_annual' THEN 365
+            WHEN 'pro' THEN 30
+            ELSE billing_period_days
+        END,
+            is_active = CASE plan_key
+            WHEN 'pro_monthly' THEN 1
+            WHEN 'pro_annual' THEN 1
+            WHEN 'pro' THEN 1
+            ELSE is_active
+        END
+        WHERE plan_key IN ('pro_monthly', 'pro_annual', 'pro')
         '''
     )
     cur.execute(
