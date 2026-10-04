@@ -26,6 +26,7 @@ import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
 import SchoolDashboard from './components/SchoolDashboard';
 import CertificationTest, { CertificateVerification } from './components/Certification';
+import Tournaments from './components/Tournaments';
 
 
 
@@ -295,6 +296,7 @@ function AppLayout() {
           <Route path="/training" element={<TrainingPage />} />
           <Route path="/practice" element={<Play practicePage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/tournaments" element={<Tournaments />} />
           <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
           <Route path="/certification" element={<CertificationTest />} />
           <Route path="/verify/:certificateId" element={<CertificateVerification />} />

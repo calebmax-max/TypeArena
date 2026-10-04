@@ -17,7 +17,7 @@ Object.defineProperty(window, 'matchMedia', {
 jest.mock('react-router-dom', () => ({
   BrowserRouter: ({ children }) => children,
   Routes: ({ children }) => <div>{children}</div>,
-  Route: ({ element }) => element,
+  Route: ({ element, path }) => <div data-route-path={path}>{element}</div>,
   Link: ({ children, to, ...props }) => (
     <a href={to} {...props}>
       {children}
@@ -70,6 +70,13 @@ test('renders the current TypeArena navigation and home content', async () => {
   expect(screen.getAllByText(/typearena/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/private friend battles are live now/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/sign in/i).length).toBeGreaterThan(0);
+});
+
+test('registers the tournaments page at /tournaments', () => {
+  render(<App />);
+
+  expect(document.querySelector('[data-route-path="/tournaments"]')).toBeInTheDocument();
+  expect(screen.getByText('Tournaments Page')).toBeInTheDocument();
 });
 
 test('shows onboarding for signed-out visitors on the home page', () => {
