@@ -32,6 +32,7 @@ from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 from school_features import register_school_routes
+from foundation_features import per_key_error_counts, register_foundation_routes
 try:
     from flask_compress import Compress
 except ImportError:  # pragma: no cover - only hit if the dependency isn't installed yet
@@ -97,6 +98,7 @@ MPESA_CONSUMER_SECRET = os.getenv('MPESA_CONSUMER_SECRET', '')
 MPESA_SHORTCODE = os.getenv('MPESA_SHORTCODE', '174379')
 MPESA_PASSKEY = os.getenv('MPESA_PASSKEY', '')
 MPESA_CALLBACK_URL = os.getenv('MPESA_CALLBACK_URL', '').strip()
+MPESA_SUBSCRIPTION_CALLBACK_URL = os.getenv('MPESA_SUBSCRIPTION_CALLBACK_URL', '').strip()
 MPESA_B2C_SHORTCODE = os.getenv('MPESA_B2C_SHORTCODE', MPESA_SHORTCODE)
 MPESA_B2C_INITIATOR_NAME = os.getenv('MPESA_B2C_INITIATOR_NAME', '')
 MPESA_B2C_SECURITY_CREDENTIAL = os.getenv('MPESA_B2C_SECURITY_CREDENTIAL', '')
@@ -3580,6 +3582,8 @@ def _safe_user(user: Dict[str, Any], conn=None, include_profile_image: bool = Fa
     owned_items = _owned_store_items_for_user(conn, _safe_int(user.get('id') or 0)) if conn else []
     result = _safe_user_with_owned_items(user, owned_items, include_profile_image=include_profile_image)
     result.update(_terms_status_for_user(user))
+    result['accountRole'] = 'admin' if _is_admin_email(user.get('email') or '') else str(user.get('account_role') or 'free')
+    result['accountPlan'] = str(user.get('account_plan') or 'free')
     return result
 
 
@@ -4001,6 +4005,7 @@ def _apply_user_performance_update(
     total_players: int = 2,
     verification_method: str = 'legacy',
     anti_cheat_flags: Optional[list] = None,
+    key_errors: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     now_dt = datetime.utcnow()
 
@@ -4023,11 +4028,12 @@ def _apply_user_performance_update(
     )
 
     flags_json = json.dumps(anti_cheat_flags or [])
+    key_errors_json = json.dumps(key_errors or {}, ensure_ascii=False)
     cur.execute(
         '''
         INSERT INTO race_history
-        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta, verification_method, anti_cheat_flags)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta, verification_method, anti_cheat_flags, key_errors)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             username = VALUES(username),
             wpm = VALUES(wpm),
@@ -4039,12 +4045,13 @@ def _apply_user_performance_update(
             race_category = VALUES(race_category),
             points_delta = VALUES(points_delta),
             verification_method = VALUES(verification_method),
-            anti_cheat_flags = VALUES(anti_cheat_flags)
+            anti_cheat_flags = VALUES(anti_cheat_flags),
+            key_errors = VALUES(key_errors)
         ''',
         (
             race_code, user_id, username, round(wpm, 1), round(accuracy, 1), duration,
             1 if did_win else 2, earnings, now_dt, race_category, points_delta,
-            verification_method, flags_json,
+            verification_method, flags_json, key_errors_json,
         ),
     )
     cur.execute(
@@ -4436,6 +4443,7 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
                     total_players=total_players,
                     verification_method=str(result.get('verificationMethod') or 'legacy'),
                     anti_cheat_flags=result.get('antiCheatFlags') or [],
+                    key_errors=result.get('keyErrors') or {},
                 )
                 # Stamp the authoritative points onto this player's result so
                 # _serialize_live_room hands it straight to the client - the
@@ -8624,6 +8632,7 @@ def submit_live_race(room_id: str):
         target_text = str(room.get('text') or '')
         typed_text = payload.get('typedText')
         anti_cheat_flags: list = []
+        key_errors: Dict[str, int] = {}
 
         if isinstance(typed_text, str) and target_text:
             # --- Authoritative path: replay against the room's passage ---
@@ -8640,6 +8649,7 @@ def submit_live_race(room_id: str):
             wpm = evaluation['wpm']
             accuracy = evaluation['accuracy']
             anti_cheat_flags = evaluation['flags']
+            key_errors = per_key_error_counts(target_text, typed_text)
             hard_reject_prefixes = ('keystroke_timing_too_uniform', 'wpm_exceeds_human_ceiling', 'missing_keystroke_log')
             if any(flag.startswith(prefix) for flag in anti_cheat_flags for prefix in hard_reject_prefixes):
                 return jsonify({'message': 'This result could not be verified and was not recorded.', 'flags': anti_cheat_flags}), 422
@@ -8673,6 +8683,7 @@ def submit_live_race(room_id: str):
             'finishedAtTs': datetime.utcnow().timestamp(),
             'antiCheatFlags': anti_cheat_flags,
             'verificationMethod': 'server_verified' if isinstance(typed_text, str) and target_text else 'legacy',
+            'keyErrors': key_errors,
         }
         _complete_live_race_if_ready(room, conn=conn)
         with conn.cursor() as cur:
@@ -10570,6 +10581,7 @@ def submit_race():
             wpm = evaluation['wpm']
             accuracy = evaluation['accuracy']
             anti_cheat_flags = evaluation['flags']
+            key_errors = per_key_error_counts(target_text, typed_text)
             duration = round(evaluation['timeSpentSeconds'])
             verification_method = 'server_verified'
 
@@ -10602,6 +10614,7 @@ def submit_race():
                 return jsonify({'message': 'WPM exceeds the maximum allowed for an unverified race.'}), 422
             anti_cheat_flags = ['legacy_client_unverified']
             verification_method = 'legacy'
+            key_errors = {}
 
         # Solo practice has no opponent, so it is never a competitive "win" -
         # that's reserved for real multiplayer results (see
@@ -10635,6 +10648,7 @@ def submit_race():
                 race_category='practice',
                 verification_method=verification_method,
                 anti_cheat_flags=anti_cheat_flags,
+                key_errors=key_errors,
             )
 
         conn.commit()
@@ -10657,6 +10671,7 @@ def submit_race():
                 'timestamp': now_dt.isoformat() + 'Z',
                 'verificationMethod': verification_method,
                 'antiCheatFlags': anti_cheat_flags,
+                'perKeyErrors': key_errors,
                 # The authoritative numbers from _apply_user_performance_update
                 # (see the note there): read these instead of recomputing a
                 # "points earned" figure client-side, or it can drift from
@@ -10686,7 +10701,7 @@ def user_races(user_id: int):
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta
+                SELECT race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta, key_errors
                 FROM race_history
                 WHERE user_id=%s
                 ORDER BY race_timestamp DESC
@@ -10708,6 +10723,7 @@ def user_races(user_id: int):
                 'timestamp': row['race_timestamp'].isoformat() + 'Z' if row.get('race_timestamp') else None,
                 'raceCategory': row.get('race_category') or 'versus',
                 'seasonPointsDelta': int(row.get('points_delta') or 0),
+                'perKeyErrors': json.loads(row.get('key_errors') or '{}'),
             }
             for row in rows
         ]
@@ -10836,6 +10852,18 @@ _ensure_school_tables = register_school_routes(
     admin_email=ADMIN_EMAIL,
 )
 
+_ensure_foundation_tables = register_foundation_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+    mpesa_stk_push=lambda **kwargs: _mpesa_stk_push(**kwargs),
+    normalize_mpesa_phone=lambda phone: _normalize_mpesa_phone(phone),
+    mpesa_callback_url=MPESA_SUBSCRIPTION_CALLBACK_URL,
+    is_admin_email=lambda email: _is_admin_email(email),
+    admin_email=ADMIN_EMAIL,
+)
+
 
 def _bootstrap_db() -> None:
     """Create all required tables and columns once at startup."""
@@ -10857,6 +10885,7 @@ def _bootstrap_db() -> None:
                 _ensure_admin_user_transfers_table(cur)
                 _ensure_admin_impersonation_log_table(cur)
                 _ensure_school_tables(cur)
+                _ensure_foundation_tables(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_terms_acceptance_columns(cur)
                 _ensure_user_equipped_columns(cur)

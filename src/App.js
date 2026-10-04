@@ -244,6 +244,11 @@ function AppLayout() {
   const navLinkClassName = ({ isActive }) =>
     `nav-link${isActive ? ' nav-link--active' : ''}`;
 
+  const isProUser = !!currentUser && (
+    ['pro', 'pro_monthly', 'pro_annual'].includes(currentUser.accountPlan || currentUser.plan || 'free')
+    || Boolean(currentUser.premium)
+  );
+
   return (
     <div className="App">
       <OfflineBanner />
@@ -263,6 +268,9 @@ function AppLayout() {
             <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
             <NavLink to="/school" className={navLinkClassName}>School</NavLink>
             <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
+            {!isProUser && currentUser && (
+              <NavLink to="/profile" className="arena-nav__upgrade">Upgrade Pro</NavLink>
+            )}
             {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout">Sign Out</button>}
           </nav>
         </div>

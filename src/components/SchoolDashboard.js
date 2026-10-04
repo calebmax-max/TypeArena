@@ -462,7 +462,7 @@ export default function SchoolDashboard({ currentUser }) {
                           {item.history.map((attempt, index) => <small key={`${attempt.raceId || 'attempt'}-${attempt.submittedAt || index}`} style={{ display: 'block' }}>Attempt {item.history.length - index}: {attempt.wpm} WPM · {attempt.accuracy}% · {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : 'time unavailable'}</small>)}
                         </details>
                       )}
-                      {item.status !== 'completed' && <div><Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/play?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>Start assignment</Link></div>}
+                      {item.status !== 'completed' && <div><Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/practice?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>Start assignment</Link></div>}
                     </div>
                   ))}
                   {(selected.assignments || []).map((item) => (
@@ -471,7 +471,7 @@ export default function SchoolDashboard({ currentUser }) {
                       <small style={{ display: 'block', opacity: .7 }}>Target: {item.targetWpm} WPM · {item.targetAccuracy}% accuracy</small>
                       {selected.role === 'learner' && item.mySubmission && <small style={{ display: 'block' }}>Latest result: {item.mySubmission.wpm} WPM · {item.mySubmission.accuracy}% accuracy{item.mySubmission.submittedAt ? ` · ${new Date(item.mySubmission.submittedAt).toLocaleString()}` : ''}</small>}
                       {['org_admin', 'teacher'].includes(selected.role) && <small style={{ display: 'block' }}>{item.completionCount} submission(s) · {item.submissions?.length || 0} result(s) shown</small>}
-                      {selected.role === 'learner' && <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/play?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>{item.mySubmission ? 'Retake assignment' : 'Start assignment'}</Link>}
+                      {selected.role === 'learner' && <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/practice?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>{item.mySubmission ? 'Retake assignment' : 'Start assignment'}</Link>}
                     </div>
                   ))}
                 </>

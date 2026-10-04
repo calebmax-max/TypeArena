@@ -1160,6 +1160,95 @@
   .tp-account-row__label { color: var(--tp-muted); }
   .tp-account-row__value { color: var(--tp-text); font-weight: 500; }
 
+  .tp-pro-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .tp-pro-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    background: var(--tp-surface-2);
+    border: 1px solid var(--tp-border);
+    border-radius: 16px;
+    padding: 1rem;
+    transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+  }
+  .tp-pro-card:hover { transform: translateY(-1px); border-color: var(--tp-border-2); }
+  .tp-pro-card--selected {
+    border-color: var(--tp-accent);
+    box-shadow: 0 0 0 1px rgba(79,255,176,0.2);
+  }
+  .tp-pro-card--active {
+    background: linear-gradient(180deg, rgba(79,255,176,0.08), rgba(14,22,18,0.86));
+  }
+  .tp-pro-card__topline {
+    font-size: 0.67rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--tp-accent);
+  }
+  .tp-pro-card h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--tp-text);
+  }
+  .tp-pro-card__price {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    color: var(--tp-text);
+  }
+  .tp-pro-card__price span {
+    font-size: 0.8rem;
+    color: var(--tp-muted);
+  }
+  .tp-pro-card__price strong {
+    font-size: 2rem;
+    font-family: var(--tp-font-mono);
+  }
+  .tp-pro-card__period {
+    font-size: 0.76rem;
+    color: var(--tp-muted);
+  }
+  .tp-pro-card__features {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+    color: var(--tp-text);
+  }
+  .tp-pro-card__features li::before {
+    content: '✓';
+    color: var(--tp-accent);
+    margin-right: 0.5rem;
+  }
+  .tp-pro-checkout {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    background: var(--tp-surface-2);
+    border: 1px solid var(--tp-border);
+    border-radius: 14px;
+    padding: 1rem;
+  }
+  .tp-empty-state {
+    color: var(--tp-muted);
+    background: var(--tp-surface-2);
+    border: 1px solid var(--tp-border);
+    border-radius: 12px;
+    padding: 1rem;
+  }
+  .tp-btn--full {
+    width: 100%;
+  }
+
   /* ── Badge editor ── */
   .tp-badge-editor {
     display: flex;

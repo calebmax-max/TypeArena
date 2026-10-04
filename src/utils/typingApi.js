@@ -239,6 +239,22 @@ export const loginUser = async (email, password) => {
   }
 };
 
+export const fetchSubscriptionPlans = async () => {
+  const response = await apiFetch(buildApiUrl('/api/subscription-plans'), {
+    headers: buildHeaders(),
+  });
+  return await parseResponse(response);
+};
+
+export const startProCheckout = async ({ planKey, phoneNumber }) => {
+  const response = await apiFetch(buildApiUrl('/api/subscriptions/pro/checkout'), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({ planKey, phoneNumber }),
+  });
+  return await parseResponse(response);
+};
+
 export const requestPasswordReset = async (email) => {
   const response = await apiFetch(buildApiUrl('/api/auth/request-password-reset'), {
     method: 'POST',

@@ -16,7 +16,8 @@ npm.cmd run build
 Backend compile check:
 
 ```powershell
-python -m py_compile app_backend.py school_features.py app_loader.py wsgi.py passenger_wsgi.py
+python -m py_compile app_backend.py foundation_features.py school_features.py app_loader.py wsgi.py passenger_wsgi.py
+python -m unittest tests.test_foundation_features
 ```
 
 ## School mode
@@ -26,6 +27,16 @@ Signed-in users can create an organisation, create classes, and invite teachers 
 Learners can join with a class code or accept an invitation after signing in with the invited email address. CSV imports immediately add existing accounts and create pending invitations for unknown emails; recipients must create their own TypeArena account before accepting. Invitation emails are not sent automatically.
 
 Assignment races submit results on completion. Learners can view current status and attempt history in School mode. Certificates and advanced analytics are not part of this release.
+
+## Phase 0 foundation
+
+The backend bootstraps account roles/plans, subscription payments, and race-stat schema at startup. Global account roles (`free`, `pro`, `employer`, `admin`) remain separate from organisation-scoped teacher/student membership. The configured platform-admin email controls the `admin` role; only platform admins can assign `employer`.
+
+Daraja subscription checkout uses its own payment and callback flow and never credits wallet balance. Configure `MPESA_SUBSCRIPTION_CALLBACK_URL` as the public HTTPS URL ending in `/api/mpesa/callback/subscription`, along with the standard Daraja credentials. The monetization layer now supports a monthly + annual Pro pass. The default plan keys are `pro_monthly` and `pro_annual`, with the legacy `pro` alias still accepted for compatibility. The full Pro package includes no ads, private rooms, custom race lengths, custom text, advanced analytics, and a Pro badge. Platform admins can configure and activate a plan through `PUT /api/admin/subscription-plans/<planKey>` with `amount`, `billingPeriodDays`, and `active`. The amount must be a whole KES value and the billing period is expressed in days. Until configured and activated, checkout returns a clear unavailable response. Purchases are confirmed by the server callback, checked against the recorded checkout and amount, and processed once; renewals currently require another user-initiated STK Push.
+
+Authenticated clients can read `GET /api/entitlements`, `GET /api/subscriptions/current`, and `GET /api/subscription-payments/<transactionId>`. `POST /api/subscriptions/pro/checkout` starts checkout with a `phoneNumber`. Public `GET /api/subscription-plans` lists plans available for purchase. Role and entitlement resolution is centralized in `foundation_features.py`; Pro access requires a currently active subscription.
+
+Every verified solo or live race now stores WPM, accuracy, timestamp, and a server-derived per-key error map with its history row. Legacy submissions without replayable typed text retain an empty per-key error map.
 
 Backend health check:
 

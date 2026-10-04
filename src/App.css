@@ -4706,9 +4706,10 @@ img {
 .arena-brand__copy { display: grid; gap: 0.1rem; text-align: left; }
 .arena-brand__copy small { color: rgba(255,255,255,0.62); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .arena-nav { display: flex; align-items: center; gap: 0.25rem; }
-.arena-nav .nav-link, .arena-nav__signout { border: 0; border-radius: 999px; color: rgba(255,255,255,0.78); padding: 0.65rem 0.85rem; text-decoration: none; font: inherit; cursor: pointer; background: transparent; }
-.arena-nav .nav-link:hover, .arena-nav .nav-link--active, .arena-nav__signout:hover { color: #fff; background: rgba(255,255,255,0.1); }
+.arena-nav .nav-link, .arena-nav__signout, .arena-nav__upgrade { border: 0; border-radius: 999px; color: rgba(255,255,255,0.78); padding: 0.65rem 0.85rem; text-decoration: none; font: inherit; cursor: pointer; background: transparent; }
+.arena-nav .nav-link:hover, .arena-nav .nav-link--active, .arena-nav__signout:hover, .arena-nav__upgrade:hover { color: #fff; background: rgba(255,255,255,0.1); }
 .arena-nav__profile { margin-left: 0.35rem; background: rgba(240,188,71,0.16) !important; color: #f6d28b !important; }
+.arena-nav__upgrade { margin-left: 0.25rem; background: rgba(79,255,176,0.12) !important; color: #8af6c3 !important; border: 1px solid rgba(79,255,176,0.3); }
 .arena-menu-toggle { display: none; width: auto; min-width: 78px; height: 44px; padding: 0 0.65rem; border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; background: rgba(255,255,255,0.06); align-items: center; justify-content: center; gap: 0.45rem; }
 .arena-menu-toggle > span:not(.arena-menu-toggle__label) { display: block; width: 20px; height: 2px; margin: 0; border-radius: 99px; background: #fff; transition: transform 0.2s ease, opacity 0.2s ease; }
 .arena-menu-toggle__label { display: inline-block; color: #fff; font-size: 0.78rem; font-weight: 700; line-height: 1; }

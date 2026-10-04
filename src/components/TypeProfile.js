@@ -29,6 +29,7 @@ import {
   addFundsToWallet,
   fetchCurrentUser,
   fetchRaceHistory,
+  fetchSubscriptionPlans,
   fetchWalletConfig,
   fetchWalletHistory,
   fetchWalletTopupStatus,
@@ -38,6 +39,7 @@ import {
   requestPasswordReset,
   resetPassword,
   signupUser,
+  startProCheckout,
   updateUserProfile,
   verifyWalletTopupSession,
   withdrawFundsToWallet,
@@ -154,6 +156,12 @@ export default function TypeProfile() {
   const [withdrawAccount, setWithdrawAccount] = useState('');
   const [withdrawMethod,  setWithdrawMethod]  = useState('paypal');
   const [walletNotice,  setWalletNotice]   = useState('');
+  const [subscriptionPlans, setSubscriptionPlans] = useState([]);
+  const [selectedPlanKey, setSelectedPlanKey] = useState('pro_monthly');
+  const [proPhoneNumber, setProPhoneNumber] = useState('');
+  const [proNotice, setProNotice] = useState('');
+  const [proNoticeType, setProNoticeType] = useState('info');
+  const [proLoading, setProLoading] = useState(false);
   const [authNotice,    setAuthNotice]     = useState('');
   const [authNoticeType, setAuthNoticeType] = useState('error');
   const [authLoading,   setAuthLoading]   = useState(false);
@@ -310,6 +318,25 @@ export default function TypeProfile() {
     }
   }, [walletConfig]);
 
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let active = true;
+    (async () => {
+      try {
+        const plans = await fetchSubscriptionPlans();
+        if (!active) return;
+        setSubscriptionPlans(Array.isArray(plans) ? plans : []);
+        if (Array.isArray(plans) && plans.length) {
+          const defaultPlan = plans.find((plan) => plan.plan === currentUser.accountPlan) || plans[0];
+          setSelectedPlanKey(defaultPlan?.plan || 'pro_monthly');
+        }
+      } catch (error) {
+        console.warn('Failed to load subscription plans:', error);
+      }
+    })();
+    return () => { active = false; };
+  }, [currentUser?.id, currentUser?.accountPlan]);
+
   // ──────────────────────────────────────── Auth ────────────────────────────────────────
   useEffect(() => {
     setProfileName(currentUser?.username || '');
@@ -334,6 +361,45 @@ export default function TypeProfile() {
       setProfileSaving(false);
     }
   };
+
+  const handleProUpgrade = async () => {
+    if (!currentUser?.id) {
+      setProNotice('Sign in to unlock TypeArena Pro.');
+      setProNoticeType('error');
+      return;
+    }
+    const plan = subscriptionPlans.find((entry) => entry.plan === selectedPlanKey) || subscriptionPlans[0];
+    if (!plan) {
+      setProNotice('Pro plans are loading. Please try again in a moment.');
+      setProNoticeType('info');
+      return;
+    }
+    if (!proPhoneNumber.trim()) {
+      setProNotice('Enter your M-Pesa number to start checkout.');
+      setProNoticeType('error');
+      return;
+    }
+    setProLoading(true);
+    setProNotice('');
+    try {
+      const result = await startProCheckout({
+        planKey: plan.plan,
+        phoneNumber: proPhoneNumber.trim(),
+      });
+      setProNotice(result.message || 'M-Pesa payment prompt sent. Complete the payment on your phone.');
+      setProNoticeType('success');
+      const refreshedUser = await fetchCurrentUser({ force: true });
+      if (refreshedUser) {
+        applyFreshUserState(refreshedUser);
+      }
+    } catch (error) {
+      setProNotice(error.message || 'Could not start Pro checkout.');
+      setProNoticeType('error');
+    } finally {
+      setProLoading(false);
+    }
+  };
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     if (authLoading) return;
@@ -900,9 +966,72 @@ export default function TypeProfile() {
                 </div>
                 <div className="tp-account-row">
                   <span className="tp-account-row__label">Premium</span>
-                  <span className="tp-account-row__value">{currentUser.premium ? 'Active' : 'Not active'}</span>
+                  <span className="tp-account-row__value">{currentUser.premium || currentUser.accountPlan === 'pro' || currentUser.accountPlan === 'pro_monthly' || currentUser.accountPlan === 'pro_annual' ? 'Active' : 'Not active'}</span>
                 </div>
               </div>
+
+              <div className="tp-section-head" style={{ marginTop: '2rem' }}>
+                <h3>TypeArena Pro</h3>
+                <span className="tp-section-head__sub">Unlock the full Pro package</span>
+              </div>
+              <div className="tp-pro-grid">
+                {subscriptionPlans.length ? subscriptionPlans.map((plan) => {
+                  const isSelected = selectedPlanKey === plan.plan;
+                  const isActive = currentUser.accountPlan === plan.plan || (plan.plan === 'pro_monthly' && currentUser.accountPlan === 'pro');
+                  const label = plan.billingPeriodDays >= 365 ? 'Annual' : 'Monthly';
+                  return (
+                    <div key={plan.plan} className={`tp-pro-card ${isSelected ? 'tp-pro-card--selected' : ''} ${isActive ? 'tp-pro-card--active' : ''}`}>
+                      <div className="tp-pro-card__topline">{isActive ? 'Current plan' : label}</div>
+                      <h4>{plan.name}</h4>
+                      <div className="tp-pro-card__price">
+                        <span>KES</span>
+                        <strong>{Number(plan.amount || 0).toLocaleString('en-KE')}</strong>
+                      </div>
+                      <div className="tp-pro-card__period">{Math.round((plan.billingPeriodDays || 30) / 30)} month access</div>
+                      <ul className="tp-pro-card__features">
+                        <li>No ads</li>
+                        <li>Private rooms</li>
+                        <li>Custom race lengths</li>
+                        <li>Custom text</li>
+                        <li>Advanced analytics</li>
+                        <li>Pro badge</li>
+                      </ul>
+                      <button
+                        className="tp-btn tp-btn--primary tp-btn--full"
+                        type="button"
+                        disabled={proLoading}
+                        onClick={() => setSelectedPlanKey(plan.plan)}
+                      >
+                        {isSelected ? 'Selected' : 'Choose plan'}
+                      </button>
+                    </div>
+                  );
+                }) : (
+                  <div className="tp-empty-state">Loading Pro plans...</div>
+                )}
+              </div>
+
+              <div className="tp-pro-checkout">
+                <div className="tp-field tp-field--grow">
+                  <label className="tp-field__label">M-Pesa number</label>
+                  <input
+                    className="tp-input"
+                    type="tel"
+                    value={proPhoneNumber}
+                    onChange={(event) => setProPhoneNumber(event.target.value)}
+                    placeholder="2547XX XXX XXX"
+                  />
+                </div>
+                <button
+                  className="tp-btn tp-btn--primary"
+                  type="button"
+                  onClick={handleProUpgrade}
+                  disabled={proLoading || !subscriptionPlans.length}
+                >
+                  {proLoading ? 'Sending...' : `Checkout ${selectedPlanKey === 'pro_annual' ? 'Annual' : 'Monthly'} Pro`}
+                </button>
+              </div>
+              <Notice message={proNotice} type={proNoticeType} />
 
               <div className="tp-section-head" style={{ marginTop: '2rem' }}>
                 <h3>Arena Experience</h3>

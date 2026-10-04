@@ -21,6 +21,8 @@ SCHEMA_SQL = [
         total_races INT NOT NULL DEFAULT 0,
         wins INT NOT NULL DEFAULT 0,
         balance DECIMAL(12,2) NOT NULL DEFAULT 0,
+        account_role VARCHAR(24) NOT NULL DEFAULT 'free',
+        account_plan VARCHAR(40) NOT NULL DEFAULT 'free',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -81,9 +83,71 @@ SCHEMA_SQL = [
         place_position INT,
         earnings DECIMAL(12,2) NOT NULL DEFAULT 0,
         race_timestamp DATETIME NOT NULL,
+        key_errors TEXT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         KEY idx_race_history_user_time (user_id, race_timestamp),
         CONSTRAINT fk_rh_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS subscription_plans (
+        plan_key VARCHAR(40) PRIMARY KEY,
+        display_name VARCHAR(80) NOT NULL,
+        amount DECIMAL(12,2) NULL,
+        currency CHAR(3) NOT NULL DEFAULT 'KES',
+        billing_period_days INT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    INSERT IGNORE INTO subscription_plans
+        (plan_key, display_name, amount, billing_period_days, is_active)
+    VALUES
+        ('pro_monthly', 'Pro Monthly', NULL, 30, 0),
+        ('pro_annual', 'Pro Annual', NULL, 365, 0),
+        ('pro', 'Pro', NULL, NULL, 0);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        plan_key VARCHAR(40) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        currency CHAR(3) NOT NULL,
+        billing_period_days INT NOT NULL,
+        status ENUM('pending','active','expired','cancelled','failed') NOT NULL DEFAULT 'pending',
+        starts_at DATETIME NULL,
+        expires_at DATETIME NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_subscriptions_user_status_expiry (user_id, status, expires_at),
+        CONSTRAINT fk_subscriptions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_subscriptions_plan FOREIGN KEY (plan_key) REFERENCES subscription_plans(plan_key)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS subscription_payments (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tx_code VARCHAR(80) NOT NULL UNIQUE,
+        subscription_id BIGINT NOT NULL,
+        user_id INT NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        currency CHAR(3) NOT NULL,
+        status ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
+        checkout_request_id VARCHAR(120) NULL UNIQUE,
+        merchant_request_id VARCHAR(120) NULL,
+        mpesa_receipt_number VARCHAR(120) NULL UNIQUE,
+        result_code VARCHAR(20) NULL,
+        result_desc VARCHAR(255) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME NULL,
+        failed_at DATETIME NULL,
+        KEY idx_subscription_payments_user_created (user_id, created_at),
+        CONSTRAINT fk_subscription_payments_subscription FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE,
+        CONSTRAINT fk_subscription_payments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """,
     """
