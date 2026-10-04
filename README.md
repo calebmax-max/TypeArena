@@ -38,6 +38,16 @@ Authenticated clients can read `GET /api/entitlements`, `GET /api/subscriptions/
 
 Every verified solo or live race now stores WPM, accuracy, timestamp, and a server-derived per-key error map with its history row. Legacy submissions without replayable typed text retain an empty per-key error map.
 
+## Progression foundation
+
+Every server-recorded race awards XP once, with an optional all-time WPM personal-best bonus. The initial defaults are 50 XP per race, 25 for a personal best, 50 at a 3-day streak, and 150 at a 7-day streak; platform admins can read or update these amounts through `GET`/`PUT /api/admin/progression/rewards`. XP, levels, daily streaks, streak-freeze balances, and both transaction ledgers are stored server-side. Levels follow the increasing threshold curve (500 XP for level 2, 1,100 for level 3, 1,800 for level 4); players receive a freeze at each fifth level, up to three stored freezes. Streak dates use `Africa/Nairobi`; missed days are automatically covered only when the balance can cover the full gap.
+
+Authenticated clients can read progression with `GET /api/progression`, read recent XP/freeze ledger entries with `GET /api/progression/history`, and safely retry an award for their own recorded race with `POST /api/progression/races/<raceCode>/award`. Race completion awards are also applied automatically by the shared race persistence path. Paid/ad-earned freezes, XP boosts, cosmetics, and progression UI are not included in this backend foundation phase.
+
+## Verified typing certificates
+
+The certification assessment uses the current passage configured by platform admins in Admin Panel → Content → Certification Test Passage. An attempt pins that exact passage and uses it for the three-minute test, even if an admin later edits the configured text. An attempt requires a signed-in account, is limited to one start every 30 days, and is scored on the server; passing requires at least 40 WPM, 95% accuracy, and 600 typed characters. Copy/paste, passage changes, missing telemetry, window switching, and other anti-cheat signals are recorded; flagged attempts do not issue certificates unless a platform admin approves them after review. Public verification uses `GET /api/certificates/verify/<certificateId>` and exposes only the certificate ID, player display name, WPM, accuracy, test date, and validity statement. The test UI is available at `/certification`; certificate verification pages are at `/verify/<certificateId>`. Payment and downloadable PDF/QR generation are deferred.
+
 Backend health check:
 
 ```powershell

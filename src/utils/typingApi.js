@@ -255,6 +255,51 @@ export const startProCheckout = async ({ planKey, phoneNumber }) => {
   return await parseResponse(response);
 };
 
+export const startCertification = async () => {
+  const response = await apiFetch(buildApiUrl('/api/certifications/start'), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify({}),
+  });
+  return await parseResponse(response);
+};
+
+export const submitCertification = async (attemptId, payload) => {
+  const response = await apiFetch(buildApiUrl(
+    `/api/certifications/${encodeURIComponent(attemptId)}/submit`
+  ), {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return await parseResponse(response);
+};
+
+export const verifyCertificate = async (certificateId) => {
+  const response = await apiFetch(buildApiUrl(
+    `/api/certificates/verify/${encodeURIComponent(certificateId)}`
+  ), {
+    headers: buildHeaders(),
+  });
+  return await parseResponse(response);
+};
+
+export const fetchAdminCertificationSettings = async () => {
+  const response = await apiFetch(buildApiUrl('/api/admin/certifications/settings'), {
+    headers: buildAdminHeaders(),
+  });
+  return await parseResponse(response);
+};
+
+export const updateAdminCertificationSettings = async ({ passage }) => {
+  const response = await apiFetch(buildApiUrl('/api/admin/certifications/settings'), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify({ passage }),
+  });
+  return await parseResponse(response);
+};
+
 export const requestPasswordReset = async (email) => {
   const response = await apiFetch(buildApiUrl('/api/auth/request-password-reset'), {
     method: 'POST',

@@ -23,8 +23,90 @@ SCHEMA_SQL = [
         balance DECIMAL(12,2) NOT NULL DEFAULT 0,
         account_role VARCHAR(24) NOT NULL DEFAULT 'free',
         account_plan VARCHAR(40) NOT NULL DEFAULT 'free',
+        xp BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        level INT UNSIGNED NOT NULL DEFAULT 1,
+        current_streak INT UNSIGNED NOT NULL DEFAULT 0,
+        longest_streak INT UNSIGNED NOT NULL DEFAULT 0,
+        last_play_date DATE NULL,
+        streak_freezes TINYINT UNSIGNED NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS xp_transactions (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        amount INT NOT NULL,
+        reason VARCHAR(40) NOT NULL,
+        reference_code VARCHAR(120) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_xp_user_reference_reason (user_id, reference_code, reason),
+        KEY idx_xp_user_created (user_id, created_at),
+        CONSTRAINT fk_xp_transactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS streak_freeze_transactions (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        amount SMALLINT NOT NULL,
+        reason VARCHAR(40) NOT NULL,
+        reference_code VARCHAR(120) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_freeze_user_reference_reason (user_id, reference_code, reason),
+        KEY idx_freeze_user_created (user_id, created_at),
+        CONSTRAINT fk_freeze_transactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS progression_reward_settings (
+        setting_key VARCHAR(40) PRIMARY KEY,
+        amount INT UNSIGNED NOT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    INSERT IGNORE INTO progression_reward_settings (setting_key, amount)
+    VALUES
+        ('race_completed', 50),
+        ('personal_best', 25),
+        ('streak_3_days', 50),
+        ('streak_7_days', 150);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS certification_settings (
+        setting_key VARCHAR(40) PRIMARY KEY,
+        passage MEDIUMTEXT NOT NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS certification_attempts (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        attempt_code VARCHAR(80) NOT NULL UNIQUE,
+        user_id INT NOT NULL,
+        status ENUM('in_progress','flagged','passed','failed','review_approved','review_rejected')
+            NOT NULL DEFAULT 'in_progress',
+        target_text MEDIUMTEXT NOT NULL,
+        race_token_hash CHAR(64) NOT NULL,
+        wpm DECIMAL(6,2) NULL,
+        accuracy DECIMAL(5,2) NULL,
+        total_characters INT UNSIGNED NULL,
+        anti_cheat_flags TEXT NULL,
+        certificate_code VARCHAR(32) NULL UNIQUE,
+        player_name VARCHAR(80) NULL,
+        started_at DATETIME NOT NULL,
+        submitted_at DATETIME NULL,
+        issued_at DATETIME NULL,
+        reviewed_at DATETIME NULL,
+        reviewed_by VARCHAR(120) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_certification_user_created (user_id, created_at),
+        KEY idx_certification_review_queue (status, created_at),
+        CONSTRAINT fk_certification_attempts_user
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """,
     """
@@ -223,6 +305,14 @@ EXPECTED_COLUMNS = {
         'total_races': "ALTER TABLE users ADD COLUMN total_races INT NOT NULL DEFAULT 0 AFTER accuracy",
         'wins': "ALTER TABLE users ADD COLUMN wins INT NOT NULL DEFAULT 0 AFTER total_races",
         'balance': "ALTER TABLE users ADD COLUMN balance DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER wins",
+        'account_role': "ALTER TABLE users ADD COLUMN account_role VARCHAR(24) NOT NULL DEFAULT 'free' AFTER balance",
+        'account_plan': "ALTER TABLE users ADD COLUMN account_plan VARCHAR(40) NOT NULL DEFAULT 'free' AFTER account_role",
+        'xp': "ALTER TABLE users ADD COLUMN xp BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER account_plan",
+        'level': "ALTER TABLE users ADD COLUMN level INT UNSIGNED NOT NULL DEFAULT 1 AFTER xp",
+        'current_streak': "ALTER TABLE users ADD COLUMN current_streak INT UNSIGNED NOT NULL DEFAULT 0 AFTER level",
+        'longest_streak': "ALTER TABLE users ADD COLUMN longest_streak INT UNSIGNED NOT NULL DEFAULT 0 AFTER current_streak",
+        'last_play_date': "ALTER TABLE users ADD COLUMN last_play_date DATE NULL AFTER longest_streak",
+        'streak_freezes': "ALTER TABLE users ADD COLUMN streak_freezes TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER last_play_date",
         'created_at': "ALTER TABLE users ADD COLUMN created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER balance",
         'updated_at': "ALTER TABLE users ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
     },

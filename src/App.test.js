@@ -51,6 +51,11 @@ jest.mock('./components/Leaderboard', () => () => <div>Leaderboard Page</div>);
 jest.mock('./components/TypeProfile', () => () => <div>Profile Page</div>);
 jest.mock('./components/AdminPanel', () => () => <div>Admin Page</div>);
 jest.mock('./components/SchoolDashboard', () => () => <div>School Dashboard</div>);
+jest.mock('./components/Certification', () => ({
+  __esModule: true,
+  default: () => <div>Certification Page</div>,
+  CertificateVerification: () => <div>Certificate Verification Page</div>,
+}));
 jest.mock('./components/Marketplace', () => () => <div>Marketplace Page</div>);
 jest.mock('./components/Results', () => () => <div>Results Page</div>);
 jest.mock('./components/Notfound', () => () => <div>Not Found</div>);

@@ -25,6 +25,7 @@ import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
 import SchoolDashboard from './components/SchoolDashboard';
+import CertificationTest, { CertificateVerification } from './components/Certification';
 
 
 
@@ -267,6 +268,7 @@ function AppLayout() {
             <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}>Training</NavLink>
             <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
             <NavLink to="/school" className={navLinkClassName}>School</NavLink>
+            <NavLink to="/certification" className={navLinkClassName}>Get Certified</NavLink>
             <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
             {!isProUser && currentUser && (
               <NavLink to="/profile?tab=account#typearena-pro" className="arena-nav__upgrade">Upgrade Pro</NavLink>
@@ -294,6 +296,8 @@ function AppLayout() {
           <Route path="/practice" element={<Play practicePage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
+          <Route path="/certification" element={<CertificationTest />} />
+          <Route path="/verify/:certificateId" element={<CertificateVerification />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/results/:raceId" element={<Results />} />

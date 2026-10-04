@@ -33,6 +33,8 @@ from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 from school_features import register_school_routes
 from foundation_features import per_key_error_counts, register_foundation_routes
+from progression_features import award_race_progress, register_progression_routes
+from certification_features import register_certification_routes
 try:
     from flask_compress import Compress
 except ImportError:  # pragma: no cover - only hit if the dependency isn't installed yet
@@ -4031,6 +4033,15 @@ def _apply_user_performance_update(
     key_errors_json = json.dumps(key_errors or {}, ensure_ascii=False)
     cur.execute(
         '''
+        SELECT MAX(wpm) AS best_wpm
+        FROM race_history
+        WHERE user_id=%s AND race_code<>%s
+        ''',
+        (user_id, race_code),
+    )
+    previous_best = (cur.fetchone() or {}).get('best_wpm')
+    cur.execute(
+        '''
         INSERT INTO race_history
         (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta, verification_method, anti_cheat_flags, key_errors)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -4053,6 +4064,12 @@ def _apply_user_performance_update(
             1 if did_win else 2, earnings, now_dt, race_category, points_delta,
             verification_method, flags_json, key_errors_json,
         ),
+    )
+    progression = award_race_progress(
+        cur,
+        user_id=int(user_id),
+        race_code=race_code,
+        personal_best=previous_best is None or round(float(wpm), 1) > float(previous_best),
     )
     cur.execute(
         '''
@@ -4107,6 +4124,7 @@ def _apply_user_performance_update(
     # loss scaling all live only in _season_points_delta_for_race).
     if updated_user is not None:
         updated_user['_season_points_delta'] = points_delta
+        updated_user['_progression'] = progression
     return updated_user
 
 
@@ -4454,6 +4472,7 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
                 if updated_user is not None:
                     result['seasonPointsDelta'] = int(updated_user.get('_season_points_delta') or 0)
                     result['seasonPointsTotal'] = int(updated_user.get('season_points_stored') or 0)
+                    result['progression'] = updated_user.get('_progression')
         if _owns_conn:
             conn.commit()
         room['resultsPersisted'] = True
@@ -10678,6 +10697,7 @@ def submit_race():
                 # what actually landed on the leaderboard.
                 'seasonPointsEarned': int(updated_user.get('_season_points_delta') or 0),
                 'seasonPoints': int(updated_user.get('season_points_stored') or 0),
+                'progression': updated_user.get('_progression'),
                 'coachTip': _coach_tip_for_user(
                     {
                         'wpm': updated_user.get('wpm', wpm),
@@ -10864,6 +10884,26 @@ _ensure_foundation_tables = register_foundation_routes(
     admin_email=ADMIN_EMAIL,
 )
 
+_ensure_progression_tables = register_progression_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+    is_admin_email=lambda email: _is_admin_email(email),
+)
+
+_ensure_certification_tables = register_certification_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+    is_admin_email=lambda email: _is_admin_email(email),
+    issue_race_token=lambda **kwargs: issue_race_token(**kwargs),
+    verify_race_token=lambda *args, **kwargs: _verify_race_token(*args, **kwargs),
+    evaluate_race_submission=lambda **kwargs: evaluate_race_submission(**kwargs),
+    score_typed_text=lambda *args, **kwargs: _score_typed_text(*args, **kwargs),
+)
+
 
 def _bootstrap_db() -> None:
     """Create all required tables and columns once at startup."""
@@ -10886,6 +10926,8 @@ def _bootstrap_db() -> None:
                 _ensure_admin_impersonation_log_table(cur)
                 _ensure_school_tables(cur)
                 _ensure_foundation_tables(cur)
+                _ensure_progression_tables(cur)
+                _ensure_certification_tables(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_terms_acceptance_columns(cur)
                 _ensure_user_equipped_columns(cur)

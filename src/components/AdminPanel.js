@@ -18,6 +18,7 @@ import {
   updateAdminMarketplaceItem,
   fetchAdminAiSettings,
   fetchAdminSiteMarquee,
+  fetchAdminCertificationSettings,
   fetchAdminWallet,
   fetchTournamentParticipants,
   fetchTournaments,
@@ -27,6 +28,7 @@ import {
   updateAdminContent,
   updateAdminLeaderboardSettings,
   updateAdminSiteMarquee,
+  updateAdminCertificationSettings,
   withdrawFromAdminWallet,
   searchAdminUsers,
   sendAdminWalletTransfer,
@@ -113,6 +115,9 @@ export default function AdminPanel() {
   const [editingMarketplaceId, setEditingMarketplaceId] = useState(null);
   const [leaderboardTiers, setLeaderboardTiers] = useState(DEFAULT_LEADERBOARD_TIERS);
   const [siteMarqueeText, setSiteMarqueeText] = useState(DEFAULT_SITE_MARQUEE_ITEMS.join('\n'));
+  const [certificationPassage, setCertificationPassage] = useState('');
+  const [certificationPassageLoading, setCertificationPassageLoading] = useState(false);
+  const [certificationPassageSaving, setCertificationPassageSaving] = useState(false);
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [schoolOrganizations, setSchoolOrganizations] = useState([]);
   const [selectedSchoolOrganization, setSelectedSchoolOrganization] = useState(null);
@@ -160,6 +165,38 @@ export default function AdminPanel() {
   const [impersonatingId, setImpersonatingId] = useState(null);
 
   const noticeTimerRef = React.useRef(null);
+
+  useEffect(() => {
+    if (activeSection !== 'content') return undefined;
+    let active = true;
+    setCertificationPassageLoading(true);
+    fetchAdminCertificationSettings()
+      .then((settings) => {
+        if (active) setCertificationPassage(settings.passage || '');
+      })
+      .catch((error) => {
+        if (active) setNotice(error.message || 'Could not load certification passage.');
+      })
+      .finally(() => {
+        if (active) setCertificationPassageLoading(false);
+      });
+    return () => { active = false; };
+  }, [activeSection]);
+
+  const handleCertificationPassageSave = async (event) => {
+    event.preventDefault();
+    if (certificationPassageSaving) return;
+    setCertificationPassageSaving(true);
+    try {
+      const result = await updateAdminCertificationSettings({ passage: certificationPassage });
+      setCertificationPassage(result.passage);
+      setNotice(result.message || 'Certification passage saved.');
+    } catch (error) {
+      setNotice(error.message || 'Could not save certification passage.');
+    } finally {
+      setCertificationPassageSaving(false);
+    }
+  };
 
   const loadAdminData = React.useCallback(async () => {
     const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, leaderboardData, marketplaceData, schoolsData] = await Promise.all([
@@ -1701,6 +1738,39 @@ export default function AdminPanel() {
                     <textarea className="ap-textarea" rows={6} placeholder="One line per announcement..." value={siteMarqueeText} onChange={e => setSiteMarqueeText(e.target.value)} />
                   </div>
                   <button className="ap-btn" onClick={handleSiteMarqueeSave}>Save Marquee</button>
+                </div>
+                <div className="ap-card">
+                  <p className="ap-card-title">Certification Test Passage</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--ap-muted)', marginBottom: 14 }}>
+                    New certification attempts use this exact passage. Existing attempts retain the passage they started with.
+                    Keep it at least 600 characters; maximum 50,000.
+                  </p>
+                  <form onSubmit={handleCertificationPassageSave}>
+                    <div className="ap-field">
+                      <label className="ap-label" htmlFor="certification-passage">Fixed assessment text</label>
+                      <textarea
+                        id="certification-passage"
+                        className="ap-textarea"
+                        rows={10}
+                        value={certificationPassage}
+                        onChange={(event) => setCertificationPassage(event.target.value)}
+                        placeholder={certificationPassageLoading ? 'Loading certification passage...' : 'Enter the exact passage for certification tests...'}
+                        disabled={certificationPassageLoading || certificationPassageSaving}
+                        maxLength={50000}
+                        required
+                      />
+                      <span style={{ fontSize: '0.75rem', color: 'var(--ap-muted)' }}>
+                        {certificationPassage.length.toLocaleString()} / 50,000 characters (minimum 600)
+                      </span>
+                    </div>
+                    <button
+                      className="ap-btn"
+                      type="submit"
+                      disabled={certificationPassageLoading || certificationPassageSaving || certificationPassage.trim().length < 600}
+                    >
+                      {certificationPassageSaving ? 'Saving...' : 'Save Certification Passage'}
+                    </button>
+                  </form>
                 </div>
                 <div className="ap-card">
                   <p className="ap-card-title">Typing Passage Library</p>
