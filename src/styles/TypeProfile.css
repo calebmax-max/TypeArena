@@ -1165,6 +1165,7 @@
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 1rem;
   }
+  .tp-pro-section-head { scroll-margin-top: 110px; }
   .tp-pro-card {
     display: flex;
     flex-direction: column;

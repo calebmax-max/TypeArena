@@ -269,7 +269,7 @@ function AppLayout() {
             <NavLink to="/school" className={navLinkClassName}>School</NavLink>
             <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
             {!isProUser && currentUser && (
-              <NavLink to="/profile" className="arena-nav__upgrade">Upgrade Pro</NavLink>
+              <NavLink to="/profile?tab=account#typearena-pro" className="arena-nav__upgrade">Upgrade Pro</NavLink>
             )}
             {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout">Sign Out</button>}
           </nav>

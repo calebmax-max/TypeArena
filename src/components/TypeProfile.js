@@ -24,7 +24,7 @@ import React, {
   useMemo,
   useRef,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   addFundsToWallet,
   fetchCurrentUser,
@@ -139,6 +139,7 @@ function Notice({ message, type = 'info' }) {
 // ──────────────────────────────────────── Main component ────────────────────────────────────────
 export default function TypeProfile() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [currentUser,   setCurrentUser]   = useState(() => getStoredUserSnapshot());
   const [showAuthForm,  setShowAuthForm]   = useState(false);
@@ -174,6 +175,24 @@ export default function TypeProfile() {
   const [topUpLoading,     setTopUpLoading]     = useState(false);
   const [withdrawLoading,  setWithdrawLoading]  = useState(false);
   const profileRequestRef = useRef(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('tab') === 'account') {
+      setActiveTab('account');
+    }
+  }, [location.search]);
+
+  useEffect(() => {
+    if (activeTab !== 'account' || location.hash !== '#typearena-pro') return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('typearena-pro')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, location.hash]);
 
   // ──────────────────────────────────────── Audio / experience settings (persisted in localStorage, read by Play) ────────────────────────────────────────
   const [soundEnabled,       setSoundEnabled]       = useState(() => localStorage.getItem('typearena_sound')       !== 'false');
@@ -970,7 +989,7 @@ export default function TypeProfile() {
                 </div>
               </div>
 
-              <div className="tp-section-head" style={{ marginTop: '2rem' }}>
+              <div id="typearena-pro" className="tp-section-head tp-pro-section-head" style={{ marginTop: '2rem' }}>
                 <h3>TypeArena Pro</h3>
                 <span className="tp-section-head__sub">Unlock the full Pro package</span>
               </div>
