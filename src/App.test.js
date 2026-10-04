@@ -78,6 +78,7 @@ test('registers the tournaments page at /tournaments', () => {
   render(<App />);
 
   expect(document.querySelector('[data-route-path="/tournaments"]')).toBeInTheDocument();
+  expect(document.querySelector('[data-route-path="/tournaments/:eventId/race"]')).toBeInTheDocument();
   expect(screen.getByText('Tournaments Page')).toBeInTheDocument();
 });
 

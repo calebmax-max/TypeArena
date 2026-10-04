@@ -10553,11 +10553,26 @@ def start_race():
             duration_limit = int(duration_limit) if duration_limit is not None else None
         except (TypeError, ValueError):
             duration_limit = None
+        sponsored_event_id = payload.get('sponsoredEventId')
+        if sponsored_event_id is not None:
+            try:
+                sponsored_event_id = int(sponsored_event_id)
+            except (TypeError, ValueError):
+                return jsonify({'message': 'Sponsored event id must be a valid number.'}), 400
 
         issued = issue_race_token(user_id=user['id'], target_text=target_text, mode=mode, duration_limit_s=duration_limit)
         with conn.cursor() as cur:
             _ensure_sponsored_event_tables(cur)
-            record_sponsored_event_attempt(cur, user_id=int(user['id']), race_token=issued['token'])
+            try:
+                record_sponsored_event_attempt(
+                    cur,
+                    user_id=int(user['id']),
+                    race_token=issued['token'],
+                    event_id=sponsored_event_id,
+                )
+            except ValueError as exc:
+                conn.rollback()
+                return jsonify({'message': str(exc)}), 403
         conn.commit()
         return jsonify(issued), 201
     finally:

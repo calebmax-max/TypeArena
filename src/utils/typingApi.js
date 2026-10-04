@@ -416,7 +416,7 @@ export const fetchLeaderboard = async (limit = 100) => {
  * re-verify the passage instead of trusting the client's own numbers.
  *
  * @param {string} text - the passage the player is about to type.
- * @param {{ mode?: string, durationLimit?: number }} [options]
+ * @param {{ mode?: string, durationLimit?: number, sponsoredEventId?: number }} [options]
  * @returns {Promise<{ token: string, serverStartTs: number, textHash: string }>}
  */
 export const startRace = async (text, options = {}) => {
@@ -427,6 +427,7 @@ export const startRace = async (text, options = {}) => {
       text,
       mode: options.mode || 'practice',
       durationLimit: options.durationLimit,
+      sponsoredEventId: options.sponsoredEventId,
     }),
   });
   return await parseResponse(response);
@@ -771,7 +772,9 @@ export const fetchTournamentWinner = async (tournamentId) => {
 };
 
 export const fetchSponsoredEvents = async () => {
-  const response = await apiFetch(buildApiUrl('/api/sponsored-events'));
+  const response = await apiFetch(buildApiUrl('/api/sponsored-events'), {
+    headers: buildHeaders(),
+  });
   return parseResponse(response);
 };
 

@@ -2,7 +2,11 @@ import hashlib
 import unittest
 from datetime import datetime, timedelta
 
-from sponsored_event_features import complete_sponsored_event_attempt, validate_event_payload
+from sponsored_event_features import (
+    complete_sponsored_event_attempt,
+    record_sponsored_event_attempt,
+    validate_event_payload,
+)
 
 
 def event_payload():
@@ -36,6 +40,18 @@ class AttemptCursor:
 
     def fetchall(self):
         return self.rows
+
+
+class EventStartCursor:
+    def __init__(self, eligible=True):
+        self.eligible = eligible
+        self.statements = []
+
+    def execute(self, query, params):
+        self.statements.append((query, params))
+
+    def fetchone(self):
+        return {'tournament_id': 42} if self.eligible else None
 
 
 class SponsoredEventFeatureTests(unittest.TestCase):
@@ -109,6 +125,35 @@ class SponsoredEventFeatureTests(unittest.TestCase):
         )
 
         self.assertIn("SET status='rejected'", cursor.statements[-1][0])
+
+    def test_event_race_is_scoped_to_an_active_entered_event(self):
+        cursor = EventStartCursor()
+
+        record_sponsored_event_attempt(
+            cursor,
+            user_id=9,
+            race_token='event-token',
+            event_id=42,
+        )
+
+        self.assertEqual(len(cursor.statements), 2)
+        self.assertIn('se.tournament_id=%s AND ee.user_id=%s', cursor.statements[0][0])
+        self.assertEqual(cursor.statements[0][1], (42, 9))
+        self.assertIn('INSERT IGNORE INTO sponsored_event_attempts', cursor.statements[1][0])
+        self.assertEqual(cursor.statements[1][1][0:2], (42, 9))
+
+    def test_event_race_rejects_users_who_are_not_active_entrants(self):
+        cursor = EventStartCursor(eligible=False)
+
+        with self.assertRaisesRegex(ValueError, 'Join this sponsored event'):
+            record_sponsored_event_attempt(
+                cursor,
+                user_id=9,
+                race_token='unjoined-token',
+                event_id=42,
+            )
+
+        self.assertEqual(len(cursor.statements), 1)
 
 
 if __name__ == '__main__':

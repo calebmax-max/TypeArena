@@ -321,20 +321,42 @@ def _serialize_with_prizes(cur, row: Dict[str, Any]) -> Dict[str, Any]:
     return _serialize_event(row, _event_prizes(cur, int(row['tournament_id'])))
 
 
-def record_sponsored_event_attempt(cur, *, user_id: int, race_token: str) -> None:
+def record_sponsored_event_attempt(
+    cur,
+    *,
+    user_id: int,
+    race_token: str,
+    event_id: Optional[int] = None,
+) -> None:
     if not race_token:
         return
     token_hash = hashlib.sha256(race_token.encode('utf-8')).hexdigest()
-    cur.execute(
-        '''
-        SELECT se.tournament_id
-        FROM sponsored_events se
-        JOIN sponsored_event_entries ee ON ee.tournament_id=se.tournament_id
-        WHERE ee.user_id=%s AND UTC_TIMESTAMP()>=se.starts_at AND UTC_TIMESTAMP()<se.ends_at
-        ''',
-        (user_id,),
-    )
-    for row in cur.fetchall():
+    if event_id is not None:
+        cur.execute(
+            '''
+            SELECT se.tournament_id
+            FROM sponsored_events se
+            JOIN sponsored_event_entries ee ON ee.tournament_id=se.tournament_id
+            WHERE se.tournament_id=%s AND ee.user_id=%s
+              AND UTC_TIMESTAMP()>=se.starts_at AND UTC_TIMESTAMP()<se.ends_at
+            ''',
+            (event_id, user_id),
+        )
+        if not cur.fetchone():
+            raise ValueError('Join this sponsored event and race during its event window.')
+        event_ids = [{'tournament_id': event_id}]
+    else:
+        cur.execute(
+            '''
+            SELECT se.tournament_id
+            FROM sponsored_events se
+            JOIN sponsored_event_entries ee ON ee.tournament_id=se.tournament_id
+            WHERE ee.user_id=%s AND UTC_TIMESTAMP()>=se.starts_at AND UTC_TIMESTAMP()<se.ends_at
+            ''',
+            (user_id,),
+        )
+        event_ids = cur.fetchall()
+    for row in event_ids:
         cur.execute(
             '''
             INSERT IGNORE INTO sponsored_event_attempts

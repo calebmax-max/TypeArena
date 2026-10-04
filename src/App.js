@@ -298,6 +298,7 @@ function AppLayout() {
           <Route path="/practice" element={<Play practicePage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/tournaments" element={<Tournaments />} />
+          <Route path="/tournaments/:eventId/race" element={<Play practicePage sponsoredEventMode />} />
           <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
           <Route path="/certification" element={<CertificationTest />} />
           <Route path="/verify/:certificateId" element={<CertificateVerification />} />

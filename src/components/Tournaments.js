@@ -463,7 +463,7 @@ export default function Tournaments() {
       return;
     }
     if (event.entered) {
-      navigate('/play');
+      navigate(`/tournaments/${event.id}/race`);
       return;
     }
     if (processingEventId) return;
@@ -474,6 +474,7 @@ export default function Tournaments() {
         item.id === event.id ? { ...item, entered: true } : item
       )));
       showNotice('success', result.message || 'You have entered the event.');
+      navigate(`/tournaments/${event.id}/race`);
     } catch (error) {
       showNotice('error', error.message || 'Could not join this sponsored event.');
     } finally {

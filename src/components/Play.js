@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   calculateAccuracy,
   calculateOfficialWPM,
@@ -14,6 +14,7 @@ import {
   buildHeaders,
   fetchCurrentUser,
   fetchMediaSettings,
+  fetchSponsoredEvents,
   getStoredUserSnapshot,
   startRace,
   submitRaceResult,
@@ -466,9 +467,24 @@ const TypingCharacter = React.memo(function TypingCharacter({
   );
 });
 
-export default function Play({ practicePage = false }){
+export default function Play({ practicePage = false, sponsoredEventMode = false }){
   const location = useLocation();
   const navigate = useNavigate();
+  const { eventId } = useParams();
+  const isSponsoredEvent = sponsoredEventMode && Boolean(eventId);
+  const [sponsoredEvent, setSponsoredEvent] = useState(null);
+  const [sponsoredEventLoading, setSponsoredEventLoading] = useState(isSponsoredEvent);
+  const [sponsoredEventError, setSponsoredEventError] = useState('');
+  const [sponsoredEventStarting, setSponsoredEventStarting] = useState(false);
+  const [eventClock, setEventClock] = useState(Date.now());
+  const eventStartsAt = new Date(sponsoredEvent?.startsAt || '').getTime();
+  const eventEndsAt = new Date(sponsoredEvent?.endsAt || '').getTime();
+  const eventIsActive = Number.isFinite(eventStartsAt)
+    && Number.isFinite(eventEndsAt)
+    && eventClock >= eventStartsAt
+    && eventClock < eventEndsAt;
+  const sponsoredEventReady = !isSponsoredEvent
+    || Boolean(sponsoredEvent?.entered && eventIsActive);
   const [phase, setPhase] = useState('lobby');
   const [mode, setMode] = useState('standard');
   const [language, setLanguage] = useState('english');
@@ -479,6 +495,37 @@ export default function Play({ practicePage = false }){
   // notice is now { message: string, type: 'info'|'error'|'success'|'warning' }
   const [notice, setNotice] = useState(null);
   const [raceResult, setRaceResult] = useState(null);
+
+  useEffect(() => {
+    if (!isSponsoredEvent) return undefined;
+    let active = true;
+    setSponsoredEventLoading(true);
+    fetchSponsoredEvents()
+      .then((events) => {
+        if (!active) return;
+        const event = events.find((item) => String(item.id) === String(eventId));
+        if (!event) {
+          setSponsoredEventError('This sponsored event could not be found.');
+          setSponsoredEvent(null);
+          return;
+        }
+        setSponsoredEvent(event);
+        setSponsoredEventError('');
+      })
+      .catch((error) => {
+        if (active) setSponsoredEventError(error.message || 'Could not load this sponsored event.');
+      })
+      .finally(() => {
+        if (active) setSponsoredEventLoading(false);
+      });
+    return () => { active = false; };
+  }, [eventId, isSponsoredEvent]);
+
+  useEffect(() => {
+    if (!isSponsoredEvent) return undefined;
+    const timer = window.setInterval(() => setEventClock(Date.now()), 10000);
+    return () => window.clearInterval(timer);
+  }, [isSponsoredEvent]);
 
   const [generatedContent, setGeneratedContent] = useState(null);
   const [replayFrames, setReplayFrames] = useState([]);
@@ -651,6 +698,7 @@ export default function Play({ practicePage = false }){
   // completely different one, producing a near-total mismatch and a
   // 0 WPM result.
   const practiceSourceTextRef = useRef('');
+  const sponsoredEventStartInFlightRef = useRef(false);
 
   // Typed notice helper Ã¯Â¿Â½?" keeps callsites clean
   const showNotice = useCallback((message, type = 'info') => {
@@ -1290,6 +1338,10 @@ export default function Play({ practicePage = false }){
   }, [duration, liveRoom?.id, phase, syncRoomClock]);
 
   const startPracticeRaceWithMode = useCallback(async (nextMode) => {
+    if (isSponsoredEvent && (!sponsoredEventReady || sponsoredEventLoading || sponsoredEventStartInFlightRef.current)) {
+      return;
+    }
+    if (isSponsoredEvent) sponsoredEventStartInFlightRef.current = true;
     const resolvedMode = nextMode || mode;
     const switchingMode = Boolean(nextMode && nextMode !== mode);
     if (switchingMode) {
@@ -1297,9 +1349,13 @@ export default function Play({ practicePage = false }){
     }
     setShowPracticeModes(false);
 
-    if (currentUser === undefined) return;
+    if (currentUser === undefined) {
+      sponsoredEventStartInFlightRef.current = false;
+      return;
+    }
     if (!currentUser?.id) {
       redirectToProfile();
+      sponsoredEventStartInFlightRef.current = false;
       return;
     }
 
@@ -1325,6 +1381,7 @@ export default function Play({ practicePage = false }){
         showNotice('Could not load race content. Check your connection and try again.', 'error');
         contentLoadingRef.current = false;
         setContentLoading(false);
+        sponsoredEventStartInFlightRef.current = false;
         return; // Do not start a race with missing content.
       }
       contentLoadingRef.current = false;
@@ -1398,16 +1455,37 @@ export default function Play({ practicePage = false }){
     // must use this exact string, not a fresh recomputation that could
     // pick up a subsequently changed generatedContent or customText.
     practiceSourceTextRef.current = practicePassageText;
-    startRace(practicePassageText, { mode: resolvedMode, durationLimit: duration })
-      .then((receipt) => { raceTokenRef.current = receipt?.token || null; })
-      .catch((err) => {
+    const raceStart = startRace(practicePassageText, {
+      mode: resolvedMode,
+      durationLimit: duration,
+      sponsoredEventId: isSponsoredEvent ? Number(eventId) : undefined,
+    });
+    if (isSponsoredEvent) {
+      setSponsoredEventStarting(true);
+      try {
+        const receipt = await raceStart;
+        raceTokenRef.current = receipt?.token || null;
+      } catch (err) {
+        blurTrackerRef.current?.detach();
+        showNotice(err.message || 'Could not start a scored event race.', 'error');
+        sponsoredEventStartInFlightRef.current = false;
+        setSponsoredEventStarting(false);
+        return;
+      }
+      sponsoredEventStartInFlightRef.current = false;
+      setSponsoredEventStarting(false);
+    } else {
+      raceStart
+        .then((receipt) => { raceTokenRef.current = receipt?.token || null; })
+        .catch((err) => {
         console.warn('startRace failed; submission will be scored as legacy/unverified:', err);
         raceTokenRef.current = null;
       });
+    }
 
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser, customText, duration, generatedContent, isLeavingRef, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showNotice, useCustomText]);
+  }, [commentatorEnabled, currentUser, customText, duration, eventId, generatedContent, isLeavingRef, isSponsoredEvent, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showNotice, sponsoredEventLoading, sponsoredEventReady, useCustomText]);
   // Note: getUsedContentIds/getRaceContent/recordUsedContentId are stable
   // module-level imports (not component state/props), so they're
   // intentionally omitted here — same convention already used by the
@@ -1828,16 +1906,40 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     }
   };
 
-
   return (
     <div className="play-container">
+      {isSponsoredEvent && (
+        <section className="sponsored-race-banner" aria-live="polite">
+          <div>
+            <p className="sponsored-race-banner__eyebrow">Sponsored Event Race</p>
+            {sponsoredEventLoading ? (
+              <h2>Loading event...</h2>
+            ) : sponsoredEvent ? (
+              <>
+                <h2>{sponsoredEvent.name}</h2>
+                <p>Sponsored by {sponsoredEvent.sponsorName}. Verified races finished during the event add to your total event points.</p>
+                {!sponsoredEvent.entered && <p>You must enter this event before starting a scored race.</p>}
+                {sponsoredEvent.entered && !eventIsActive && eventClock < eventStartsAt && <p>This event has not started yet.</p>}
+                {sponsoredEvent.entered && !eventIsActive && eventClock >= eventEndsAt && <p>This event has ended. New races will not count.</p>}
+              </>
+            ) : (
+              <p>{sponsoredEventError || 'Event details are unavailable.'}</p>
+            )}
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/tournaments')}>
+            Back to Tournaments
+          </button>
+        </section>
+      )}
       {phase === 'lobby' && (
         <div className="mode-select">
-          <h1>{practicePage ? 'Practice Arena' : 'Live Premium Typing Arena'}</h1>
+          <h1>{isSponsoredEvent ? 'Sponsored Event Race' : practicePage ? 'Practice Arena' : 'Live Premium Typing Arena'}</h1>
 
           <div className="challenge-toolbar">
             <h2>
-              {practicePage
+              {isSponsoredEvent
+                ? 'Choose a race and add verified points to this event'
+                : practicePage
                 ? 'Choose your mode and launch a focused solo typing session'
                 : 'Practice and compete in live typing battles'}
             </h2>
@@ -1872,6 +1974,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
               <button
                 data-tour={practicePage ? 'play-practice-mode' : 'play-start-practice'}
                 className="btn btn-outline-primary"
+                disabled={isSponsoredEvent && !sponsoredEventReady}
                 onClick={() => {
                   if (!practicePage) {
                     navigate('/practice');
@@ -1901,11 +2004,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </div>
             {practicePage ? (
               <>
-                <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || currentUser === undefined || (!useCustomText && !generatedContent?.passage)}>
-                  {currentUser === undefined ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : 'Start This Practice'}
+              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || sponsoredEventStarting || currentUser === undefined || (!useCustomText && !generatedContent?.passage) || (isSponsoredEvent && (!sponsoredEventReady || sponsoredEventLoading))}>
+                {currentUser === undefined || sponsoredEventStarting || (isSponsoredEvent && sponsoredEventLoading) ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : isSponsoredEvent ? 'Start Event Race' : 'Start This Practice'}
                 </button>
-                <button type="button" className="btn btn-secondary" onClick={() => navigate('/play')}>
-                  Back to Play
+              <button type="button" className="btn btn-secondary" onClick={() => navigate(isSponsoredEvent ? '/tournaments' : '/play')}>
+                {isSponsoredEvent ? 'Back to Tournaments' : 'Back to Play'}
                 </button>
               </>
             ) : (
