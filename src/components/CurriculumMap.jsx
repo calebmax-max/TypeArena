@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { isLessonPassed, isLessonUnlocked } from './trainingProgress';
 
 function lessonStatus(progress, lesson, currentLessonId, lessons) {
+  if (lesson.courseLocked) return 'locked';
   if (isLessonPassed(progress, lesson)) return 'passed';
   if (lesson.id === currentLessonId) return 'current';
   if (isLessonUnlocked(progress, lesson, lessons)) return 'unlocked';
@@ -73,8 +74,14 @@ export default function CurriculumMap({ progress, courses, lessons, currentLesso
         {(courses || []).map((course) => (
           <div key={course.id} className="training-map__unit">
             <h3 className="training-map__unit-title">{course.title}</h3>
+            {Object.entries((course.lessons || []).reduce((groups, lesson) => {
+              const key = lesson.unitTitle || 'Course lessons';
+              groups[key] = [...(groups[key] || []), lesson];
+              return groups;
+            }, {})).map(([unitTitle, unitLessons]) => <React.Fragment key={unitTitle}>
+              <h4 className="training-map__unit-subtitle">{unitTitle}</h4>
             <ol className="training-map__lessons">
-              {(course.lessons || []).map((lesson) => {
+              {unitLessons.map((lesson) => {
                 const status = lessonStatus(progress, lesson, currentLessonId, lessons);
                 const required = 1;
                 const state = progress.lessons[lesson.id];
@@ -101,6 +108,7 @@ export default function CurriculumMap({ progress, courses, lessons, currentLesso
                 );
               })}
             </ol>
+            </React.Fragment>)}
           </div>
         ))}
       </div>

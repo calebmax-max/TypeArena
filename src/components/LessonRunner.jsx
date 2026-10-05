@@ -38,11 +38,13 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
   }
 
   const fullyPassed = outcome && outcome.passCount >= required;
+  const lessonTypeLabel = lesson.lessonType === 'intro' ? 'Learn' : lesson.lessonType === 'test' ? 'Assessment' : lesson.lessonType === 'challenge' ? 'TypeArena Challenge' : 'Guided Practice';
 
   return (
     <div className="training-lesson">
       <div className="training-lesson__header">
         <h2>{lesson.title}</h2>
+        <span className="training-lesson__type">{lessonTypeLabel}</span>
         <div className="training-lesson__bar">
           <span className="training-lesson__bar-stat">{lesson.minWpm} WPM</span>
           <span className="training-lesson__bar-divider" aria-hidden="true" />

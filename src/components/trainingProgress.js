@@ -194,10 +194,11 @@ export function recordAttempt({ lesson, wpm, accuracy, passed }) {
 }
 
 export function getCourseSummary(progress, lessonSequence) {
-  const passedLessons = lessonSequence.filter((lesson) => isLessonPassed(progress, lesson));
-  const currentLesson = lessonSequence.find((lesson) => !isLessonPassed(progress, lesson)) || lessonSequence[lessonSequence.length - 1] || null;
+  const availableLessons = lessonSequence.filter((lesson) => !lesson.courseLocked);
+  const passedLessons = availableLessons.filter((lesson) => isLessonPassed(progress, lesson));
+  const currentLesson = availableLessons.find((lesson) => !isLessonPassed(progress, lesson)) || availableLessons[availableLessons.length - 1] || null;
   return {
-    totalLessons: lessonSequence.length,
+    totalLessons: availableLessons.length,
     passedLessons: passedLessons.length,
     percentage: lessonSequence.length ? Math.round((passedLessons.length / lessonSequence.length) * 100) : 0,
     currentLesson,
@@ -215,14 +216,14 @@ export function setCurrentLesson(lessonId) {
 export function getCurrentLessonId(lessonSequence) {
   const progress = loadProgress();
   const saved = progress.currentLessonId;
-  if (saved && lessonSequence.some((lesson) => lesson.id === saved)) return saved;
+  if (saved && lessonSequence.some((lesson) => lesson.id === saved && !lesson.courseLocked)) return saved;
   if (saved) {
     // The saved lesson no longer exists (the curriculum changed). Carry on from
     // the first lesson not yet passed, or the last lesson if everything is passed.
-    const firstOpen = lessonSequence.find((lesson) => !isLessonPassed(progress, lesson));
-    return (firstOpen || lessonSequence[lessonSequence.length - 1])?.id || null;
+    const firstOpen = lessonSequence.find((lesson) => !lesson.courseLocked && !isLessonPassed(progress, lesson));
+    return (firstOpen || [...lessonSequence].reverse().find((lesson) => !lesson.courseLocked))?.id || null;
   }
-  return lessonSequence[0]?.id || null;
+  return lessonSequence.find((lesson) => !lesson.courseLocked)?.id || null;
 }
 
 /**

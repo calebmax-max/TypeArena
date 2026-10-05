@@ -4,8 +4,11 @@ export function normalizeCourseResponse(payload) {
     ...course,
     lessons: (Array.isArray(course.lessons) ? course.lessons : []).map((lesson) => ({
       ...lesson,
+      courseLocked: Boolean(course.isLocked),
       id: String(lesson.id),
       unitId: String(lesson.course_id || course.id),
+      unitTitle: lesson.unit_title || lesson.unitTitle || 'Course lessons',
+      lessonType: lesson.lesson_type || lesson.lessonType || 'practice',
       minWpm: Number(lesson.target_wpm || lesson.targetWpm || 0),
       minAccuracy: Number(lesson.target_accuracy || lesson.targetAccuracy || 0),
       duration: Number(lesson.duration_seconds || lesson.durationSeconds || 120),
