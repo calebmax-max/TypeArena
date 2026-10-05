@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import PlacementTest from './PlacementTest';
+import React, { useEffect, useMemo, useState } from 'react';
 import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
-import { getLessonById, getNextLessonId, LESSON_SEQUENCE } from './curriculum';
+import { fetchTrainingCourses } from '../utils/typingApi';
+import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
-  isPlacementDone,
   loadProgress,
   setCurrentLesson,
   getCurrentLessonId,
@@ -14,30 +13,32 @@ import {
 import './Training.css';
 
 export default function TrainingPage() {
-  const [placed, setPlaced] = useState(isPlacementDone());
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [progress, setProgress] = useState(loadProgress());
   const [activeLessonId, setActiveLessonId] = useState(null);
   const [justCertified, setJustCertified] = useState(false);
 
+  const lessons = useMemo(() => flattenLessons(courses), [courses]);
+
   useEffect(() => {
     flushQueuedTrainingEvents();
+    fetchTrainingCourses()
+      .then((payload) => setCourses(normalizeCourseResponse(payload)))
+      .catch((err) => setError(err.message || 'Could not load training courses.'))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    if (placed) {
-      const id = getCurrentLessonId(LESSON_SEQUENCE);
+    if (lessons.length) {
+      const id = getCurrentLessonId(lessons);
       setActiveLessonId(id);
     }
-  }, [placed]);
+  }, [lessons]);
 
   function refreshProgress() {
     setProgress(loadProgress());
-  }
-
-  function handlePlaced(startLessonId) {
-    setPlaced(true);
-    refreshProgress();
-    setActiveLessonId(startLessonId);
   }
 
   function handleSelectLesson(lessonId) {
@@ -46,7 +47,7 @@ export default function TrainingPage() {
   }
 
   function handleLessonPassed(lessonId) {
-    const nextId = getNextLessonId(lessonId);
+    const nextId = getNextLessonId(lessons, lessonId);
     if (nextId) {
       setCurrentLesson(nextId);
       setActiveLessonId(nextId);
@@ -61,29 +62,27 @@ export default function TrainingPage() {
     refreshProgress();
   }
 
-  if (!placed) {
-    return (
-      <div className="training-page">
-        <PlacementTest onPlaced={handlePlaced} />
-      </div>
-    );
-  }
+  if (loading) return <div className="training-page"><p>Loading courses...</p></div>;
+  if (error) return <div className="training-page"><p role="alert">{error}</p></div>;
+  if (!lessons.length) return <div className="training-page"><p>No published courses are available yet.</p></div>;
 
-  const activeLesson = activeLessonId ? getLessonById(activeLessonId) : null;
-  const currentLessonId = getCurrentLessonId(LESSON_SEQUENCE);
+  const activeLesson = activeLessonId ? getLessonById(lessons, activeLessonId) : null;
+  const currentLessonId = getCurrentLessonId(lessons);
 
   return (
     <div className="training-page training-page--curriculum">
       <div className="training-page__course-header">
         <CourseDashboard
           progress={progress}
-          lessons={LESSON_SEQUENCE}
+          lessons={lessons}
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
         />
       </div>
       <aside className="training-page__sidebar">
         <CurriculumMap
           progress={progress}
+          courses={courses}
+          lessons={lessons}
           currentLessonId={currentLessonId}
           activeLessonId={activeLessonId}
           onSelectLesson={handleSelectLesson}

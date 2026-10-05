@@ -106,13 +106,14 @@ async function postEvent(event) {
     // Local progress still works; the server just never hears about it.
     return false;
   }
+  const payload = event?.eventId ? event : { ...event, eventId: createEventId() };
   const response = await fetch(`${apiBaseUrl()}/api/training-events`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(event),
+    body: JSON.stringify(payload),
   });
   return response.ok;
 }
@@ -143,6 +144,10 @@ async function sendTrainingEvent(event) {
   }
   // Best-effort: try to clear any older backlog at the same time.
   flushQueuedTrainingEvents();
+}
+
+function createEventId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 // --- Public API used by the lesson runner / placement test -----------------
@@ -177,6 +182,7 @@ export function recordAttempt({ lesson, wpm, accuracy, passed }) {
   saveProgress(progress);
 
   sendTrainingEvent({
+    eventId: createEventId(),
     lessonId: lesson.id,
     unitId: lesson.unitId,
     wpm: Math.round(wpm * 10) / 10,

@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import TypingBox from './TypingBox';
 import { useTypingSession } from './useTypingSession';
-import { generateLessonText, requiredPassesFor } from './curriculum';
 import { recordAttempt } from './trainingProgress';
 
 export default function LessonRunner({ lesson, onLessonPassed }) {
@@ -12,8 +11,8 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
   // A failed retry (retrySamePassage) intentionally leaves attemptKey alone
   // so the learner re-types the exact passage they just failed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const targetText = useMemo(() => generateLessonText(lesson), [lesson, attemptKey]);
-  const required = requiredPassesFor(lesson);
+  const targetText = useMemo(() => lesson.content || '', [lesson, attemptKey]);
+  const required = 1;
 
   const { typedText, finished, handleChange, reset, inputRef, liveStats } = useTypingSession(targetText, {
     onFinish: (stats) => {

@@ -10996,6 +10996,7 @@ _ensure_training_tables = register_training_routes(
     get_connection=lambda: get_connection(),
     return_connection=lambda conn: _return_connection(conn),
     get_user=lambda conn: _get_user_from_header(conn),
+    is_admin=lambda user: bool(user.get('is_admin') or user.get('isAdmin')) or _is_admin_email(user.get('email')),
 )
 
 

@@ -1,25 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { UNITS, LESSON_SEQUENCE, requiredPassesFor } from './curriculum';
 import { isLessonPassed, isLessonUnlocked } from './trainingProgress';
 
-function lessonStatus(progress, lesson, currentLessonId) {
+function lessonStatus(progress, lesson, currentLessonId, lessons) {
   if (isLessonPassed(progress, lesson)) return 'passed';
   if (lesson.id === currentLessonId) return 'current';
-  if (isLessonUnlocked(progress, lesson, LESSON_SEQUENCE)) return 'unlocked';
+  if (isLessonUnlocked(progress, lesson, lessons)) return 'unlocked';
   return 'locked';
 }
 
 // On wide screens the lesson list is always visible. On phones (see the media
 // query in Training.css) it collapses into a dropdown button that shows the
 // lesson you're on, so the typing area gets the whole screen.
-export default function CurriculumMap({ progress, currentLessonId, activeLessonId, onSelectLesson }) {
+export default function CurriculumMap({ progress, courses, lessons, currentLessonId, activeLessonId, onSelectLesson }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
   const shownLesson =
-    LESSON_SEQUENCE.find((lesson) => lesson.id === (activeLessonId || currentLessonId)) ||
-    LESSON_SEQUENCE[0];
-  const passedCount = LESSON_SEQUENCE.filter((lesson) => isLessonPassed(progress, lesson)).length;
+    lessons.find((lesson) => lesson.id === (activeLessonId || currentLessonId)) || lessons[0];
+  const passedCount = lessons.filter((lesson) => isLessonPassed(progress, lesson)).length;
 
   // Close on outside tap or Escape.
   useEffect(() => {
@@ -62,7 +60,7 @@ export default function CurriculumMap({ progress, currentLessonId, activeLessonI
         <span className="training-map__toggle-text">
           <span className="training-map__toggle-title">{shownLesson?.title}</span>
           <span className="training-map__toggle-meta">
-            {passedCount} of {LESSON_SEQUENCE.length} lessons passed
+            {passedCount} of {lessons.length} lessons passed
           </span>
         </span>
         <span
@@ -72,13 +70,13 @@ export default function CurriculumMap({ progress, currentLessonId, activeLessonI
       </button>
 
       <div id="training-map-panel" className={`training-map__panel${open ? ' is-open' : ''}`}>
-        {UNITS.map((unit) => (
-          <div key={unit.id} className="training-map__unit">
-            <h3 className="training-map__unit-title">{unit.title}</h3>
+        {(courses || []).map((course) => (
+          <div key={course.id} className="training-map__unit">
+            <h3 className="training-map__unit-title">{course.title}</h3>
             <ol className="training-map__lessons">
-              {unit.lessons.map((lesson) => {
-                const status = lessonStatus(progress, lesson, currentLessonId);
-                const required = requiredPassesFor(lesson);
+              {(course.lessons || []).map((lesson) => {
+                const status = lessonStatus(progress, lesson, currentLessonId, lessons);
+                const required = 1;
                 const state = progress.lessons[lesson.id];
                 const passCount = state?.passCount || 0;
                 const isShown = lesson.id === shownLesson?.id;

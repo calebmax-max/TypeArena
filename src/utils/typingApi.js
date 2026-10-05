@@ -23,6 +23,22 @@ const getStoredUser = () => {
 
 export const getStoredUserSnapshot = () => getStoredUser();
 
+export const fetchTrainingCourses = async () => {
+  const response = await apiFetch(buildApiUrl('/api/training/courses'), {
+    headers: buildHeaders(),
+  });
+  return parseResponse(response);
+};
+
+export const fetchAdminTrainingCourses = async () => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { headers: buildAdminHeaders() }));
+export const createAdminTrainingCourse = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
+export const updateAdminTrainingCourse = async (id, payload) => parseResponse(await apiFetch(buildApiUrl(`/api/admin/training/courses/${id}`), { method: 'PUT', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
+export const archiveAdminTrainingCourse = async (id) => parseResponse(await apiFetch(buildApiUrl(`/api/admin/training/courses/${id}`), { method: 'DELETE', headers: buildAdminHeaders() }));
+export const createAdminTrainingLesson = async (courseId, payload) => parseResponse(await apiFetch(buildApiUrl(`/api/admin/training/courses/${courseId}/lessons`), { method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
+export const updateAdminTrainingLesson = async (id, payload) => parseResponse(await apiFetch(buildApiUrl(`/api/admin/training/lessons/${id}`), { method: 'PUT', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
+export const archiveAdminTrainingLesson = async (id) => parseResponse(await apiFetch(buildApiUrl(`/api/admin/training/lessons/${id}`), { method: 'DELETE', headers: buildAdminHeaders() }));
+export const fetchAdminTrainingProgress = async () => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/progress'), { headers: buildAdminHeaders() }));
+
 const syncAdminSessionFromUser = (user) => {
   // The backend no longer issues a separate adminToken - admin auth is the
   // same session token as everything else. This still mirrors that token
