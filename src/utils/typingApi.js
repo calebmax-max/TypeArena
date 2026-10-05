@@ -318,7 +318,7 @@ export const resetPassword = async (token, password) => {
   return await parseResponse(response);
 };
 
-export const signupUser = async (username, email, password, phoneNumber, terms = {}) => {
+export const signupUser = async (username, email, password, phoneNumber, terms = {}, accountType = 'player') => {
   authGeneration += 1;
   try {
     const response = await apiFetch(buildApiUrl('/api/auth/signup'), {
@@ -329,6 +329,7 @@ export const signupUser = async (username, email, password, phoneNumber, terms =
         email,
         password,
         phoneNumber,
+        accountType,
         termsAccepted: terms.accepted === true,
         termsVersion: terms.version,
       }),

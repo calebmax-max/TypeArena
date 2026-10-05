@@ -6726,6 +6726,10 @@ def auth_signup():
     email = str(payload.get('email', '')).strip().lower()
     password = str(payload.get('password', '')).strip()
     phone_number = str(payload.get('phoneNumber', '')).strip()
+    account_type = str(payload.get('accountType') or 'player').strip().lower()
+
+    if account_type not in {'player', 'employer'}:
+        return jsonify({'message': 'Choose either a player or employer account.'}), 400
 
     if not username or not email or not password:
         return jsonify({'message': 'username, email, and password are required'}), 400
@@ -6751,10 +6755,10 @@ def auth_signup():
                 '''
                 INSERT INTO users
                 (username, email, password, phone_number, wpm, accuracy, total_races, wins, balance,
-                 terms_accepted_at, terms_version)
-                VALUES (%s, %s, %s, %s, 0, 0, 0, 0, 0, UTC_TIMESTAMP(), %s)
+                 account_role, terms_accepted_at, terms_version)
+                VALUES (%s, %s, %s, %s, 0, 0, 0, 0, 0, %s, UTC_TIMESTAMP(), %s)
                 ''',
-                (username, email, hashed_password, phone_number, terms_version),
+                (username, email, hashed_password, phone_number, account_type, terms_version),
             )
             user_id = cur.lastrowid
             _ensure_auth_token_column(cur)

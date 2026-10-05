@@ -145,7 +145,7 @@ export default function TypeProfile() {
   const [showAuthForm,  setShowAuthForm]   = useState(false);
   const [authMode,      setAuthMode]       = useState('login');
   const [resetToken,    setResetToken]    = useState('');
-  const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '' });
+  const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '', accountType: 'player' });
   const [raceHistory,   setRaceHistory]    = useState([]);
   const [walletHistory, setWalletHistory]  = useState([]);
   const [walletConfig,  setWalletConfig]   = useState({ topUpMethods: [], withdrawMethods: [] });
@@ -453,25 +453,27 @@ export default function TypeProfile() {
         : await signupUser(
             formData.username, formData.email, formData.password, formData.phoneNumber,
             { accepted: termsAccepted, version: TERMS_VERSION },
+            formData.accountType,
           );
 
       applyFreshUserState(user);
 
       if (authMode === 'login' && user?.isAdmin) {
-        setFormData({ email: '', password: '', username: '', phoneNumber: '' });
+        setFormData({ email: '', password: '', username: '', phoneNumber: '', accountType: 'player' });
         navigate('/admin');
         return;
       }
 
       setShowAuthForm(false);
       setTermsAccepted(false);
-      setFormData({ email: '', password: '', username: '', phoneNumber: '' });
+      setFormData({ email: '', password: '', username: '', phoneNumber: '', accountType: 'player' });
       // user already came back from loginUser/signupUser — no need to
       // re-fetch it, just load the wallet/race data that depends on it.
       profileRequestRef.current += 1;
       void loadUserExtras(user, profileRequestRef.current);
       const redirect = new URLSearchParams(window.location.search).get('redirect');
       if (redirect) navigate(redirect);
+      else if (authMode === 'signup' && user?.accountRole === 'employer') navigate('/hiring');
     } catch (err) {
       setAuthNotice(err.message || 'Authentication failed.');
     } finally {
@@ -676,6 +678,18 @@ export default function TypeProfile() {
                     <label className="tp-field__label">Phone number</label>
                     <input className="tp-input" type="tel" placeholder="+254 7XX XXX XXX" value={formData.phoneNumber}
                       onChange={(e) => setFormData((c) => ({ ...c, phoneNumber: e.target.value }))} />
+                  </div>
+                )}
+
+                {authMode === 'signup' && (
+                  <div className="tp-field">
+                    <label className="tp-field__label" htmlFor="account-type">What will you use TypeArena for?</label>
+                    <select id="account-type" className="tp-input" value={formData.accountType}
+                      onChange={(e) => setFormData((c) => ({ ...c, accountType: e.target.value }))}>
+                      <option value="player">Practice, races, and certificates</option>
+                      <option value="employer">Hiring and candidate assessments</option>
+                    </select>
+                    <small className="tp-field__hint">School access is added separately when a school invites you.</small>
                   </div>
                 )}
 
