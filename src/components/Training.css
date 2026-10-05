@@ -61,6 +61,10 @@
 .training-course-dashboard__track span { display: block; height: 100%; border-radius: inherit; background: var(--tp-moss); transition: width .25s ease; }
 .training-course-dashboard__meta { color: var(--tp-muted); font-size: .85rem; }
 .training-course-dashboard__meta strong { color: var(--tp-forest); }
+.training-problem-keys { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--tp-sage-border); }
+.training-problem-keys div { display: flex; flex-direction: column; gap: .2rem; }
+.training-problem-keys span { color: var(--tp-muted); font-size: .85rem; }
+.training-button--quiet { padding: .45rem .75rem; font-size: .8rem; }
 
 .training-page__sidebar {
   flex: 0 0 260px;
@@ -446,6 +450,7 @@
   .training-course-dashboard__intro,
   .training-course-dashboard__meta { align-items: flex-start; flex-direction: column; }
   .training-course-dashboard__progress { text-align: left; }
+  .training-problem-keys { align-items: flex-start; flex-direction: column; }
 
   .training-page__sidebar {
     flex: none;

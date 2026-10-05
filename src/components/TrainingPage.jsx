@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
-import { fetchTrainingCourses } from '../utils/typingApi';
+import { fetchTrainingCourses, fetchTrainingProblemKeys } from '../utils/typingApi';
 import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
   loadProgress,
@@ -16,6 +16,7 @@ export default function TrainingPage() {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [problemKeys, setProblemKeys] = useState([]);
   const [progress, setProgress] = useState(loadProgress());
   const [activeLessonId, setActiveLessonId] = useState(null);
   const [justCertified, setJustCertified] = useState(false);
@@ -24,8 +25,8 @@ export default function TrainingPage() {
 
   useEffect(() => {
     flushQueuedTrainingEvents();
-    fetchTrainingCourses()
-      .then((payload) => setCourses(normalizeCourseResponse(payload)))
+    Promise.all([fetchTrainingCourses(), fetchTrainingProblemKeys()])
+      .then(([payload, problemPayload]) => { setCourses(normalizeCourseResponse(payload)); setProblemKeys(Array.isArray(problemPayload?.keys) ? problemPayload.keys : []); })
       .catch((err) => setError(err.message || 'Could not load training courses.'))
       .finally(() => setLoading(false));
   }, []);
@@ -47,6 +48,11 @@ export default function TrainingPage() {
   }
 
   function handleLessonPassed(lessonId) {
+    if (lessonId === 'problem-keys') {
+      setActiveLessonId(getCurrentLessonId(lessons));
+      refreshProgress();
+      return;
+    }
     const nextId = getNextLessonId(lessons, lessonId);
     if (nextId) {
       setCurrentLesson(nextId);
@@ -85,6 +91,8 @@ export default function TrainingPage() {
   );
 
   const activeLesson = activeLessonId ? getLessonById(lessons, activeLessonId) : null;
+  const problemLesson = { id: 'problem-keys', unitId: 'adaptive', title: 'Problem-key practice', content: problemKeys.map((item) => `${item.key} ${item.key} ${item.key}`).join(' '), minWpm: 10, minAccuracy: 90, lessonType: 'challenge', requiredPasses: 1 };
+  const displayedLesson = activeLessonId === 'problem-keys' ? problemLesson : activeLesson;
   const currentLessonId = getCurrentLessonId(lessons);
 
   return (
@@ -93,7 +101,9 @@ export default function TrainingPage() {
         <CourseDashboard
           progress={progress}
           lessons={lessons}
+          problemKeys={problemKeys}
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
+          onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); }}
         />
       </div>
       <aside className="training-page__sidebar">
@@ -124,10 +134,10 @@ export default function TrainingPage() {
               Review this lesson again
             </button>
           </div>
-        ) : activeLesson ? (
+        ) : displayedLesson ? (
           <LessonRunner
-            key={activeLesson.id}
-            lesson={activeLesson}
+            key={displayedLesson.id}
+            lesson={displayedLesson}
             onLessonPassed={handleLessonPassed}
           />
         ) : (

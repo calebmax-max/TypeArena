@@ -29,6 +29,10 @@ export const fetchTrainingCourses = async () => {
   });
   return parseResponse(response);
 };
+export const fetchTrainingProblemKeys = async () => {
+  const response = await apiFetch(buildApiUrl('/api/training/problem-keys'), { headers: buildHeaders() });
+  return parseResponse(response);
+};
 
 export const fetchAdminTrainingCourses = async () => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { headers: buildAdminHeaders() }));
 export const createAdminTrainingCourse = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));

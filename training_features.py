@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from flask import jsonify, request
+import json
 
 
 LESSON_TARGETS = {
@@ -62,11 +63,14 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 accuracy DECIMAL(6,2) NOT NULL DEFAULT 0,
                 passed TINYINT(1) NOT NULL DEFAULT 0,
                 xp_earned INT NOT NULL DEFAULT 0,
+                key_errors_json TEXT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY uq_training_attempt_event (user_id, event_id),
                 KEY idx_training_attempt_user_lesson (user_id, lesson_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ''')
+        cur.execute("SHOW COLUMNS FROM training_attempts LIKE 'key_errors_json'")
+        if not cur.fetchone(): cur.execute("ALTER TABLE training_attempts ADD COLUMN key_errors_json TEXT NULL AFTER xp_earned")
 
     @app.get('/api/training/courses')
     def training_courses():
@@ -91,6 +95,25 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 return jsonify({'courses': courses})
         finally:
             return_connection(conn)
+
+    @app.get('/api/training/problem-keys')
+    def training_problem_keys():
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user: return jsonify({'keys': []})
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('SELECT key_errors_json FROM training_attempts WHERE user_id=%s AND key_errors_json IS NOT NULL', (user['id'],))
+                totals = {}
+                for row in cur.fetchall():
+                    try: errors = json.loads(row['key_errors_json'] or '{}')
+                    except (TypeError, ValueError): errors = {}
+                    for key, count in errors.items(): totals[key] = totals.get(key, 0) + int(count or 0)
+                keys = [{'key': key, 'errors': count} for key, count in totals.items()]
+                keys.sort(key=lambda item: item['errors'], reverse=True)
+                return jsonify({'keys': keys[:8]})
+        finally: return_connection(conn)
 
     def admin_allowed(conn):
         user = get_user(conn)
@@ -236,6 +259,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             accuracy = max(0.0, min(100.0, float(payload.get('accuracy') or 0)))
             passed = int(wpm >= min_wpm and accuracy >= min_accuracy)
             unit_id = str(payload.get('unitId') or '').strip()[:40] or None
+            key_errors_json = json.dumps(payload.get('keyErrors') or {}, ensure_ascii=False)[:4000]
             with conn.cursor() as cur:
                 ensure_tables(cur)
                 cur.execute('SELECT id, passed, xp_earned FROM training_attempts WHERE user_id=%s AND event_id=%s', (int(user['id']), event_id))
@@ -247,9 +271,9 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 prior_passes = int((cur.fetchone() or {}).get('count') or 0)
                 xp_earned = 100 if passed and prior_passes == 0 else 10 if passed else 0
                 cur.execute('''INSERT INTO training_attempts
-                    (user_id, event_id, lesson_id, unit_id, wpm, accuracy, passed, xp_earned)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (int(user['id']), event_id, lesson_id, unit_id, wpm, accuracy, passed, xp_earned))
+                    (user_id, event_id, lesson_id, unit_id, wpm, accuracy, passed, xp_earned, key_errors_json)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (int(user['id']), event_id, lesson_id, unit_id, wpm, accuracy, passed, xp_earned, key_errors_json))
                 conn.commit()
                 return jsonify({'passed': bool(passed), 'xpEarned': xp_earned, 'duplicate': False})
         except (TypeError, ValueError):

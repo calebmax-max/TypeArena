@@ -157,7 +157,7 @@ function createEventId() {
  * can react without waiting on the network) and sends the event to the
  * backend for aggregate analytics.
  */
-export function recordAttempt({ lesson, wpm, accuracy, passed }) {
+export function recordAttempt({ lesson, wpm, accuracy, passed, keyErrors = {} }) {
   const progress = loadProgress();
   const prev = lessonState(progress, lesson.id);
   const required = lesson.requiredPasses || 1;
@@ -181,6 +181,8 @@ export function recordAttempt({ lesson, wpm, accuracy, passed }) {
   }
   saveProgress(progress);
 
+  if (lesson.id === 'problem-keys') return { ...next, xpEarned, totalXp: progress.totalXp };
+
   sendTrainingEvent({
     eventId: createEventId(),
     lessonId: lesson.id,
@@ -188,6 +190,7 @@ export function recordAttempt({ lesson, wpm, accuracy, passed }) {
     wpm: Math.round(wpm * 10) / 10,
     accuracy: Math.round(accuracy * 10) / 10,
     passed: Boolean(passed),
+    keyErrors,
   });
 
   return { ...next, xpEarned, totalXp: progress.totalXp };

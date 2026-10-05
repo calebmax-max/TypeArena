@@ -1,7 +1,7 @@
 import React from 'react';
 import { getCourseSummary } from './trainingProgress';
 
-export default function CourseDashboard({ progress, lessons, onContinue }) {
+export default function CourseDashboard({ progress, lessons, problemKeys = [], onContinue, onProblemPractice }) {
   const summary = getCourseSummary(progress, lessons);
 
   return (
@@ -26,6 +26,10 @@ export default function CourseDashboard({ progress, lessons, onContinue }) {
         <button type="button" className="training-button" onClick={() => onContinue(summary.currentLesson?.id)}>
           {summary.completed ? 'Review final lesson' : 'Continue course'}
         </button>
+      </div>
+      <div className="training-problem-keys">
+        <div><strong>Problem-key practice</strong><span>{problemKeys.length ? `Focus on ${problemKeys.map((item) => item.key).join(', ')}` : 'Complete a lesson to discover your weakest keys.'}</span></div>
+        {problemKeys.length > 0 && <button type="button" className="training-button training-button--quiet" onClick={onProblemPractice}>Practice weak keys</button>}
       </div>
     </section>
   );

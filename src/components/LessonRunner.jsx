@@ -17,7 +17,14 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
   const { typedText, finished, handleChange, reset, inputRef, liveStats } = useTypingSession(targetText, {
     onFinish: (stats) => {
       const passed = stats.wpm >= lesson.minWpm && stats.accuracy >= lesson.minAccuracy;
-      const state = recordAttempt({ lesson, wpm: stats.wpm, accuracy: stats.accuracy, passed });
+      const keyErrors = {};
+      for (let index = 0; index < targetText.length; index += 1) {
+        if ((typedText[index] || '') !== targetText[index]) {
+          const key = targetText[index];
+          if (key && key.trim()) keyErrors[key] = (keyErrors[key] || 0) + 1;
+        }
+      }
+      const state = recordAttempt({ lesson, wpm: stats.wpm, accuracy: stats.accuracy, passed, keyErrors });
       setOutcome({ ...stats, passed, passCount: state.passCount });
     },
   });
