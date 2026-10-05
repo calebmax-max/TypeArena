@@ -23,6 +23,18 @@ SEED_LESSONS = [
     ('Short sentences', 'The quick learner types with calm and steady hands.', 25, 90, 180),
 ]
 
+STAGE_SEEDS = [
+    (2, 'Top Row', 'QWERTYUIOP and top-row words', 0, 90, [('Top-row keys', 'q w e r t y u i o p', 10, 90, 'practice'), ('Top-row words', 'type write quiet power your route', 15, 90, 'practice'), ('Top-row assessment', 'Type every word with calm, accurate rhythm.', 20, 90, 'test')]),
+    (3, 'Bottom Row', 'ZXCVBNM and punctuation basics', 0, 92, [('Bottom-row keys', 'z x c v b n m', 12, 92, 'practice'), ('Bottom-row words', 'can mix box van zinc moon', 18, 92, 'practice'), ('Bottom-row assessment', 'Build accuracy while punctuation joins the pattern.', 22, 92, 'test')]),
+    (4, 'Full Keyboard', 'Capital letters and complete sentences', 15, 95, [('Shift and capitals', 'Type Every Sentence With A Clean Capital Letter.', 15, 95, 'practice'), ('Full-keyboard sentences', 'The learner types complete sentences without looking down.', 20, 95, 'practice'), ('Full-keyboard assessment', 'Accuracy comes first; speed follows controlled movement.', 25, 95, 'test')]),
+    (5, 'Numbers and Symbols', 'Number row and common symbols', 20, 95, [('Number row', '1 2 3 4 5 6 7 8 9 0', 15, 95, 'practice'), ('Common symbols', '! @ # $ % & * ( )', 18, 95, 'practice'), ('Numbers assessment', 'Invoice 245 is due on 30 June at 10:45.', 20, 95, 'test')]),
+    (6, 'Accuracy and Rhythm', 'Steady pacing and error reduction', 0, 97, [('Clean corrections', 'Slow down, breathe, and protect every character.', 25, 97, 'practice'), ('Rhythm drill', 'Steady hands create reliable rhythm across every line.', 30, 97, 'challenge'), ('Accuracy assessment', 'No rushed errors: keep the whole passage clean.', 30, 97, 'test')]),
+    (7, 'Speed Building', 'Timed drills and burst typing', 40, 95, [('Word bursts', 'Quick focused bursts build speed without losing control.', 35, 95, 'practice'), ('One-minute speed test', 'Push your pace while keeping your rhythm compact.', 40, 95, 'challenge'), ('Speed assessment', 'Finish strong with fast, accurate typing.', 50, 95, 'test')]),
+    (8, 'Real-world Typing', 'Emails, forms, invoices, and transcription', 50, 96, [('Email typing', 'Hello team, the meeting is confirmed for Thursday morning.', 40, 96, 'practice'), ('Forms and invoices', 'Customer 1042 paid KES 500 for order 7821.', 45, 96, 'practice'), ('Real-world assessment', 'Type useful work content at a dependable professional pace.', 50, 96, 'test')]),
+    (9, 'Specializations', 'Coding, data entry, and professional tracks', 0, 95, [('Coding essentials', 'function typeFast() { return accuracy + rhythm; }', 35, 95, 'challenge'), ('Data entry', 'Account 2048: KES 12500.00; status: approved.', 35, 95, 'challenge'), ('Specialization assessment', 'Choose a track and prove your accuracy under pressure.', 40, 95, 'test')]),
+    (10, 'Certification Exam', 'Final verified typing assessment', 50, 96, [('Certification preparation', 'Review your weakest keys and settle into a steady rhythm.', 35, 96, 'practice'), ('Certification mock exam', 'This timed mock exam measures speed, accuracy, and control.', 45, 96, 'challenge'), ('Certification exam', 'Complete the final assessment without rushing or looking down.', 50, 96, 'test')]),
+]
+
 
 def register_training_routes(app, *, get_connection, return_connection, get_user, is_admin=None):
     def ensure_tables(cur):
@@ -33,6 +45,9 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4''')
         cur.execute("SHOW COLUMNS FROM training_courses LIKE 'prerequisite_course_id'")
         if not cur.fetchone(): cur.execute("ALTER TABLE training_courses ADD COLUMN prerequisite_course_id BIGINT NULL AFTER is_pro")
+        for column, definition in [('stage_number', 'INT NULL'), ('stage_focus', 'VARCHAR(180) NULL'), ('gate_wpm', 'DECIMAL(7,2) NOT NULL DEFAULT 0'), ('gate_accuracy', 'DECIMAL(6,2) NOT NULL DEFAULT 90')]:
+            cur.execute(f"SHOW COLUMNS FROM training_courses LIKE '{column}'")
+            if not cur.fetchone(): cur.execute(f"ALTER TABLE training_courses ADD COLUMN {column} {definition}")
         cur.execute('''CREATE TABLE IF NOT EXISTS training_lessons (
             id BIGINT AUTO_INCREMENT PRIMARY KEY, course_id BIGINT NOT NULL, title VARCHAR(160) NOT NULL,
             content TEXT NOT NULL, target_wpm DECIMAL(7,2) NOT NULL, target_accuracy DECIMAL(6,2) NOT NULL,
@@ -52,6 +67,21 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 lesson_type = 'intro' if order_number == 1 else 'test' if order_number == len(SEED_LESSONS) else 'practice'
                 cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', (course_id, unit, lesson_type, title, content, wpm, accuracy, duration, order_number))
         cur.execute("UPDATE training_lessons SET unit_title=CASE WHEN order_number=1 THEN 'Getting Started' WHEN order_number<=5 THEN 'Home Row' ELSE 'Building Words' END WHERE unit_title IS NULL")
+        cur.execute("UPDATE training_courses SET stage_number=1,stage_focus='Posture, finger placement, and home row',gate_accuracy=90 WHERE slug='beginner' AND stage_number IS NULL")
+        cur.execute("SELECT id FROM training_courses WHERE slug='beginner'")
+        previous_id = (cur.fetchone() or {}).get('id')
+        for stage_number, title, focus, gate_wpm, gate_accuracy, lessons in STAGE_SEEDS:
+            slug = f"stage-{stage_number}-{title.lower().replace(' ', '-')}"
+            cur.execute('SELECT id FROM training_courses WHERE slug=%s', (slug,))
+            existing_stage = cur.fetchone()
+            if existing_stage:
+                previous_id = existing_stage['id']
+                continue
+            cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy) VALUES (%s,%s,%s,0,%s,%s,%s,%s,%s)', (slug, f'Stage {stage_number}: {title}', focus, previous_id, stage_number, focus, gate_wpm, gate_accuracy))
+            stage_id = cur.lastrowid
+            for order_number, (lesson_title, content, wpm, accuracy, lesson_type) in enumerate(lessons, 1):
+                cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', (stage_id, title, lesson_type, lesson_title, content, wpm, accuracy, 120, order_number))
+            previous_id = stage_id
         cur.execute('''
             CREATE TABLE IF NOT EXISTS training_attempts (
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -78,7 +108,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         try:
             with conn.cursor() as cur:
                 ensure_tables(cur)
-                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id FROM training_courses WHERE is_archived=0 ORDER BY id')
+                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
                     cur.execute('SELECT id,course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number FROM training_lessons WHERE course_id=%s AND is_archived=0 ORDER BY order_number,id', (course['id'],))
@@ -126,7 +156,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             with conn.cursor() as cur:
                 ensure_tables(cur)
                 if not admin_allowed(conn): return jsonify({'message': 'Admin access required.'}), 403
-                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,is_archived FROM training_courses ORDER BY id')
+                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,is_archived FROM training_courses ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
                     cur.execute('SELECT id,course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number,is_archived FROM training_lessons WHERE course_id=%s ORDER BY order_number,id', (course['id'],))
