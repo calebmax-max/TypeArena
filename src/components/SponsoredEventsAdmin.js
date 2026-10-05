@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   createAdminSponsoredEvent,
+  assignAdminSponsoredPrizeWinner,
+  fetchAdminSponsoredEventEligiblePlayers,
   fetchAdminSponsoredEventDisputes,
   fetchAdminSponsoredEventReport,
   fetchAdminSponsoredEvents,
@@ -9,6 +11,16 @@ import {
   updateAdminSponsoredEvent,
   updateAdminSponsoredPrize,
 } from '../utils/typingApi';
+
+const placeName = (place) => {
+  const suffix = place === 1 ? 'st' : place === 2 ? 'nd' : place === 3 ? 'rd' : 'th';
+  return `${place}${suffix}`;
+};
+
+const defaultPrize = (place) => ({
+  description: `${placeName(place)} place prize`,
+  value: '',
+});
 
 const blankForm = () => ({
   id: null,
@@ -26,11 +38,7 @@ const blankForm = () => ({
   rules: '',
   fundingPledged: '',
   fundingReceived: '',
-  prizes: [
-    { description: '1st place prize', value: '' },
-    { description: '2nd place prize', value: '' },
-    { description: '3rd place prize', value: '' },
-  ],
+  prizes: [1, 2, 3].map(defaultPrize),
 });
 
 const localDateTime = (value) => {
@@ -58,6 +66,10 @@ export default function SponsoredEventsAdmin() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [winnerEditorEventId, setWinnerEditorEventId] = useState(null);
+  const [eligiblePlayersByEvent, setEligiblePlayersByEvent] = useState({});
+  const [winnerSelections, setWinnerSelections] = useState({});
+  const [prizeCountLocked, setPrizeCountLocked] = useState(false);
 
   const loadEvents = useCallback(async () => {
     const result = await fetchAdminSponsoredEvents();
@@ -87,7 +99,15 @@ export default function SponsoredEventsAdmin() {
     )),
   }));
 
+  const updatePrizeCount = (count) => setForm((current) => ({
+    ...current,
+    prizes: Array.from({ length: count }, (_, index) => (
+      current.prizes[index] || defaultPrize(index + 1)
+    )),
+  }));
+
   const editEvent = (event) => {
+    setPrizeCountLocked(Number(event.participants || 0) > 0);
     setForm({
       id: event.id,
       name: event.name || '',
@@ -104,13 +124,10 @@ export default function SponsoredEventsAdmin() {
       rules: event.rules || '',
       fundingPledged: String(event.fundingPledged || 0),
       fundingReceived: String(event.fundingReceived || 0),
-      prizes: [1, 2, 3].map((place) => {
-        const prize = event.prizes.find((item) => item.place === place);
-        return {
-          description: prize?.description || `${place}${place === 1 ? 'st' : place === 2 ? 'nd' : 'rd'} place prize`,
-          value: String(prize?.value ?? ''),
-        };
-      }),
+      prizes: (event.prizes || []).map((prize) => ({
+        description: prize.description || defaultPrize(prize.place).description,
+        value: String(prize.value ?? ''),
+      })),
     });
     setReport(null);
     setDisputes([]);
@@ -141,6 +158,7 @@ export default function SponsoredEventsAdmin() {
         : await createAdminSponsoredEvent(payload);
       setNotice(result.message || 'Sponsored event saved.');
       setForm(blankForm());
+      setPrizeCountLocked(false);
       await loadEvents();
     } catch (error) {
       setNotice(error.message || 'Could not save sponsored event.');
@@ -159,6 +177,7 @@ export default function SponsoredEventsAdmin() {
           value: prize.prizeValue,
           status: prize.status,
           winnerUsername: prize.winnerUsername,
+          winnerUserId: prize.winnerUserId,
           points: prize.points,
           raceCount: prize.raceCount,
         })) } : item
@@ -166,6 +185,50 @@ export default function SponsoredEventsAdmin() {
       setNotice(result.message || 'Podium refreshed.');
     } catch (error) {
       setNotice(error.message || 'Could not refresh standings.');
+    }
+  };
+
+  const toggleWinnerEditor = async (event) => {
+    if (winnerEditorEventId === event.id) {
+      setWinnerEditorEventId(null);
+      return;
+    }
+    try {
+      let players = eligiblePlayersByEvent[event.id];
+      if (!players) {
+        const result = await fetchAdminSponsoredEventEligiblePlayers(event.id);
+        players = Array.isArray(result.players) ? result.players : [];
+        setEligiblePlayersByEvent((current) => ({ ...current, [event.id]: players }));
+      }
+      setWinnerEditorEventId(event.id);
+      setNotice(players.length
+        ? 'Choose prize recipients from players with qualifying verified races.'
+        : 'No players have a qualifying verified race for this event.');
+    } catch (error) {
+      setNotice(error.message || 'Could not load qualifying players.');
+    }
+  };
+
+  const saveWinner = async (event, prize) => {
+    const selectionKey = `${event.id}:${prize.place}`;
+    const selectedUserId = winnerSelections[selectionKey] ?? prize.winnerUserId ?? '';
+    try {
+      const result = await assignAdminSponsoredPrizeWinner(
+        event.id,
+        prize.place,
+        selectedUserId === '' ? null : Number(selectedUserId),
+      );
+      setEvents((current) => current.map((item) => (
+        item.id === event.id ? result.event : item
+      )));
+      setWinnerSelections((current) => {
+        const next = { ...current };
+        delete next[selectionKey];
+        return next;
+      });
+      setNotice(result.message || 'Prize winner updated.');
+    } catch (error) {
+      setNotice(error.message || 'Could not update prize winner.');
     }
   };
 
@@ -244,25 +307,40 @@ export default function SponsoredEventsAdmin() {
           <label className="ap-label" htmlFor="sponsor-rules">Event rules and scoring</label>
           <textarea id="sponsor-rules" className="ap-input" rows="4" value={form.rules} onChange={(e) => updateForm('rules', e.target.value)} required />
         </div>
-        <p className="ap-card-title">Top-three prizes</p>
+        <div className="ap-field">
+          <label className="ap-label" htmlFor="sponsored-prize-count">Number of prize places</label>
+          <select
+            id="sponsored-prize-count"
+            className="ap-input"
+            value={form.prizes.length}
+            onChange={(e) => updatePrizeCount(Number(e.target.value))}
+            disabled={prizeCountLocked}
+          >
+            {[1, 2, 3, 4, 5].map((count) => (
+              <option key={count} value={count}>{count} {count === 1 ? 'winner' : 'winners'}</option>
+            ))}
+          </select>
+        </div>
+        <p className="ap-card-title">Prize places</p>
+        {prizeCountLocked && <p className="ap-muted">Prize places and values are locked after players enter the event. Use Choose Winners after the event closes to assign or change recipients.</p>}
         <div className="ap-three-col">
           {form.prizes.map((prize, index) => (
             <div className="ap-card" key={`prize-${index}`}>
-              <strong>{index + 1}{index === 0 ? 'st' : index === 1 ? 'nd' : 'rd'} place</strong>
+              <strong>{placeName(index + 1)} place</strong>
               <div className="ap-field">
                 <label className="ap-label" htmlFor={`prize-description-${index}`}>Prize description</label>
-                <input id={`prize-description-${index}`} className="ap-input" value={prize.description} onChange={(e) => updatePrize(index, 'description', e.target.value)} required />
+                <input id={`prize-description-${index}`} className="ap-input" value={prize.description} onChange={(e) => updatePrize(index, 'description', e.target.value)} required disabled={prizeCountLocked} />
               </div>
               <div className="ap-field">
                 <label className="ap-label" htmlFor={`prize-value-${index}`}>Prize value (KES)</label>
-                <input id={`prize-value-${index}`} className="ap-input" type="number" min="0" step="0.01" value={prize.value} onChange={(e) => updatePrize(index, 'value', e.target.value)} required />
+                <input id={`prize-value-${index}`} className="ap-input" type="number" min="0" step="0.01" value={prize.value} onChange={(e) => updatePrize(index, 'value', e.target.value)} required disabled={prizeCountLocked} />
               </div>
             </div>
           ))}
         </div>
         <div className="ap-btn-row">
           <button className="ap-btn" type="submit" disabled={saving}>{saving ? 'Saving...' : form.id ? 'Save Event' : 'Create Free Event'}</button>
-          {form.id && <button className="ap-btn ap-btn-ghost" type="button" onClick={() => setForm(blankForm())}>Cancel Edit</button>}
+          {form.id && <button className="ap-btn ap-btn-ghost" type="button" onClick={() => { setForm(blankForm()); setPrizeCountLocked(false); }}>Cancel Edit</button>}
         </div>
       </form>
 
@@ -282,6 +360,9 @@ export default function SponsoredEventsAdmin() {
                 <button className="ap-btn ap-btn-sm" type="button" onClick={() => editEvent(event)}>Edit</button>
                 <button className="ap-btn ap-btn-ghost ap-btn-sm" type="button" onClick={() => loadReport(event)}>Report & Disputes</button>
                 <button className="ap-btn ap-btn-ghost ap-btn-sm" type="button" onClick={() => refreshStandings(event)}>Refresh Podium</button>
+                <button className="ap-btn ap-btn-ghost ap-btn-sm" type="button" onClick={() => toggleWinnerEditor(event)} disabled={event.status !== 'completed'}>
+                  {winnerEditorEventId === event.id ? 'Close Winner Editor' : 'Choose Winners'}
+                </button>
               </div>
             </div>
             <div style={{ marginTop: 12 }}>
@@ -291,9 +372,38 @@ export default function SponsoredEventsAdmin() {
                   <span>{prize.winnerUsername || 'No winner yet'}</span>
                   <span className="ap-muted">{prize.description} · KES {Number(prize.value).toLocaleString()}</span>
                   <span className="ap-status-badge">{prize.status}</span>
-                  {prize.status === 'pending' && <button className="ap-btn ap-btn-sm" type="button" onClick={() => updatePrizeStatus(event, prize, 'under_review')}>Review</button>}
-                  {prize.status === 'under_review' && <button className="ap-btn ap-btn-sm" type="button" onClick={() => updatePrizeStatus(event, prize, 'approved')}>Approve</button>}
-                  {prize.status === 'approved' && <button className="ap-btn ap-btn-sm" type="button" onClick={() => updatePrizeStatus(event, prize, 'paid')}>Mark Paid</button>}
+                  {winnerEditorEventId === event.id && (
+                    <>
+                      <select
+                        className="ap-input"
+                        aria-label={`Winner for ${placeName(prize.place)}`}
+                        value={winnerSelections[`${event.id}:${prize.place}`] ?? prize.winnerUserId ?? ''}
+                        onChange={(e) => setWinnerSelections((current) => ({
+                          ...current,
+                          [`${event.id}:${prize.place}`]: e.target.value,
+                        }))}
+                        disabled={prize.status === 'paid'}
+                      >
+                        <option value="">No winner selected</option>
+                        {(eligiblePlayersByEvent[event.id] || []).map((player) => (
+                          <option key={player.userId} value={player.userId}>
+                            {player.username} — {Number(player.points).toFixed(2)} WPM
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="ap-btn ap-btn-sm"
+                        type="button"
+                        onClick={() => saveWinner(event, prize)}
+                        disabled={prize.status === 'paid'}
+                      >
+                        Save Winner
+                      </button>
+                    </>
+                  )}
+                  {prize.status === 'pending' && prize.winnerUserId && <button className="ap-btn ap-btn-sm" type="button" onClick={() => updatePrizeStatus(event, prize, 'under_review')}>Review</button>}
+                  {prize.status === 'under_review' && prize.winnerUserId && <button className="ap-btn ap-btn-sm" type="button" onClick={() => updatePrizeStatus(event, prize, 'approved')}>Approve</button>}
+                  {prize.status === 'approved' && prize.winnerUserId && <button className="ap-btn ap-btn-sm" type="button" onClick={() => updatePrizeStatus(event, prize, 'paid')}>Mark Paid</button>}
                   {prize.status === 'disputed' && <button className="ap-btn ap-btn-sm" type="button" onClick={() => updatePrizeStatus(event, prize, 'under_review')}>Return to Review</button>}
                 </div>
               ))}

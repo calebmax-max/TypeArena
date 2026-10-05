@@ -16,6 +16,7 @@ import '../styles/Tournaments.css';
 
 const FILTERS = ['all', 'active', 'upcoming', 'full', 'completed'];
 const TOURNAMENTS_CACHE_KEY = 'typearena_tournaments_cache';
+const placeName = (place) => `${place}${place === 1 ? 'st' : place === 2 ? 'nd' : place === 3 ? 'rd' : 'th'}`;
 
 const readTournamentCache = () => {
   try {
@@ -151,7 +152,7 @@ function SponsoredEventCard({ event, currentUser, onEnter, onNotice }) {
       return;
     }
     const accepted = window.confirm(
-      `${event.name}\n\nEligibility:\n${event.eligibility}\n\nRules:\n${event.rules}\n\nEntry is free. Verified races started and completed before the event closes add their WPM to your event points. Select OK to accept the eligibility and rules.`
+      `${event.name}\n\nEligibility:\n${event.eligibility}\n\nRules:\n${event.rules}\n\nEntry is free. Only verified races at 95% accuracy or higher qualify. Admins select prize recipients from qualifying players after the event closes. Select OK to accept the eligibility and rules.`
     );
     if (accepted) onEnter(event);
   };
@@ -180,9 +181,10 @@ function SponsoredEventCard({ event, currentUser, onEnter, onNotice }) {
       <div className="sponsored-event-prizes">
         {event.prizes.map((prize) => (
           <div key={prize.place}>
-            <strong>{prize.place}{prize.place === 1 ? 'st' : prize.place === 2 ? 'nd' : 'rd'} prize</strong>
+            <strong>{placeName(prize.place)} prize</strong>
             <span>{prize.description}</span>
             <span>KES {Number(prize.value).toLocaleString()}</span>
+            {prize.winnerUsername && <span>Winner: {prize.winnerUsername}</span>}
           </div>
         ))}
       </div>
@@ -213,7 +215,7 @@ function SponsoredEventCard({ event, currentUser, onEnter, onNotice }) {
               <span>Best: {Number(row.points).toLocaleString()} WPM · {row.races} qualifying races</span>
             </div>
           )) : <p>No verified race points yet.</p>}
-          <p>Event points equal your best verified race of up to 90 seconds at 95% accuracy or higher. Finish the passage or press Finish to end early. More races are retries, not extra points. Ties go to the player who first reached that best WPM.</p>
+          <p>Event points equal your best verified race of up to 90 seconds at 95% accuracy or higher. Finish the passage or press Finish to end early. More races are retries, not extra points. Ties go to the player who first reached that best WPM. Prize recipients are selected by the event admin from qualifying players after the event closes.</p>
         </div>
       )}
     </article>

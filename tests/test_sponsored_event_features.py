@@ -72,6 +72,27 @@ class SponsoredEventFeatureTests(unittest.TestCase):
         self.assertEqual([prize['place'] for prize in event['prizes']], [1, 2, 3])
         self.assertEqual(event['fundingReceived'], 500)
 
+    def test_payload_accepts_configurable_one_to_five_prize_places(self):
+        for count in (1, 5):
+            payload = event_payload()
+            payload['prizes'] = [
+                {'description': f'Prize {place}', 'value': 100}
+                for place in range(1, count + 1)
+            ]
+            event = validate_event_payload(payload)
+            self.assertEqual(len(event['prizes']), count)
+            self.assertEqual([prize['place'] for prize in event['prizes']], list(range(1, count + 1)))
+
+    def test_payload_rejects_prize_count_outside_one_to_five(self):
+        for count in (0, 6):
+            payload = event_payload()
+            payload['prizes'] = [
+                {'description': f'Prize {place}', 'value': 100}
+                for place in range(1, count + 1)
+            ]
+            with self.subTest(count=count), self.assertRaisesRegex(ValueError, '1 to 5 places'):
+                validate_event_payload(payload)
+
     def test_payload_rejects_received_funding_above_pledge(self):
         payload = event_payload()
         payload['fundingReceived'] = 1501

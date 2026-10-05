@@ -850,6 +850,22 @@ export const refreshAdminSponsoredEventStandings = async (eventId) => {
   return parseResponse(response);
 };
 
+export const fetchAdminSponsoredEventEligiblePlayers = async (eventId) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/eligible-players`), {
+    headers: buildAdminHeaders(),
+  });
+  return parseResponse(response);
+};
+
+export const assignAdminSponsoredPrizeWinner = async (eventId, place, userId) => {
+  const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/prizes/${place}/winner`), {
+    method: 'PUT',
+    headers: buildAdminHeaders(),
+    body: JSON.stringify({ userId }),
+  });
+  return parseResponse(response);
+};
+
 export const updateAdminSponsoredPrize = async (eventId, place, payload) => {
   const response = await apiFetch(buildApiUrl(`/api/admin/sponsored-events/${eventId}/prizes/${place}`), {
     method: 'PUT',

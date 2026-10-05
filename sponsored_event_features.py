@@ -15,6 +15,7 @@ EVENT_METRICS = {'event_page_view', 'results_view', 'sponsor_impression'}
 MAX_EVENT_AMOUNT = 9_999_999_999.99
 SPONSORED_RACE_DURATION_SECONDS = 90
 SPONSORED_MIN_ACCURACY = 95.0
+MAX_SPONSORED_EVENT_PRIZE_PLACES = 5
 PRIZE_STATUSES = {'pending', 'under_review', 'approved', 'paid', 'disputed'}
 PRIZE_TRANSITIONS = {
     'pending': {'under_review'},
@@ -215,8 +216,13 @@ def validate_event_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             'and the pledge must fit within the supported limit.'
         )
     prizes = payload.get('prizes')
-    if not isinstance(prizes, list) or len(prizes) != 3:
-        raise ValueError('Define a prize for each of the top three places.')
+    if (
+        not isinstance(prizes, list)
+        or not 1 <= len(prizes) <= MAX_SPONSORED_EVENT_PRIZE_PLACES
+    ):
+        raise ValueError(
+            f'Define a prize for each of 1 to {MAX_SPONSORED_EVENT_PRIZE_PLACES} places.'
+        )
     normalized_prizes = []
     for place, prize in enumerate(prizes, 1):
         if not isinstance(prize, dict):
@@ -854,14 +860,21 @@ def register_sponsored_event_routes(
                         event['fundingPledged'], event['fundingReceived'], event_id,
                     ),
                 )
+                cur.execute(
+                    'DELETE FROM sponsored_event_prizes WHERE tournament_id=%s AND place>%s',
+                    (event_id, len(event['prizes'])),
+                )
                 for prize in event['prizes']:
                     cur.execute(
                         '''
-                        UPDATE sponsored_event_prizes
-                        SET prize_description=%s, prize_value=%s
-                        WHERE tournament_id=%s AND place=%s
+                        INSERT INTO sponsored_event_prizes
+                            (tournament_id, place, prize_description, prize_value)
+                        VALUES (%s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            prize_description=VALUES(prize_description),
+                            prize_value=VALUES(prize_value)
                         ''',
-                        (prize['description'], prize['value'], event_id, prize['place']),
+                        (event_id, prize['place'], prize['description'], prize['value']),
                     )
                 saved = _event_row(cur, event_id)
                 serialized = _serialize_with_prizes(cur, saved)
@@ -930,14 +943,15 @@ def register_sponsored_event_routes(
                 )
                 if cur.fetchone():
                     return jsonify({'message': 'Standings cannot be refreshed after a prize is marked paid.'}), 409
-                rankings = _rankings(cur, event_id, 3)
-                for place in range(1, 4):
+                prizes = _event_prizes(cur, event_id)
+                rankings = _rankings(cur, event_id, len(prizes))
+                for place in range(1, len(prizes) + 1):
                     winner_id = rankings[place - 1]['user_id'] if len(rankings) >= place else None
                     cur.execute(
                         '''
                         UPDATE sponsored_event_prizes
                         SET winner_user_id=%s,
-                            status=CASE WHEN status IN ('pending','disputed') THEN 'under_review' ELSE status END
+                            status='under_review'
                         WHERE tournament_id=%s AND place=%s
                         ''',
                         (winner_id, event_id, place),
@@ -951,6 +965,7 @@ def register_sponsored_event_routes(
                         if len(rankings) >= int(prize['place']) else 0,
                         'raceCount': int(rankings[int(prize['place']) - 1]['race_count'] or 0)
                         if len(rankings) >= int(prize['place']) else 0,
+                        'winnerUserId': int(prize['winner_user_id']) if prize.get('winner_user_id') else None,
                         'prizeDescription': prize['prize_description'],
                         'prizeValue': float(prize['prize_value'] or 0),
                         'status': prize['status'],
@@ -962,12 +977,125 @@ def register_sponsored_event_routes(
         finally:
             return_connection(conn)
 
+    @app.get('/api/admin/sponsored-events/<int:event_id>/eligible-players')
+    def admin_sponsored_event_eligible_players(event_id: int):
+        conn = get_connection()
+        try:
+            if not require_admin(conn):
+                return jsonify({'message': 'Unauthorized admin request'}), 401
+            with conn.cursor() as cur:
+                ensure_schema(cur)
+                event = _event_row(cur, event_id)
+                if not event:
+                    return jsonify({'message': 'Sponsored event not found.'}), 404
+                players = _rankings(cur, event_id)
+            conn.commit()
+            return jsonify({
+                'players': [
+                    {
+                        'userId': int(player['user_id']),
+                        'username': player['username'],
+                        'points': float(player['points'] or 0),
+                        'races': int(player['race_count'] or 0),
+                    }
+                    for player in players
+                ],
+            })
+        finally:
+            return_connection(conn)
+
+    @app.put('/api/admin/sponsored-events/<int:event_id>/prizes/<int:place>/winner')
+    def admin_assign_sponsored_prize_winner(event_id: int, place: int):
+        payload = request.get_json(silent=True) or {}
+        raw_user_id = payload.get('userId')
+        try:
+            user_id = int(raw_user_id) if raw_user_id not in (None, '') else None
+        except (TypeError, ValueError):
+            return jsonify({'message': 'Winner must be a valid qualifying player.'}), 400
+        conn = get_connection()
+        try:
+            if not require_admin(conn):
+                return jsonify({'message': 'Unauthorized admin request'}), 401
+            with conn.cursor() as cur:
+                ensure_schema(cur)
+                event = _event_row(cur, event_id, lock=True)
+                if not event:
+                    return jsonify({'message': 'Sponsored event not found.'}), 404
+                if datetime.utcnow() < event['ends_at']:
+                    return jsonify({'message': 'Winners can only be assigned after the event closes.'}), 409
+                cur.execute(
+                    '''
+                    SELECT status, winner_user_id
+                    FROM sponsored_event_prizes
+                    WHERE tournament_id=%s AND place=%s
+                    FOR UPDATE
+                    ''',
+                    (event_id, place),
+                )
+                prize = cur.fetchone()
+                if not prize:
+                    return jsonify({'message': 'Prize place not found.'}), 404
+                if prize['status'] == 'paid':
+                    return jsonify({'message': 'A paid prize winner cannot be changed.'}), 409
+                if user_id is not None:
+                    cur.execute(
+                        '''
+                        SELECT 1 FROM sponsored_event_attempts
+                        WHERE tournament_id=%s AND user_id=%s AND status='completed'
+                          AND accuracy >= %s AND duration_seconds > 0
+                          AND duration_seconds <= %s
+                        LIMIT 1
+                        ''',
+                        (
+                            event_id, user_id, SPONSORED_MIN_ACCURACY,
+                            SPONSORED_RACE_DURATION_SECONDS,
+                        ),
+                    )
+                    if not cur.fetchone():
+                        return jsonify({'message': 'Winner must have a verified qualifying race in this event.'}), 400
+                    cur.execute(
+                        '''
+                        SELECT place FROM sponsored_event_prizes
+                        WHERE tournament_id=%s AND winner_user_id=%s AND place<>%s
+                        LIMIT 1
+                        ''',
+                        (event_id, user_id, place),
+                    )
+                    if cur.fetchone():
+                        return jsonify({'message': 'A player can only receive one prize place in this event.'}), 409
+                cur.execute(
+                    '''
+                    UPDATE sponsored_event_prizes
+                    SET winner_user_id=%s,
+                        status=%s,
+                        admin_note=%s,
+                        paid_at=NULL
+                    WHERE tournament_id=%s AND place=%s
+                    ''',
+                    (
+                        user_id,
+                        'under_review' if user_id is not None else 'pending',
+                        'Winner manually selected.' if user_id is not None else None,
+                        event_id,
+                        place,
+                    ),
+                )
+                updated_event = _event_row(cur, event_id)
+                serialized = _serialize_with_prizes(cur, updated_event)
+            conn.commit()
+            return jsonify({
+                'message': 'Prize winner updated for admin review.',
+                'event': serialized,
+            })
+        finally:
+            return_connection(conn)
+
     @app.put('/api/admin/sponsored-events/<int:event_id>/prizes/<int:place>')
     def admin_update_sponsored_prize(event_id: int, place: int):
         payload = request.get_json(silent=True) or {}
         new_status = str(payload.get('status') or '').strip()
         note = str(payload.get('adminNote') or '').strip()
-        if place not in {1, 2, 3} or new_status not in PRIZE_STATUSES:
+        if place < 1 or place > MAX_SPONSORED_EVENT_PRIZE_PLACES or new_status not in PRIZE_STATUSES:
             return jsonify({'message': 'Use a valid place and prize status.'}), 400
         conn = get_connection()
         try:
@@ -976,7 +1104,12 @@ def register_sponsored_event_routes(
             with conn.cursor() as cur:
                 ensure_schema(cur)
                 cur.execute(
-                    'SELECT status FROM sponsored_event_prizes WHERE tournament_id=%s AND place=%s FOR UPDATE',
+                    '''
+                    SELECT status, winner_user_id
+                    FROM sponsored_event_prizes
+                    WHERE tournament_id=%s AND place=%s
+                    FOR UPDATE
+                    ''',
                     (event_id, place),
                 )
                 prize = cur.fetchone()
@@ -984,6 +1117,8 @@ def register_sponsored_event_routes(
                     return jsonify({'message': 'Prize record not found.'}), 404
                 if new_status not in PRIZE_TRANSITIONS[prize['status']]:
                     return jsonify({'message': f"Cannot change prize status from {prize['status']} to {new_status}."}), 409
+                if new_status in {'approved', 'paid'} and not prize['winner_user_id']:
+                    return jsonify({'message': 'Assign a qualifying winner before approving or paying this prize.'}), 409
                 cur.execute(
                     '''
                     UPDATE sponsored_event_prizes
