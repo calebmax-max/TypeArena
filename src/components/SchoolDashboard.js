@@ -55,7 +55,7 @@ export default function SchoolDashboard({ currentUser }) {
   const [orgName, setOrgName] = useState('');
   const [className, setClassName] = useState('');
   const [joinCode, setJoinCode] = useState('');
-  const [assignment, setAssignment] = useState({ title: '', instructions: '', targetWpm: '', targetAccuracy: '' });
+  const [assignment, setAssignment] = useState({ title: '', instructions: '', passage: '', targetWpm: '', targetAccuracy: '' });
   const [learnerAssignments, setLearnerAssignments] = useState([]);
   const [teacherEmail, setTeacherEmail] = useState('');
   const [teacherInvite, setTeacherInvite] = useState('');
@@ -424,13 +424,26 @@ export default function SchoolDashboard({ currentUser }) {
                       <h3>New assignment</h3>
                       <input style={inputStyle} value={assignment.title} onChange={(event) => setAssignment({ ...assignment, title: event.target.value })} placeholder="Assignment title" />
                       <input style={inputStyle} value={assignment.instructions} onChange={(event) => setAssignment({ ...assignment, instructions: event.target.value })} placeholder="Instructions" />
+                      <textarea
+                        style={inputStyle}
+                        value={assignment.passage}
+                        onChange={(event) => setAssignment({ ...assignment, passage: event.target.value })}
+                        placeholder="Paste the typing passage learners will use (up to 20,000 characters)"
+                        aria-label="Assignment typing passage"
+                        rows={6}
+                        maxLength={20000}
+                        required
+                      />
+                      <small style={{ display: 'block', margin: '-4px 0 10px', opacity: 0.7 }}>
+                        {assignment.passage.length}/20,000 characters · every learner types this exact text
+                      </small>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <input style={inputStyle} type="number" min="0" value={assignment.targetWpm} onChange={(event) => setAssignment({ ...assignment, targetWpm: event.target.value })} placeholder="Target WPM" />
                         <input style={inputStyle} type="number" min="0" max="100" value={assignment.targetAccuracy} onChange={(event) => setAssignment({ ...assignment, targetAccuracy: event.target.value })} placeholder="Target %" />
                       </div>
                       <button className="btn btn-primary" onClick={() => run(async () => {
                         await createSchoolAssignment(selected.class.id, assignment);
-                        setAssignment({ title: '', instructions: '', targetWpm: '', targetAccuracy: '' });
+                          setAssignment({ title: '', instructions: '', passage: '', targetWpm: '', targetAccuracy: '' });
                       }, 'Assignment created.')}>Create assignment</button>
                       <div style={{ marginTop: 16 }}>
                         <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}>Import learners CSV</button>
@@ -471,6 +484,12 @@ export default function SchoolDashboard({ currentUser }) {
                       <small style={{ display: 'block', opacity: .7 }}>Target: {item.targetWpm} WPM · {item.targetAccuracy}% accuracy</small>
                       {selected.role === 'learner' && item.mySubmission && <small style={{ display: 'block' }}>Latest result: {item.mySubmission.wpm} WPM · {item.mySubmission.accuracy}% accuracy{item.mySubmission.submittedAt ? ` · ${new Date(item.mySubmission.submittedAt).toLocaleString()}` : ''}</small>}
                       {['org_admin', 'teacher'].includes(selected.role) && <small style={{ display: 'block' }}>{item.completionCount} submission(s) · {item.submissions?.length || 0} result(s) shown</small>}
+                      {['org_admin', 'teacher'].includes(selected.role) && item.passage && (
+                        <details style={{ marginTop: 8 }}>
+                          <summary>View assigned passage</summary>
+                          <p style={{ whiteSpace: 'pre-wrap' }}>{item.passage}</p>
+                        </details>
+                      )}
                       {selected.role === 'learner' && <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/practice?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>{item.mySubmission ? 'Retake assignment' : 'Start assignment'}</Link>}
                     </div>
                   ))}

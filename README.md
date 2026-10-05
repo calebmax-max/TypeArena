@@ -26,7 +26,7 @@ Signed-in users can create an organisation, create classes, and invite teachers 
 
 Learners can join with a class code or accept an invitation after signing in with the invited email address. CSV imports immediately add existing accounts and create pending invitations for unknown emails; recipients must create their own TypeArena account before accepting. Invitation emails are not sent automatically.
 
-Assignment races submit results on completion. Learners can view current status and attempt history in School mode. Certificates and advanced analytics are not part of this release.
+Teachers can include a shared typing passage in each assignment. Learners type that exact passage in their assignment race, and results submit automatically on completion. Learners can view current status and attempt history in School mode. Certificates and advanced analytics are not part of this release.
 
 ## Phase 0 foundation
 

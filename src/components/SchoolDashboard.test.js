@@ -114,3 +114,33 @@ test('learner assignment launches a solo practice session with its assignment id
     expect(link.getAttribute('href')).toBe('/practice?schoolClassId=11&assignmentId=23');
   });
 });
+
+test('teachers create assignments with a shared typing passage', async () => {
+  schoolApi.fetchSchoolOverview.mockResolvedValue({
+    organizations: [{ id: 7, name: 'North School', role: 'teacher', settings: {} }],
+    classes: [{ id: 11, organizationId: 7, name: 'Room A', learnerCount: 1, joinCode: 'A1B2C3' }],
+  });
+  schoolApi.fetchSchoolAssignments.mockResolvedValue({ assignments: [] });
+  schoolApi.fetchSchoolInvitationsForMe.mockResolvedValue({ invitations: [] });
+  schoolApi.fetchSchoolClass.mockResolvedValue({
+    class: { id: 11, organizationId: 7, name: 'Room A' },
+    role: 'teacher',
+    learners: [],
+    assignments: [],
+    analytics: { learnerCount: 0, pendingCount: 0, averageWpm: 0, completionCount: 0 },
+  });
+  schoolApi.createSchoolAssignment.mockResolvedValue({ id: 24, message: 'Assignment created.' });
+
+  render(<SchoolDashboard currentUser={{ id: 4 }} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Room A/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Assignments' }));
+  fireEvent.change(screen.getByPlaceholderText('Assignment title'), { target: { value: 'Typing lesson' } });
+  fireEvent.change(screen.getByLabelText('Assignment typing passage'), { target: { value: 'The shared passage.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create assignment' }));
+
+  await waitFor(() => expect(schoolApi.createSchoolAssignment).toHaveBeenCalledWith(11, expect.objectContaining({
+    title: 'Typing lesson',
+    passage: 'The shared passage.',
+  })));
+});

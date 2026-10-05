@@ -14,6 +14,7 @@ import {
   buildHeaders,
   fetchCurrentUser,
   fetchMediaSettings,
+  fetchSchoolAssignment,
   fetchSponsoredEvents,
   getStoredUserSnapshot,
   startRace,
@@ -471,7 +472,11 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
   const location = useLocation();
   const navigate = useNavigate();
   const { eventId } = useParams();
+  const assignmentId = new URLSearchParams(location.search).get('assignmentId');
   const isSponsoredEvent = sponsoredEventMode && Boolean(eventId);
+  const [schoolAssignment, setSchoolAssignment] = useState(null);
+  const [schoolAssignmentLoading, setSchoolAssignmentLoading] = useState(Boolean(assignmentId));
+  const [schoolAssignmentError, setSchoolAssignmentError] = useState('');
   const [sponsoredEvent, setSponsoredEvent] = useState(null);
   const [sponsoredEventLoading, setSponsoredEventLoading] = useState(isSponsoredEvent);
   const [sponsoredEventError, setSponsoredEventError] = useState('');
@@ -704,6 +709,30 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
   const showNotice = useCallback((message, type = 'info') => {
     setNotice(message ? { message, type } : null);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!assignmentId) {
+      setSchoolAssignment(null);
+      setSchoolAssignmentLoading(false);
+      setSchoolAssignmentError('');
+      return () => { active = false; };
+    }
+    setSchoolAssignment(null);
+    setSchoolAssignmentLoading(true);
+    setSchoolAssignmentError('');
+    fetchSchoolAssignment(assignmentId)
+      .then((result) => {
+        if (active) setSchoolAssignment(result.assignment || null);
+      })
+      .catch((error) => {
+        if (active) setSchoolAssignmentError(error.message || 'Could not load this school assignment.');
+      })
+      .finally(() => {
+        if (active) setSchoolAssignmentLoading(false);
+      });
+    return () => { active = false; };
+  }, [assignmentId]);
 
   useEffect(() => {
     let active = true;
@@ -1363,6 +1392,12 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
       sponsoredEventStartInFlightRef.current = false;
       return;
     }
+    if (assignmentId && (schoolAssignmentLoading || schoolAssignmentError)) {
+      if (schoolAssignmentError) showNotice(schoolAssignmentError, 'error');
+      sponsoredEventStartInFlightRef.current = false;
+      return;
+    }
+    const assignmentPassage = schoolAssignment?.passage?.trim() || null;
 
     // Always refresh the selected mode before starting a generated-content race.
     // This makes newly published or edited admin passages available immediately,
@@ -1372,8 +1407,8 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
     // rotation bucket) belonged to whatever mode was previously active,
     // not resolvedMode. When switching modes, fetch fresh content for
     // resolvedMode and wait for it before starting the race.
-    let raceContent = generatedContent;
-    if (!useCustomText) {
+    let raceContent = assignmentPassage ? null : generatedContent;
+    if (!useCustomText && !assignmentPassage) {
       contentLoadingRef.current = true;
       setContentLoading(true);
       try {
@@ -1450,7 +1485,8 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
     // Fire-and-forget: the token only needs to land before finishRace runs
     // seconds/minutes later, so it must never block the race from starting.
     raceTokenRef.current = null;
-    const practicePassageText = (useCustomText && customText ? customText : null)
+    const practicePassageText = assignmentPassage
+      || (useCustomText && customText ? customText : null)
       || raceContent?.passage
       || MODE_CONFIG.find((item) => item.id === resolvedMode)?.description
       || '';
@@ -1490,7 +1526,7 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
     raceStartedAtRef.current = Date.now();
     setPhase('racing');
     setTimeout(() => inputRef.current?.focus(), 150);
-  }, [commentatorEnabled, currentUser, customText, duration, eventId, generatedContent, isLeavingRef, isSponsoredEvent, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, showNotice, sponsoredEventLoading, sponsoredEventReady, useCustomText]);
+  }, [assignmentId, commentatorEnabled, currentUser, customText, duration, eventId, generatedContent, isLeavingRef, isSponsoredEvent, isSubmittingRef, language, mode, redirectToProfile, resetLiveSession, schoolAssignment, schoolAssignmentError, schoolAssignmentLoading, showNotice, sponsoredEventLoading, sponsoredEventReady, useCustomText]);
   // Note: getUsedContentIds/getRaceContent/recordUsedContentId are stable
   // module-level imports (not component state/props), so they're
   // intentionally omitted here — same convention already used by the
@@ -1651,7 +1687,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
     // appended since the last change, so a normal keypress logs 1 char and a
     // paste/autofill logs a multi-char chunk the backend flags as paste-like.
     keystrokeLoggerRef.current?.record(diffAppendedChars(typingText, value));
-    const src = liveRoom?.text || practiceSourceTextRef.current
+    const src = liveRoom?.text || practiceSourceTextRef.current || schoolAssignment?.passage
       || (useCustomText && customText ? customText : null)
       || generatedContent?.passage
       || '';
@@ -1778,7 +1814,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   // Fix #8 (Issue 8): memoised with useCallback. timeLeftRef.current is read for the
   // sparkline (fix #6). timeLeft is kept for the live-room heartbeat WPM calculation.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentatorEnabled, customText, duration, generatedContent?.passage, isSubmittingRef, liveRoom, mobileTypingSettings.haptics, penaltyMode, raceOver, submitHeartbeat, timeLeft, typingText, useCustomText]);
+  }, [commentatorEnabled, customText, duration, generatedContent?.passage, isSubmittingRef, liveRoom, mobileTypingSettings.haptics, penaltyMode, raceOver, schoolAssignment?.passage, submitHeartbeat, timeLeft, typingText, useCustomText]);
 
   const equippedItems = currentUser?.equippedItems || {};
   const themePreset = THEME_PRESETS[equippedItems.theme] || THEME_PRESETS.default;
@@ -1793,6 +1829,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   };
   const sourceText = liveRoom?.text
     || ((phase === 'racing' || phase === 'results') && practiceSourceTextRef.current ? practiceSourceTextRef.current : null)
+    || schoolAssignment?.passage
     || (useCustomText && customText ? customText : null)
     || generatedContent?.passage
     || MODE_CONFIG.find((item) => item.id === mode)?.description
@@ -1941,6 +1978,30 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
         <div className="mode-select">
           <h1>{isSponsoredEvent ? 'Sponsored Event Race' : practicePage ? 'Practice Arena' : 'Live Premium Typing Arena'}</h1>
 
+          {assignmentId && (
+            <section className="live-board" aria-live="polite" style={{ marginBottom: '1rem' }}>
+              {schoolAssignmentLoading ? (
+                <p>Loading your assignment passage...</p>
+              ) : schoolAssignmentError ? (
+                <p role="alert">{schoolAssignmentError}</p>
+              ) : schoolAssignment ? (
+                <>
+                  <h2>{schoolAssignment.title}</h2>
+                  {schoolAssignment.instructions && <p>{schoolAssignment.instructions}</p>}
+                  <p>Target: {schoolAssignment.targetWpm} WPM · {schoolAssignment.targetAccuracy}% accuracy</p>
+                  {schoolAssignment.passage ? (
+                    <details>
+                      <summary>Preview the assigned passage</summary>
+                      <p style={{ whiteSpace: 'pre-wrap' }}>{schoolAssignment.passage}</p>
+                    </details>
+                  ) : (
+                    <p>This older assignment has no saved passage; a standard practice passage will be used.</p>
+                  )}
+                </>
+              ) : null}
+            </section>
+          )}
+
           <div className="challenge-toolbar">
             <h2>
               {isSponsoredEvent
@@ -2017,8 +2078,8 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
             </div>
             {practicePage ? (
               <>
-              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || sponsoredEventStarting || currentUser === undefined || (!useCustomText && !generatedContent?.passage) || (isSponsoredEvent && (!sponsoredEventReady || sponsoredEventLoading))}>
-                {currentUser === undefined || sponsoredEventStarting || (isSponsoredEvent && sponsoredEventLoading) ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : isSponsoredEvent ? 'Start Event Race' : 'Start This Practice'}
+              <button className="btn btn-primary" onClick={startPracticeRace} disabled={contentLoading || sponsoredEventStarting || schoolAssignmentLoading || Boolean(schoolAssignmentError) || currentUser === undefined || (!schoolAssignment?.passage && !useCustomText && !generatedContent?.passage) || (isSponsoredEvent && (!sponsoredEventReady || sponsoredEventLoading))}>
+                {currentUser === undefined || sponsoredEventStarting || schoolAssignmentLoading || (isSponsoredEvent && sponsoredEventLoading) ? <span className="arena-spinner" aria-label="Loading" /> : contentLoading ? <span className="arena-spinner" aria-label="Loading content" /> : isSponsoredEvent ? 'Start Event Race' : assignmentId ? 'Start Assignment' : 'Start This Practice'}
                 </button>
               <button type="button" className="btn btn-secondary" onClick={() => navigate(isSponsoredEvent ? '/tournaments' : '/play')}>
                 {isSponsoredEvent ? 'Back to Tournaments' : 'Back to Play'}

@@ -12,6 +12,20 @@ from datetime import datetime
 from flask import jsonify, request, Response
 
 
+MAX_ASSIGNMENT_PASSAGE_LENGTH = 20_000
+
+
+def _normalize_assignment_passage(value):
+    passage = str(value or '').strip()
+    if not passage:
+        raise ValueError('A typing passage is required for the assignment.')
+    if len(passage) > MAX_ASSIGNMENT_PASSAGE_LENGTH:
+        raise ValueError(
+            f'Assignment passages cannot exceed {MAX_ASSIGNMENT_PASSAGE_LENGTH} characters.'
+        )
+    return passage
+
+
 def register_school_routes(app, *, get_connection, return_connection, get_user, now_db, now_iso, is_admin_email, admin_email):
     """Register the first TypeArena school-product slice on the main Flask app."""
 
@@ -79,6 +93,7 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 created_by INT NOT NULL,
                 title VARCHAR(180) NOT NULL,
                 instructions TEXT NULL,
+                passage MEDIUMTEXT NULL,
                 target_wpm DECIMAL(6,2) NOT NULL DEFAULT 0,
                 target_accuracy DECIMAL(6,2) NOT NULL DEFAULT 0,
                 mode VARCHAR(40) NOT NULL DEFAULT 'practice',
@@ -156,6 +171,9 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 cur.execute(statement)
             except Exception:
                 pass
+        cur.execute("SHOW COLUMNS FROM assignments LIKE 'passage'")
+        if not cur.fetchone():
+            cur.execute('ALTER TABLE assignments ADD COLUMN passage MEDIUMTEXT NULL AFTER instructions')
 
     def current_user(conn):
         return get_user(conn)
@@ -345,7 +363,7 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                     submission_params = (r['id'],) if not submission_filter else (r['id'], user['id'])
                     cur.execute(f"SELECT s.user_id,s.wpm,s.accuracy,s.race_id,s.submitted_at,u.username FROM assignment_submissions s JOIN users u ON u.id=s.user_id WHERE s.assignment_id=%s{submission_filter} ORDER BY s.submitted_at DESC", submission_params)
                     submissions = [{'userId': x['user_id'], 'username': x['username'], 'wpm': float(x['wpm'] or 0), 'accuracy': float(x['accuracy'] or 0), 'raceId': x.get('race_id'), 'submittedAt': x['submitted_at'].isoformat() if x.get('submitted_at') else None} for x in cur.fetchall()]
-                    assignments.append({'id': r['id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'mode': r['mode'], 'status': r.get('status') or 'published', 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'submissions': submissions if role in ('org_admin', 'teacher') else [], 'mySubmission': submissions[0] if role not in ('org_admin', 'teacher') and submissions else None, 'completionCount': len(submissions) if role in ('org_admin', 'teacher') else int(bool(submissions))})
+                    assignments.append({'id': r['id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'passage': r.get('passage') or '', 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'mode': r['mode'], 'status': r.get('status') or 'published', 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'submissions': submissions if role in ('org_admin', 'teacher') else [], 'mySubmission': submissions[0] if role not in ('org_admin', 'teacher') and submissions else None, 'completionCount': len(submissions) if role in ('org_admin', 'teacher') else int(bool(submissions))})
             active_learners = [learner for learner in learners if learner['status'] == 'active']
             return jsonify({
                 'class': class_payload(cls),
@@ -367,6 +385,10 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
         payload = request.get_json(silent=True) or {}
         title = str(payload.get('title') or '').strip()
         if not title: return jsonify({'message': 'Assignment title is required.'}), 400
+        try:
+            passage = _normalize_assignment_passage(payload.get('passage'))
+        except ValueError as exc:
+            return jsonify({'message': str(exc)}), 400
         conn = get_connection()
         try:
             user = auth(conn)
@@ -376,10 +398,60 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 if not cls: return jsonify({'message': 'Class not found.'}), 404
                 _, error = require_org(cur, user, cls['organization_id'], manage=True)
                 if error: return jsonify({'message': error[0]}), error[1]
-                cur.execute('INSERT INTO assignments (class_id,created_by,title,instructions,target_wpm,target_accuracy,mode,due_at,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', (class_id, user['id'], title, str(payload.get('instructions') or ''), float(payload.get('targetWpm') or 0), float(payload.get('targetAccuracy') or 0), str(payload.get('mode') or 'practice'), payload.get('dueAt') or None, now_db()))
+                cur.execute('INSERT INTO assignments (class_id,created_by,title,instructions,passage,target_wpm,target_accuracy,mode,due_at,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (class_id, user['id'], title, str(payload.get('instructions') or ''), passage, float(payload.get('targetWpm') or 0), float(payload.get('targetAccuracy') or 0), str(payload.get('mode') or 'practice'), payload.get('dueAt') or None, now_db()))
                 assignment_id = cur.lastrowid
             conn.commit(); return jsonify({'id': assignment_id, 'message': 'Assignment created.'}), 201
         finally: return_connection(conn)
+
+    @app.get('/api/school/assignments/<int:assignment_id>')
+    def get_school_assignment(assignment_id):
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user:
+                return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute(
+                    '''
+                    SELECT a.*, c.organization_id, c.name AS class_name
+                    FROM assignments a
+                    JOIN classes c ON c.id=a.class_id
+                    WHERE a.id=%s AND c.active=1
+                      AND COALESCE(a.status,'published') <> 'archived'
+                    ''',
+                    (assignment_id,),
+                )
+                assignment = cur.fetchone()
+                if not assignment:
+                    return jsonify({'message': 'Assignment not found.'}), 404
+                role, error = require_org(cur, user, assignment['organization_id'])
+                if error:
+                    return jsonify({'message': error[0]}), error[1]
+                if role == 'learner':
+                    cur.execute(
+                        '''
+                        SELECT id FROM class_members
+                        WHERE class_id=%s AND user_id=%s AND status='active'
+                        ''',
+                        (assignment['class_id'], user['id']),
+                    )
+                    if not cur.fetchone():
+                        return jsonify({'message': 'Your class membership is awaiting approval or is inactive.'}), 403
+                result = {
+                    'id': int(assignment['id']),
+                    'classId': int(assignment['class_id']),
+                    'className': assignment['class_name'],
+                    'title': assignment['title'],
+                    'instructions': assignment.get('instructions') or '',
+                    'passage': assignment.get('passage') or '',
+                    'targetWpm': float(assignment['target_wpm'] or 0),
+                    'targetAccuracy': float(assignment['target_accuracy'] or 0),
+                    'dueAt': assignment['due_at'].isoformat() if assignment.get('due_at') else None,
+                }
+            return jsonify({'assignment': result})
+        finally:
+            return_connection(conn)
 
     @app.post('/api/school/assignments/<int:assignment_id>/submit')
     def submit_assignment(assignment_id):

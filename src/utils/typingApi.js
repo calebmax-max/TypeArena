@@ -1464,6 +1464,7 @@ export const fetchSchoolClass = (classId) => schoolRequest(`/api/school/classes/
 export const createSchoolAssignment = (classId, payload) => schoolRequest(`/api/school/classes/${classId}/assignments`, {
   method: 'POST', body: JSON.stringify(payload),
 });
+export const fetchSchoolAssignment = (assignmentId) => schoolRequest(`/api/school/assignments/${assignmentId}`);
 export const submitSchoolAssignment = (assignmentId, payload) => schoolRequest(`/api/school/assignments/${assignmentId}/submit`, {
   method: 'POST', body: JSON.stringify(payload),
 });
