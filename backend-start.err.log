@@ -6,3 +6,4 @@ Press CTRL+C to quit
 127.0.0.1 - - [03/Oct/2026 22:39:41] "GET /api/school/config HTTP/1.1" 200 -
 127.0.0.1 - - [03/Oct/2026 22:40:31] "GET /api/school/config HTTP/1.1" 200 -
 127.0.0.1 - - [03/Oct/2026 22:41:04] "GET /main.0490916e73f8996525bc.hot-update.json HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 16:17:35] "GET /api/training/courses HTTP/1.1" 404 -

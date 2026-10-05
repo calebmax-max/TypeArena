@@ -55,8 +55,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 xp_earned INT NOT NULL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY uq_training_attempt_event (user_id, event_id),
-                KEY idx_training_attempt_user_lesson (user_id, lesson_id),
-                CONSTRAINT fk_training_attempt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                KEY idx_training_attempt_user_lesson (user_id, lesson_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ''')
 

@@ -63,8 +63,26 @@ export default function TrainingPage() {
   }
 
   if (loading) return <div className="training-page"><p>Loading courses...</p></div>;
-  if (error) return <div className="training-page"><p role="alert">{error}</p></div>;
-  if (!lessons.length) return <div className="training-page"><p>No published courses are available yet.</p></div>;
+  if (error) return (
+    <div className="training-page">
+      <section className="training-state-card training-state-card--error" role="alert">
+        <span className="training-state-card__eyebrow">Training unavailable</span>
+        <h1>We couldn’t load your courses</h1>
+        <p>{error}</p>
+        <p className="training-state-card__hint">Please try again. If this continues, the training database needs attention on the server.</p>
+        <button type="button" className="training-button" onClick={() => window.location.reload()}>Try again</button>
+      </section>
+    </div>
+  );
+  if (!lessons.length) return (
+    <div className="training-page">
+      <section className="training-state-card" role="status">
+        <span className="training-state-card__eyebrow">No published content</span>
+        <h1>Training is being prepared</h1>
+        <p>An admin needs to publish a course before lessons appear here.</p>
+      </section>
+    </div>
+  );
 
   const activeLesson = activeLessonId ? getLessonById(lessons, activeLessonId) : null;
   const currentLessonId = getCurrentLessonId(lessons);

@@ -577,3 +577,20 @@
     padding: 1.25rem;
   }
 }
+
+.training-state-card {
+  width: 100%;
+  max-width: 680px;
+  margin: 2rem auto;
+  padding: 2rem;
+  border: 1px solid var(--tp-sage-border);
+  border-radius: var(--tp-radius);
+  background: #fff;
+  color: var(--tp-ink);
+  box-shadow: 0 10px 30px rgba(22, 40, 31, 0.08);
+}
+.training-state-card--error { border-color: #efb7b0; background: #fffafa; }
+.training-state-card h1 { margin: .35rem 0 .6rem; color: var(--tp-forest-dark); font-size: 1.55rem; }
+.training-state-card p { margin: .4rem 0; line-height: 1.6; color: var(--tp-ink); }
+.training-state-card__eyebrow { color: var(--tp-rust); font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.training-state-card__hint { color: var(--tp-muted) !important; font-size: .9rem; }
