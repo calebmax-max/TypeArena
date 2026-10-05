@@ -60,6 +60,8 @@ function defaultProgress() {
     currentLessonId: null,
     // lessonId -> { attempts, passCount, bestWpm, bestAccuracy }
     lessons: {},
+    totalXp: 0,
+    badges: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -153,13 +155,25 @@ async function sendTrainingEvent(event) {
 export function recordAttempt({ lesson, wpm, accuracy, passed }) {
   const progress = loadProgress();
   const prev = lessonState(progress, lesson.id);
+  const required = lesson.requiredPasses || 1;
+  const firstPass = Boolean(passed) && prev.passCount < required;
   const next = {
     attempts: prev.attempts + 1,
-    passCount: prev.passCount + (passed ? 1 : 0),
+    passCount: Math.min(required, prev.passCount + (passed ? 1 : 0)),
     bestWpm: Math.max(prev.bestWpm, wpm),
     bestAccuracy: Math.max(prev.bestAccuracy, accuracy),
+    lastWpm: Math.round(wpm * 10) / 10,
+    lastAccuracy: Math.round(accuracy * 10) / 10,
+    lastPassed: Boolean(passed),
+    completedAt: firstPass ? new Date().toISOString() : prev.completedAt || null,
   };
   progress.lessons[lesson.id] = next;
+  const xpEarned = firstPass ? 100 : passed ? 10 : 0;
+  progress.totalXp = (Number(progress.totalXp) || 0) + xpEarned;
+  progress.badges = Array.isArray(progress.badges) ? progress.badges : [];
+  if (next.passCount >= required && !progress.badges.includes(`lesson:${lesson.id}`)) {
+    progress.badges = [...progress.badges, `lesson:${lesson.id}`];
+  }
   saveProgress(progress);
 
   sendTrainingEvent({
@@ -170,7 +184,20 @@ export function recordAttempt({ lesson, wpm, accuracy, passed }) {
     passed: Boolean(passed),
   });
 
-  return next;
+  return { ...next, xpEarned, totalXp: progress.totalXp };
+}
+
+export function getCourseSummary(progress, lessonSequence) {
+  const passedLessons = lessonSequence.filter((lesson) => isLessonPassed(progress, lesson));
+  const currentLesson = lessonSequence.find((lesson) => !isLessonPassed(progress, lesson)) || lessonSequence[lessonSequence.length - 1] || null;
+  return {
+    totalLessons: lessonSequence.length,
+    passedLessons: passedLessons.length,
+    percentage: lessonSequence.length ? Math.round((passedLessons.length / lessonSequence.length) * 100) : 0,
+    currentLesson,
+    completed: lessonSequence.length > 0 && passedLessons.length === lessonSequence.length,
+    totalXp: Number(progress.totalXp) || 0,
+  };
 }
 
 export function setCurrentLesson(lessonId) {

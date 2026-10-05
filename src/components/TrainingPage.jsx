@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PlacementTest from './PlacementTest';
 import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
+import CourseDashboard from './CourseDashboard';
 import { getLessonById, getNextLessonId, LESSON_SEQUENCE } from './curriculum';
 import {
   isPlacementDone,
@@ -73,10 +74,18 @@ export default function TrainingPage() {
 
   return (
     <div className="training-page training-page--curriculum">
+      <div className="training-page__course-header">
+        <CourseDashboard
+          progress={progress}
+          lessons={LESSON_SEQUENCE}
+          onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
+        />
+      </div>
       <aside className="training-page__sidebar">
         <CurriculumMap
           progress={progress}
           currentLessonId={currentLessonId}
+          activeLessonId={activeLessonId}
           onSelectLesson={handleSelectLesson}
         />
       </aside>

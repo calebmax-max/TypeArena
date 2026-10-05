@@ -42,6 +42,7 @@ from sponsored_event_features import (
     record_sponsored_event_attempt,
     register_sponsored_event_routes,
 )
+from training_features import register_training_routes
 try:
     from flask_compress import Compress
 except ImportError:  # pragma: no cover - only hit if the dependency isn't installed yet
@@ -10990,6 +10991,13 @@ _ensure_sponsored_event_tables = register_sponsored_event_routes(
     is_admin_email=lambda email: _is_admin_email(email),
 )
 
+_ensure_training_tables = register_training_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+)
+
 
 def _bootstrap_db() -> None:
     """Create all required tables and columns once at startup."""
@@ -11016,6 +11024,7 @@ def _bootstrap_db() -> None:
                 _ensure_progression_tables(cur)
                 _ensure_certification_tables(cur)
                 _ensure_sponsored_event_tables(cur)
+                _ensure_training_tables(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_terms_acceptance_columns(cur)
                 _ensure_user_equipped_columns(cur)

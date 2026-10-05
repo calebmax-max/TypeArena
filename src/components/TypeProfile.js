@@ -792,6 +792,14 @@ export default function TypeProfile() {
             </div>
           </div>
 
+          <button
+            type="button"
+            className="tp-btn tp-btn--primary tp-btn--full"
+            onClick={() => navigate('/training')}
+          >
+            Continue training
+          </button>
+
           {/* Equipped items */}
           <div className="tp-equipped">
             <h3 className="tp-equipped__title">Equipped</h3>
