@@ -1417,6 +1417,15 @@
     border-color: rgba(79,255,176,0.5);
     box-shadow: 0 0 0 3px rgba(79,255,176,0.1);
   }
+  .tp-input option {
+    background: #0d111c;
+    color: #edf0ff;
+  }
+  .tp-field__hint {
+    color: var(--tp-muted);
+    font-size: 0.72rem;
+    line-height: 1.4;
+  }
   .tp-input-row { display: flex; gap: 0.5rem; align-items: center; }
   .tp-form { display: flex; flex-direction: column; gap: 1rem; }
   .tp-form__title {

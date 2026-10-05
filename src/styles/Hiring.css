@@ -1,0 +1,41 @@
+.hiring-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  background: var(--muted, #171b2a);
+  color: var(--foreground, #eef2ff);
+  font: inherit;
+}
+
+.hiring-input::placeholder {
+  color: var(--muted-foreground, #aeb6cc);
+  opacity: 1;
+}
+
+.hiring-input:focus {
+  outline: none;
+  border-color: var(--primary, #4fffb0);
+  box-shadow: 0 0 0 3px var(--ring, rgba(79, 255, 176, 0.2));
+}
+
+.hiring-input option {
+  background: #111827;
+  color: #eef2ff;
+}
+
+.hiring-input[type='number'] {
+  margin-top: 0.35rem;
+}
+
+.hiring-passage {
+  background: #edf2fa;
+  color: #172033;
+}
+
+@media (max-width: 640px) {
+  .hiring-input {
+    font-size: 16px;
+  }
+}
