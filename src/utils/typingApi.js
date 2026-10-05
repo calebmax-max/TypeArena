@@ -345,6 +345,48 @@ export const signupUser = async (username, email, password, phoneNumber, terms =
   }
 };
 
+// --- TypeArena Hiring ---
+export const fetchHiringSummary = async () => {
+  const response = await apiFetch(buildApiUrl('/api/hiring/summary'), { headers: buildHeaders() });
+  return parseResponse(response);
+};
+
+export const fetchHiringTests = async () => {
+  const response = await apiFetch(buildApiUrl('/api/hiring/tests'), { headers: buildHeaders() });
+  return parseResponse(response);
+};
+
+export const createHiringTest = async (payload) => {
+  const response = await apiFetch(buildApiUrl('/api/hiring/tests'), {
+    method: 'POST', headers: buildHeaders(), body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+};
+
+export const fetchHiringTest = async (publicCode) => {
+  const response = await apiFetch(buildApiUrl(`/api/hiring/tests/${encodeURIComponent(publicCode)}`), { headers: buildHeaders() });
+  return parseResponse(response);
+};
+
+export const startHiringTest = async (publicCode) => {
+  const response = await apiFetch(buildApiUrl(`/api/hiring/tests/${encodeURIComponent(publicCode)}/start`), {
+    method: 'POST', headers: buildHeaders(), body: JSON.stringify({}),
+  });
+  return parseResponse(response);
+};
+
+export const submitHiringAttempt = async (attemptId, payload) => {
+  const response = await apiFetch(buildApiUrl(`/api/hiring/attempts/${encodeURIComponent(attemptId)}/submit`), {
+    method: 'POST', headers: buildHeaders(), body: JSON.stringify(payload),
+  });
+  return parseResponse(response);
+};
+
+export const fetchHiringAttempts = async (testId) => {
+  const response = await apiFetch(buildApiUrl(`/api/hiring/tests/${encodeURIComponent(testId)}/attempts`), { headers: buildHeaders() });
+  return parseResponse(response);
+};
+
 // Records that the signed-in user accepted the current Terms (existing accounts).
 export const acceptTerms = async (version) => {
   const response = await apiFetch(buildApiUrl('/api/user/accept-terms'), {

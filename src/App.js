@@ -27,6 +27,7 @@ import TermsUpdateGate from './components/TermsUpdateGate';
 import SchoolDashboard from './components/SchoolDashboard';
 import CertificationTest, { CertificateVerification } from './components/Certification';
 import Tournaments from './components/Tournaments';
+import { EmployerHiring, CandidateHiringTest } from './components/Hiring';
 
 
 
@@ -270,6 +271,7 @@ function AppLayout() {
             <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
             <NavLink data-tour="nav-tournaments" to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
             <NavLink to="/school" className={navLinkClassName}>School</NavLink>
+            {currentUser?.accountRole === 'employer' && <NavLink to="/hiring" className={navLinkClassName}>Hiring</NavLink>}
             <NavLink to="/certification" className={navLinkClassName}>Get Certified</NavLink>
             <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
             {!isProUser && currentUser && (
@@ -300,6 +302,8 @@ function AppLayout() {
           <Route path="/tournaments" element={<Tournaments />} />
           <Route path="/tournaments/:eventId/race" element={<Play practicePage sponsoredEventMode />} />
           <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
+          <Route path="/hiring" element={<EmployerHiring currentUser={currentUser} />} />
+          <Route path="/test/:publicCode" element={<CandidateHiringTest currentUser={currentUser} />} />
           <Route path="/certification" element={<CertificationTest />} />
           <Route path="/verify/:certificateId" element={<CertificateVerification />} />
           <Route path="/admin" element={<AdminPanel />} />

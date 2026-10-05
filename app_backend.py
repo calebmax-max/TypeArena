@@ -33,6 +33,7 @@ from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 from school_features import register_school_routes
 from foundation_features import per_key_error_counts, register_foundation_routes
+from hiring_features import register_hiring_routes
 from progression_features import award_race_progress, register_progression_routes
 from certification_features import register_certification_routes
 from sponsored_event_features import (
@@ -10949,6 +10950,14 @@ _ensure_foundation_tables = register_foundation_routes(
     admin_email=ADMIN_EMAIL,
 )
 
+_ensure_hiring_tables = register_hiring_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+    is_admin_email=lambda email: _is_admin_email(email),
+)
+
 _ensure_progression_tables = register_progression_routes(
     app,
     get_connection=lambda: get_connection(),
@@ -10999,6 +11008,7 @@ def _bootstrap_db() -> None:
                 _ensure_admin_impersonation_log_table(cur)
                 _ensure_school_tables(cur)
                 _ensure_foundation_tables(cur)
+                _ensure_hiring_tables(cur)
                 _ensure_progression_tables(cur)
                 _ensure_certification_tables(cur)
                 _ensure_sponsored_event_tables(cur)
