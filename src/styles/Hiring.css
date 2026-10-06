@@ -4,8 +4,8 @@
   border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
   border-radius: 10px;
   padding: 0.7rem 0.85rem;
-  background: var(--muted, #171b2a);
-  color: var(--foreground, #eef2ff);
+  background: #0c1512;
+  color: #edf8f2;
   font: inherit;
 }
 
@@ -16,8 +16,8 @@
 
 .hiring-input:focus {
   outline: none;
-  border-color: var(--primary, #4fffb0);
-  box-shadow: 0 0 0 3px var(--ring, rgba(79, 255, 176, 0.2));
+  border-color: #d6a63a;
+  box-shadow: 0 0 0 3px rgba(214, 166, 58, .18);
 }
 
 .hiring-input option {
@@ -27,6 +27,83 @@
 
 .hiring-input[type='number'] {
   margin-top: 0.35rem;
+}
+
+.hiring-page {
+  width: min(1120px, calc(100% - 32px)) !important;
+  padding: 32px 0 64px !important;
+}
+
+.hiring-page > div,
+.hiring-page > section {
+  min-width: 0;
+}
+
+.hiring-page > div:first-child {
+  background: linear-gradient(135deg, #153a2c, #10251d) !important;
+  padding: clamp(22px, 4vw, 42px) !important;
+}
+
+.hiring-page > div:first-child h1 {
+  max-width: 760px;
+  margin: .35rem 0 .8rem;
+  color: #f5ead0;
+  font-size: clamp(1.8rem, 4vw, 3.2rem);
+  line-height: 1.05;
+}
+
+.hiring-page > section[style*='var(--tp-paper'] {
+  background: #10251d !important;
+}
+
+.hiring-page h2 {
+  color: #f5ead0;
+  margin-top: 0;
+}
+
+.hiring-page small {
+  color: rgba(237, 248, 242, .64);
+  overflow-wrap: anywhere;
+}
+
+.hiring-page > section:nth-of-type(2) > div {
+  border-color: rgba(123, 224, 168, .16) !important;
+}
+
+.hiring-page table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.hiring-page th,
+.hiring-page td {
+  padding: .8rem .65rem;
+  border-bottom: 1px solid rgba(123, 224, 168, .14);
+  text-align: left;
+  vertical-align: top;
+}
+
+.hiring-page th {
+  color: #d6a63a;
+  font-size: .75rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hiring-page td {
+  color: #edf8f2;
+}
+
+.hiring-page .btn-primary {
+  background: #d6a63a;
+  border-color: #d6a63a;
+  color: #172015;
+}
+
+.hiring-page .btn-secondary {
+  background: rgba(123, 224, 168, .12);
+  border-color: rgba(123, 224, 168, .28);
+  color: #9be8bd;
 }
 
 .hiring-passage {
@@ -54,6 +131,43 @@
 }
 
 @media (max-width: 640px) {
+  .hiring-page {
+    width: min(100% - 20px, 620px) !important;
+    padding-top: 16px !important;
+  }
+
+  .hiring-page > div:first-child,
+  .hiring-page > section {
+    padding: 18px !important;
+    border-radius: 14px !important;
+  }
+
+  .hiring-page table,
+  .hiring-page thead,
+  .hiring-page tbody,
+  .hiring-page tr,
+  .hiring-page th,
+  .hiring-page td {
+    display: block;
+    width: 100%;
+  }
+
+  .hiring-page thead {
+    display: none;
+  }
+
+  .hiring-page tr {
+    padding: .75rem 0;
+  }
+
+  .hiring-page td {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .45rem 0;
+    border-bottom: 0;
+  }
+
   .hiring-input {
     font-size: 16px;
   }
