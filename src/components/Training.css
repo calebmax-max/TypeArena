@@ -815,9 +815,10 @@
 .training-placement__instructions,
 .training-map__panel,
 .training-hand-guide { background: rgba(20, 37, 29, .96); }
-.training-placement__input,
-.training-typing-box__input { background: #f8fbf9; color: #16281f; }
-.training-typing-box__input:disabled { background: #dfeae2; color: #51675b; }
+.training-placement__input { background: #f8fbf9; color: #16281f; }
+.training-typing-box__input { background: #0c1512; color: #edf8f2; border-color: rgba(123, 224, 168, .3); caret-color: #7be0a8; }
+.training-typing-box__input::placeholder { color: rgba(237, 248, 242, .45); }
+.training-typing-box__input:disabled { background: #14251d; color: rgba(237, 248, 242, .58); }
 
 .training-lesson__live-stats { background: rgba(17, 37, 29, .96); }
 .training-state-card--error { background: rgba(72, 26, 26, .9); }
