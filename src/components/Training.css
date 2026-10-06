@@ -3,18 +3,18 @@
    ========================================================================== */
 
 :root {
-  --tp-ink: #16281f;
-  --tp-paper: #f6f8f4;
-  --tp-forest: #1f4d3b;
-  --tp-forest-dark: #163a2c;
-  --tp-moss: #2f6f4f;
-  --tp-moss-hover: #285f43;
+  --tp-ink: #edf8f2;
+  --tp-paper: #11251d;
+  --tp-forest: #7be0a8;
+  --tp-forest-dark: #dff8e9;
+  --tp-moss: #63cab7;
+  --tp-moss-hover: #7be0a8;
   --tp-mint: #7be0a8;
-  --tp-sage: #e3f0e6;
-  --tp-sage-border: #bfdac9;
-  --tp-muted: #6b7570;
-  --tp-rust: #b3423a;
-  --tp-rust-bg: #fbe6e4;
+  --tp-sage: rgba(123, 224, 168, .12);
+  --tp-sage-border: rgba(123, 224, 168, .24);
+  --tp-muted: rgba(237, 248, 242, .66);
+  --tp-rust: #fca5a5;
+  --tp-rust-bg: rgba(179, 66, 58, .2);
   --tp-radius: 10px;
 }
 
@@ -767,3 +767,61 @@
 .training-state-card p { margin: .4rem 0; line-height: 1.6; color: var(--tp-ink); }
 .training-state-card__eyebrow { color: var(--tp-rust); font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .training-state-card__hint { color: var(--tp-muted) !important; font-size: .9rem; }
+
+/* Dashboard-aligned dark workspace theme. */
+.training-page {
+  width: min(100%, 1200px);
+  background: linear-gradient(135deg, #0c1512 0%, #10251d 58%, #132c21 100%);
+  border-radius: 24px;
+}
+
+.training-course-dashboard,
+.training-course-outcome,
+.training-pathway,
+.training-stage-card,
+.training-lesson__objective,
+.training-beginner-guide,
+.training-placement__result,
+.training-state-card,
+.training-loading-card {
+  background: linear-gradient(135deg, rgba(20, 37, 29, .96), rgba(16, 33, 25, .92));
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .16);
+}
+
+.training-course-dashboard h1,
+.training-course-dashboard h2,
+.training-course-outcome__heading h2,
+.training-pathway__heading h2,
+.training-stage-card strong,
+.training-lesson__header h2,
+.training-lesson__objective h3,
+.training-beginner-guide h3,
+.training-placement h1,
+.training-placement h2,
+.training-state-card h1,
+.training-loading-card h1 { color: #fff; -webkit-text-fill-color: #fff; }
+
+.training-course-outcome__grid div,
+.training-beginner-guide__grid div { background: rgba(123, 224, 168, .07); }
+
+.training-assessment-callout,
+.training-assessment-callout--ready { background: rgba(123, 224, 168, .08); }
+
+.training-map__lesson-button,
+.training-map__back { background: rgba(20, 37, 29, .96); color: var(--tp-ink); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+.training-map__lesson--current .training-map__lesson-button { background: rgba(123, 224, 168, .16); color: #dff8e9; }
+.training-map__lesson--passed .training-map__lesson-button { background: transparent; }
+
+.training-placement__instructions,
+.training-map__panel,
+.training-hand-guide { background: rgba(20, 37, 29, .96); }
+.training-placement__input,
+.training-typing-box__input { background: #f8fbf9; color: #16281f; }
+.training-typing-box__input:disabled { background: #dfeae2; color: #51675b; }
+
+.training-lesson__live-stats { background: rgba(17, 37, 29, .96); }
+.training-state-card--error { background: rgba(72, 26, 26, .9); }
+
+@media (min-width: 821px) {
+  .App--workspace main:has(.training-page) { background: #0c1512; }
+}
