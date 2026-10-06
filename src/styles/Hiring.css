@@ -106,6 +106,13 @@
   color: #9be8bd;
 }
 
+.hiring-copy-link {
+  margin: .55rem 0 0;
+  display: block;
+  font-size: .78rem;
+  padding: .4rem .7rem;
+}
+
 .hiring-passage {
   background: #edf2fa;
   color: #172033;
