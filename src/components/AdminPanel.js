@@ -44,6 +44,10 @@ import {
   updateAdminTrainingLesson,
   archiveAdminTrainingLesson,
   fetchAdminTrainingProgress,
+  fetchAdminPracticalTasks,
+  createAdminPracticalTask,
+  updateAdminPracticalTask,
+  archiveAdminPracticalTask,
   setAdminSchoolOrganizationActive,
   setAdminSchoolClassActive,
 } from '../utils/typingApi';
@@ -87,6 +91,7 @@ const NAV_ITEMS = [
   { id: 'leaderboard', label: 'Leaderboard', icon: 'L' },
   { id: 'content', label: 'Content', icon: 'C' },
   { id: 'training', label: 'Training Courses', icon: 'TR' },
+  { id: 'skillsLab', label: 'Skills Lab', icon: 'SL' },
   { id: 'marketplace', label: 'Marketplace', icon: 'MK' },
   { id: 'ai', label: 'AI Settings', icon: 'AI' },
   { id: 'schools', label: 'Schools', icon: 'S' },
@@ -100,6 +105,7 @@ const SECTION_META = {
   leaderboard: ['Leaderboard', 'Tune ranking thresholds and public competition settings.'],
   content: ['Content', 'Maintain the passages, announcements, and assessment material.'],
   training: ['Training Courses', 'Build structured learning paths and review learner impact.'],
+  skillsLab: ['Skills Lab', 'Create practical tasks and control their automatic verification rules.'],
   marketplace: ['Marketplace', 'Manage the catalogue, pricing, and availability.'],
   ai: ['AI Settings', 'Control coaching providers and safe fallback behavior.'],
   schools: ['Schools', 'Support organisations, classes, and learner outcomes.'],
@@ -132,6 +138,8 @@ export default function AdminPanel() {
   const [trainingCourses, setTrainingCourses] = useState([]);
   const [trainingProgress, setTrainingProgress] = useState([]);
   const [trainingImpact, setTrainingImpact] = useState(null);
+  const [practicalTasks, setPracticalTasks] = useState([]);
+  const [practicalTaskForm, setPracticalTaskForm] = useState({ id: null, slug: '', title: '', category: 'General', taskType: 'text', objective: '', instructions: '', hint: '', optionsJson: '[]', verificationJson: '{}', isArchived: false });
   const [trainingCourseForm, setTrainingCourseForm] = useState({ id: null, title: '', description: '', stageNumber: '', stageFocus: '', skillLevel: '', targetSkill: '', expectedDuration: '', practicalOutcome: '', assessmentRequirements: '', certificateOutcome: '', jobRelevance: '', gateWpm: 0, gateAccuracy: 90, price: 0, isPro: false, prerequisiteCourseId: '', isArchived: false });
   const [trainingLessonForm, setTrainingLessonForm] = useState({ id: null, courseId: '', unitTitle: 'Course lessons', lessonType: 'practice', objective: '', title: '', content: '', targetWpm: 10, targetAccuracy: 90, durationSeconds: 120, orderNumber: 1, isArchived: false });
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
@@ -196,6 +204,15 @@ export default function AdminPanel() {
         setTrainingImpact(progress?.impact || null);
       })
       .catch((error) => { if (active) setNotice(error.message || 'Could not load training courses.'); });
+    return () => { active = false; };
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection !== 'skillsLab') return undefined;
+    let active = true;
+    fetchAdminPracticalTasks()
+      .then((data) => { if (active) setPracticalTasks(Array.isArray(data?.tasks) ? data.tasks : []); })
+      .catch((error) => { if (active) setNotice(error.message || 'Could not load Skills Lab tasks.'); });
     return () => { active = false; };
   }, [activeSection]);
   const [deletingTournamentId, setDeletingTournamentId] = useState(null);
@@ -445,6 +462,29 @@ export default function AdminPanel() {
     if (!window.confirm(`Archive ${lesson.title}?`)) return;
     await archiveAdminTrainingLesson(lesson.id);
     setTrainingCourses((items) => items.map((course) => ({ ...course, lessons: (course.lessons || []).map((item) => item.id === lesson.id ? { ...item, is_archived: 1 } : item) })));
+  };
+
+  const resetPracticalTaskForm = () => setPracticalTaskForm({ id: null, slug: '', title: '', category: 'General', taskType: 'text', objective: '', instructions: '', hint: '', optionsJson: '[]', verificationJson: '{}', isArchived: false });
+  const handlePracticalTaskSave = async (event) => {
+    event.preventDefault();
+    try {
+      const payload = {
+        ...practicalTaskForm,
+        options: JSON.parse(practicalTaskForm.optionsJson || '[]'),
+        verification: JSON.parse(practicalTaskForm.verificationJson || '{}'),
+      };
+      if (practicalTaskForm.id) await updateAdminPracticalTask(practicalTaskForm.id, payload);
+      else await createAdminPracticalTask(payload);
+      const result = await fetchAdminPracticalTasks();
+      setPracticalTasks(result.tasks || []);
+      resetPracticalTaskForm();
+      showNotice('Skills Lab task saved.');
+    } catch (error) { showNotice(error.message || 'Use valid JSON for options and verification rules.'); }
+  };
+  const handlePracticalTaskArchive = async (task) => {
+    if (!window.confirm(`Archive ${task.title}?`)) return;
+    await archiveAdminPracticalTask(task.id);
+    setPracticalTasks((items) => items.map((item) => item.id === task.id ? { ...item, isArchived: true } : item));
   };
 
   const resetMarketplaceForm = () => setMarketplaceForm({ id: '', name: '', category: 'typingThemes', price: '', rarity: 'common', collection: '', description: '', benefit: '', isActive: true });
@@ -1923,6 +1963,39 @@ export default function AdminPanel() {
                 ))}
                 {trainingImpact && <div className="ap-card"><p className="ap-card-title">Training impact</p><div className="ap-metrics-secondary"><span>Learners: <strong>{trainingImpact.learners}</strong></span><span>Attempts: <strong>{trainingImpact.attempts}</strong></span><span>Pass rate: <strong>{Math.round(Number(trainingImpact.passRate || 0) * 100)}%</strong></span><span>Active 30d: <strong>{trainingImpact.activeLearners30d}</strong></span><span>Average: <strong>{trainingImpact.averageWpm} WPM / {trainingImpact.averageAccuracy}%</strong></span></div></div>}
                 <div className="ap-card"><p className="ap-card-title">Learner testing progress</p><table className="ap-table"><thead><tr><th>Lesson</th><th>Attempts</th><th>Passes</th><th>Average</th></tr></thead><tbody>{trainingProgress.map((row) => <tr key={row.lesson_id}><td>{row.lesson_id}</td><td>{row.attempts}</td><td>{row.passes || 0}</td><td>{row.average_wpm || 0} WPM / {row.average_accuracy || 0}%</td></tr>)}</tbody></table></div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeSection === 'skillsLab' && (
+              <>
+                <div className="ap-section-header">
+                  <h1 className="ap-section-title">Skills Lab</h1>
+                  <p className="ap-section-sub">Create practical tasks and define how learner evidence is automatically verified.</p>
+                </div>
+                <div className="ap-training-layout">
+                  <div className="ap-training-forms">
+                    <div className="ap-card">
+                      <p className="ap-card-title">{practicalTaskForm.id ? 'Edit task' : 'Create task'}</p>
+                      <form onSubmit={handlePracticalTaskSave} className="ap-form-grid">
+                        <input className="ap-input" placeholder="Unique slug" value={practicalTaskForm.slug} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, slug: e.target.value }))} required />
+                        <input className="ap-input" placeholder="Task title" value={practicalTaskForm.title} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, title: e.target.value }))} required />
+                        <input className="ap-input" placeholder="Category" value={practicalTaskForm.category} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, category: e.target.value }))} required />
+                        <select className="ap-input" value={practicalTaskForm.taskType} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, taskType: e.target.value }))}><option value="text">Text response</option><option value="email">Email response</option><option value="choice">Multiple choice</option></select>
+                        <textarea className="ap-textarea" rows={2} placeholder="Learning objective" value={practicalTaskForm.objective} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, objective: e.target.value }))} required />
+                        <textarea className="ap-textarea" rows={4} placeholder="Task instructions" value={practicalTaskForm.instructions} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, instructions: e.target.value }))} required />
+                        <textarea className="ap-textarea" rows={2} placeholder="Hint" value={practicalTaskForm.hint} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, hint: e.target.value }))} />
+                        <textarea className="ap-textarea" rows={3} placeholder='Options JSON, e.g. [{"value":"yes","label":"Yes"}]' value={practicalTaskForm.optionsJson} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, optionsJson: e.target.value }))} />
+                        <textarea className="ap-textarea" rows={4} placeholder='Verification JSON, e.g. {"requiredTerms":["invoice"],"minLength":30}' value={practicalTaskForm.verificationJson} onChange={(e) => setPracticalTaskForm((v) => ({ ...v, verificationJson: e.target.value }))} />
+                        <button className="ap-btn" type="submit">{practicalTaskForm.id ? 'Save task' : 'Add task'}</button>
+                      </form>
+                    </div>
+                  </div>
+                  <div className="ap-training-catalog">
+                    <div className="ap-card"><p className="ap-card-title">Task catalogue</p><table className="ap-table"><thead><tr><th>Task</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+                      {practicalTasks.map((task) => <tr key={task.id}><td><strong>{task.title}</strong><small style={{ display: 'block' }}>{task.category} · {task.slug}</small></td><td>{task.taskType}</td><td>{task.isArchived ? 'Archived' : 'Published'}</td><td><button className="ap-btn ap-btn-sm" onClick={() => setPracticalTaskForm({ id: task.id, slug: task.slug, title: task.title, category: task.category, taskType: task.taskType, objective: task.objective || '', instructions: task.instructions || '', hint: task.hint || '', optionsJson: JSON.stringify(task.options || [], null, 2), verificationJson: JSON.stringify(task.verification || {}, null, 2), isArchived: Boolean(task.isArchived) })}>Edit</button>{!task.isArchived && <button className="ap-btn ap-btn-sm" onClick={() => handlePracticalTaskArchive(task)}>Archive</button>}</td></tr>)}
+                    </tbody></table>{!practicalTasks.length && <div className="ap-empty">No Skills Lab tasks yet.</div>}</div>
                   </div>
                 </div>
               </>

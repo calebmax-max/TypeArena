@@ -52,6 +52,10 @@ export const revokeSkillsPassport = async () => parseResponse(await apiFetch(bui
 export const fetchPublicSkillsPassport = async (shareCode) => parseResponse(await apiFetch(buildApiUrl(`/api/skills-passport/${encodeURIComponent(shareCode)}`)));
 export const fetchPracticalTasks = async () => parseResponse(await apiFetch(buildApiUrl('/api/practical-tasks')));
 export const submitPracticalTask = async (slug, response) => parseResponse(await apiFetch(buildApiUrl(`/api/practical-tasks/${encodeURIComponent(slug)}/submit`), { method: 'POST', headers: buildHeaders(), body: JSON.stringify(response) }));
+export const fetchAdminPracticalTasks = async () => parseResponse(await apiFetch(buildApiUrl('/api/admin/practical-tasks'), { headers: buildAdminHeaders() }));
+export const createAdminPracticalTask = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/admin/practical-tasks'), { method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
+export const updateAdminPracticalTask = async (id, payload) => parseResponse(await apiFetch(buildApiUrl(`/api/admin/practical-tasks/${id}`), { method: 'PUT', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
+export const archiveAdminPracticalTask = async (id) => parseResponse(await apiFetch(buildApiUrl(`/api/admin/practical-tasks/${id}`), { method: 'DELETE', headers: buildAdminHeaders() }));
 
 export const fetchAdminTrainingCourses = async () => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { headers: buildAdminHeaders() }));
 export const createAdminTrainingCourse = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
