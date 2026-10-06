@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from flask import jsonify, request
+import base64
+import binascii
+import hashlib
+import hmac
 import json
+import os
+import time
 
 
 LESSON_TARGETS = {
@@ -34,6 +40,40 @@ STAGE_SEEDS = [
     (9, 'Specializations', 'Coding, data entry, and professional tracks', 0, 95, [('Coding essentials', 'function typeFast() { return accuracy + rhythm; }', 35, 95, 'challenge'), ('Data entry', 'Account 2048: KES 12500.00; status: approved.', 35, 95, 'challenge'), ('Specialization assessment', 'Choose a track and prove your accuracy under pressure.', 40, 95, 'test')]),
     (10, 'Certification Exam', 'Final verified typing assessment', 50, 96, [('Certification preparation', 'Review your weakest keys and settle into a steady rhythm.', 35, 96, 'practice'), ('Certification mock exam', 'This timed mock exam measures speed, accuracy, and control.', 45, 96, 'challenge'), ('Certification exam', 'Complete the final assessment without rushing or looking down.', 50, 96, 'test')]),
 ]
+
+
+def _training_attempt_secret() -> bytes:
+    return (os.getenv('TYPEARENA_TRAINING_ATTEMPT_SECRET') or os.getenv('SECRET_KEY') or 'typearena-training-attempt-secret').encode('utf-8')
+
+
+def _training_token(payload: dict) -> str:
+    encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(',', ':')).encode('utf-8')).decode('ascii').rstrip('=')
+    signature = hmac.new(_training_attempt_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest()
+    return f'{encoded}.{signature}'
+
+
+def _verify_training_token(token: str, user_id: int, lesson_id: str) -> dict:
+    encoded, separator, signature = str(token or '').partition('.')
+    if not separator or not hmac.compare_digest(
+        hmac.new(_training_attempt_secret(), encoded.encode('ascii'), hashlib.sha256).hexdigest(), signature
+    ):
+        raise ValueError('Invalid training attempt token.')
+    padded = encoded + ('=' * (-len(encoded) % 4))
+    payload = json.loads(base64.urlsafe_b64decode(padded.encode('ascii')).decode('utf-8'))
+    if int(payload.get('userId')) != int(user_id) or str(payload.get('lessonId')) != str(lesson_id):
+        raise ValueError('Training attempt token does not match this lesson.')
+    if float(payload.get('expiresAt') or 0) < time.time():
+        raise ValueError('Training attempt has expired.')
+    return payload
+
+
+def _server_typing_stats(target_text: str, typed_text: str, started_at: float) -> tuple[float, float]:
+    elapsed_seconds = max(0.001, time.time() - float(started_at or time.time()))
+    words_typed = len(typed_text.strip()) / 5
+    wpm = max(0.0, round(words_typed / max(elapsed_seconds / 60, 1 / 60), 1))
+    correct = sum(1 for index, char in enumerate(typed_text[:len(target_text)]) if target_text[index] == char)
+    accuracy = max(0.0, min(100.0, round((correct / len(typed_text)) * 100, 1))) if typed_text else 0.0
+    return wpm, accuracy
 
 
 def register_training_routes(app, *, get_connection, return_connection, get_user, is_admin=None):
@@ -145,6 +185,38 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 return jsonify({'keys': keys[:8]})
         finally: return_connection(conn)
 
+    @app.get('/api/training/progress')
+    def training_progress():
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user:
+                return jsonify({'lessons': {}, 'totalXp': 0})
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('''SELECT lesson_id, COUNT(*) attempts, SUM(passed) pass_count,
+                    MAX(wpm) best_wpm, MAX(accuracy) best_accuracy,
+                    SUBSTRING_INDEX(GROUP_CONCAT(wpm ORDER BY created_at DESC), ',', 1) last_wpm,
+                    SUBSTRING_INDEX(GROUP_CONCAT(accuracy ORDER BY created_at DESC), ',', 1) last_accuracy,
+                    MAX(CASE WHEN passed=1 THEN created_at ELSE NULL END) completed_at
+                    FROM training_attempts WHERE user_id=%s GROUP BY lesson_id''', (user['id'],))
+                rows = cur.fetchall()
+                cur.execute('SELECT COALESCE(SUM(xp_earned),0) total_xp FROM training_attempts WHERE user_id=%s', (user['id'],))
+                total_xp = int((cur.fetchone() or {}).get('total_xp') or 0)
+                return jsonify({'lessons': {
+                    str(row['lesson_id']): {
+                        'attempts': int(row.get('attempts') or 0),
+                        'passCount': int(row.get('pass_count') or 0),
+                        'bestWpm': float(row.get('best_wpm') or 0),
+                        'bestAccuracy': float(row.get('best_accuracy') or 0),
+                        'lastWpm': float(row.get('last_wpm') or 0),
+                        'lastAccuracy': float(row.get('last_accuracy') or 0),
+                        'completedAt': row.get('completed_at').isoformat() if row.get('completed_at') else None,
+                    } for row in rows
+                }, 'totalXp': total_xp})
+        finally:
+            return_connection(conn)
+
     def admin_allowed(conn):
         user = get_user(conn)
         return bool(user and (is_admin(user) if is_admin else user.get('is_admin') or user.get('isAdmin')))
@@ -246,6 +318,41 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 return jsonify({'lessons': cur.fetchall()})
         finally: return_connection(conn)
 
+    @app.post('/api/training/lessons/<int:lesson_id>/start')
+    def start_training_lesson(lesson_id):
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user:
+                return jsonify({'message': 'Sign in to start training.'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('''SELECT l.id,l.content,l.duration_seconds,c.prerequisite_course_id
+                    FROM training_lessons l JOIN training_courses c ON c.id=l.course_id
+                    WHERE l.id=%s AND l.is_archived=0 AND c.is_archived=0''', (lesson_id,))
+                lesson = cur.fetchone()
+                if not lesson:
+                    return jsonify({'message': 'Unknown training lesson.'}), 404
+                if lesson.get('prerequisite_course_id'):
+                    cur.execute('SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0', (lesson['prerequisite_course_id'],))
+                    total = int((cur.fetchone() or {}).get('total') or 0)
+                    cur.execute('''SELECT COUNT(DISTINCT a.lesson_id) passed FROM training_attempts a
+                        JOIN training_lessons l ON CAST(a.lesson_id AS UNSIGNED)=l.id
+                        WHERE a.user_id=%s AND l.course_id=%s AND a.passed=1 AND l.is_archived=0''', (user['id'], lesson['prerequisite_course_id']))
+                    passed = int((cur.fetchone() or {}).get('passed') or 0)
+                    if total == 0 or passed < total:
+                        return jsonify({'message': 'Complete the previous course before starting this one.'}), 403
+                now = time.time()
+                token = _training_token({
+                    'userId': int(user['id']), 'lessonId': str(lesson_id),
+                    'textHash': hashlib.sha256(str(lesson['content']).encode('utf-8')).hexdigest(),
+                    'startedAt': now, 'expiresAt': now + max(60, int(lesson.get('duration_seconds') or 120) + 300),
+                })
+                conn.commit()
+                return jsonify({'token': token, 'serverStartTs': now, 'durationSeconds': int(lesson.get('duration_seconds') or 120)})
+        finally:
+            return_connection(conn)
+
     @app.post('/api/training-events')
     def record_training_event():
         conn = get_connection()
@@ -285,18 +392,35 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             event_id = str(payload.get('eventId') or '').strip()
             if not event_id or len(event_id) > 96:
                 return jsonify({'message': 'A valid training event ID is required.'}), 400
-            wpm = max(0.0, min(999.0, float(payload.get('wpm') or 0)))
-            accuracy = max(0.0, min(100.0, float(payload.get('accuracy') or 0)))
+            attempt_token = payload.get('attemptToken')
+            typed_text = str(payload.get('typedText') or '')
+            if attempt_token:
+                attempt = _verify_training_token(attempt_token, int(user['id']), lesson_id)
+                with conn.cursor() as lesson_cur:
+                    lesson_cur.execute('SELECT content FROM training_lessons WHERE id=%s AND is_archived=0', (int(lesson_id),))
+                    server_lesson = lesson_cur.fetchone()
+                target_text = str((server_lesson or {}).get('content') or '')
+                if hashlib.sha256(target_text.encode('utf-8')).hexdigest() != str(attempt.get('textHash')):
+                    return jsonify({'message': 'Training passage does not match the server-issued attempt.'}), 400
+                wpm, accuracy = _server_typing_stats(target_text, typed_text, attempt['startedAt'])
+            else:
+                # Numeric database lessons are never allowed to trust client
+                # supplied scores. Legacy non-database lesson IDs remain
+                # compatible with the older placement/problem-key flow.
+                if numeric_lesson_id:
+                    return jsonify({'message': 'A signed training attempt is required.'}), 400
+                wpm = max(0.0, min(999.0, float(payload.get('wpm') or 0)))
+                accuracy = max(0.0, min(100.0, float(payload.get('accuracy') or 0)))
             passed = int(wpm >= min_wpm and accuracy >= min_accuracy)
             unit_id = str(payload.get('unitId') or '').strip()[:40] or None
             key_errors_json = json.dumps(payload.get('keyErrors') or {}, ensure_ascii=False)[:4000]
             with conn.cursor() as cur:
                 ensure_tables(cur)
-                cur.execute('SELECT id, passed, xp_earned FROM training_attempts WHERE user_id=%s AND event_id=%s', (int(user['id']), event_id))
+                cur.execute('SELECT id, passed, wpm, accuracy, xp_earned FROM training_attempts WHERE user_id=%s AND event_id=%s', (int(user['id']), event_id))
                 existing = cur.fetchone()
                 if existing:
                     conn.commit()
-                    return jsonify({'passed': bool(existing['passed']), 'xpEarned': int(existing['xp_earned'] or 0), 'duplicate': True})
+                    return jsonify({'passed': bool(existing['passed']), 'wpm': float(existing.get('wpm') or 0), 'accuracy': float(existing.get('accuracy') or 0), 'xpEarned': int(existing['xp_earned'] or 0), 'duplicate': True})
                 cur.execute('SELECT COUNT(*) AS count FROM training_attempts WHERE user_id=%s AND lesson_id=%s AND passed=1', (int(user['id']), lesson_id))
                 prior_passes = int((cur.fetchone() or {}).get('count') or 0)
                 xp_earned = 100 if passed and prior_passes == 0 else 10 if passed else 0
@@ -305,8 +429,8 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                     (int(user['id']), event_id, lesson_id, unit_id, wpm, accuracy, passed, xp_earned, key_errors_json))
                 conn.commit()
-                return jsonify({'passed': bool(passed), 'xpEarned': xp_earned, 'duplicate': False})
-        except (TypeError, ValueError):
+                return jsonify({'passed': bool(passed), 'wpm': wpm, 'accuracy': accuracy, 'xpEarned': xp_earned, 'duplicate': False})
+        except (TypeError, ValueError, KeyError, json.JSONDecodeError, binascii.Error):
             conn.rollback()
             return jsonify({'message': 'WPM and accuracy must be valid numbers.'}), 400
         finally:

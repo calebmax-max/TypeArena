@@ -1,11 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import TypingBox from './TypingBox';
 import { useTypingSession } from './useTypingSession';
 import { recordAttempt } from './trainingProgress';
+import { startTrainingLesson, submitTrainingAttempt } from '../utils/typingApi';
 
 export default function LessonRunner({ lesson, onLessonPassed }) {
   const [attemptKey, setAttemptKey] = useState(0);
   const [outcome, setOutcome] = useState(null); // { wpm, accuracy, passed, passCount }
+  const [attempt, setAttempt] = useState(null);
+  const [attemptError, setAttemptError] = useState('');
   // attemptKey isn't read inside generateLessonText - it exists purely to force a
   // fresh passage when moving on to the next required pass (nextAttempt).
   // A failed retry (retrySamePassage) intentionally leaves attemptKey alone
@@ -14,18 +17,41 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
   const targetText = useMemo(() => lesson.content || '', [lesson, attemptKey]);
   const required = 1;
 
+  useEffect(() => {
+    let active = true;
+    setAttempt(null);
+    setAttemptError('');
+    if (lesson.id === 'problem-keys') return undefined;
+    startTrainingLesson(lesson.id)
+      .then((result) => { if (active) setAttempt(result); })
+      .catch((error) => { if (active) setAttemptError(error.message || 'Could not start this lesson.'); });
+    return () => { active = false; };
+  }, [lesson.id]);
+
   const { typedText, finished, handleChange, reset, inputRef, liveStats } = useTypingSession(targetText, {
-    onFinish: (stats) => {
-      const passed = stats.wpm >= lesson.minWpm && stats.accuracy >= lesson.minAccuracy;
+    onFinish: async (stats, finalTypedText) => {
       const keyErrors = {};
       for (let index = 0; index < targetText.length; index += 1) {
-        if ((typedText[index] || '') !== targetText[index]) {
+        if ((finalTypedText[index] || '') !== targetText[index]) {
           const key = targetText[index];
           if (key && key.trim()) keyErrors[key] = (keyErrors[key] || 0) + 1;
         }
       }
-      const state = recordAttempt({ lesson, wpm: stats.wpm, accuracy: stats.accuracy, passed, keyErrors });
-      setOutcome({ ...stats, passed, passCount: state.passCount });
+      try {
+        const serverResult = attempt ? await submitTrainingAttempt({
+          eventId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+          lessonId: lesson.id,
+          unitId: lesson.unitId,
+          attemptToken: attempt.token,
+          typedText: finalTypedText,
+          keyErrors,
+        }) : null;
+        const result = serverResult || stats;
+        const state = recordAttempt({ lesson, wpm: result.wpm, accuracy: result.accuracy, passed: result.passed, keyErrors, skipServerSync: Boolean(serverResult) });
+        setOutcome({ ...stats, wpm: result.wpm, accuracy: result.accuracy, passed: Boolean(result.passed), passCount: state.passCount });
+      } catch (error) {
+        setAttemptError(error.message || 'Could not save this attempt. Please try again.');
+      }
     },
   });
 
@@ -80,6 +106,22 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
         )}
       </div>
 
+      {lesson.lessonType === 'intro' && (
+        <section className="training-beginner-guide" aria-labelledby="beginner-guide-title">
+          <div>
+            <span className="training-eyebrow">Start here</span>
+            <h3 id="beginner-guide-title">Your hands are learning a new map</h3>
+            <p>Speed can wait. Build the habit of returning to the home row after every key.</p>
+          </div>
+          <div className="training-beginner-guide__grid">
+            <div><strong>1. Sit comfortably</strong><span>Feet supported, shoulders loose, elbows near your sides, wrists level rather than pressed into the desk.</span></div>
+            <div><strong>2. Find home row</strong><span>Left fingers rest on A S D F. Right fingers rest on J K L ;. The small bumps on F and J help you reset without looking.</span></div>
+            <div><strong>3. Use the right finger</strong><span>Move only the finger reaching for a key, then return it home. Your thumbs share the space bar.</span></div>
+            <div><strong>4. Try it now</strong><span>Place both index fingers on F and J, look at the passage, and type slowly enough to keep every character correct.</span></div>
+          </div>
+        </section>
+      )}
+
       {!outcome && (
         <>
           {liveStats && (
@@ -87,12 +129,13 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
               {Math.round(liveStats.wpm)} WPM · {Math.round(liveStats.accuracy)}% accuracy so far
             </p>
           )}
+          {attemptError && <p className="training-lesson__error" role="alert">{attemptError}</p>}
           <TypingBox
             targetText={targetText}
             typedText={typedText}
             onChange={handleChange}
             inputRef={inputRef}
-            disabled={finished}
+            disabled={finished || (lesson.id !== 'problem-keys' && !attempt)}
             blockPaste
           />
         </>

@@ -70,6 +70,18 @@ export function loadProgress() {
   return readJson(STORAGE_KEY, defaultProgress());
 }
 
+export function applyServerProgress(serverProgress) {
+  const progress = loadProgress();
+  const serverLessons = serverProgress?.lessons && typeof serverProgress.lessons === 'object' ? serverProgress.lessons : {};
+  progress.lessons = { ...progress.lessons, ...serverLessons };
+  progress.totalXp = Number(serverProgress?.totalXp) || 0;
+  progress.badges = Object.entries(progress.lessons)
+    .filter(([, state]) => Number(state?.passCount) > 0)
+    .map(([lessonId]) => `lesson:${lessonId}`);
+  saveProgress(progress);
+  return progress;
+}
+
 function saveProgress(progress) {
   writeJson(STORAGE_KEY, { ...progress, updatedAt: new Date().toISOString() });
 }
@@ -157,7 +169,7 @@ function createEventId() {
  * can react without waiting on the network) and sends the event to the
  * backend for aggregate analytics.
  */
-export function recordAttempt({ lesson, wpm, accuracy, passed, keyErrors = {} }) {
+export function recordAttempt({ lesson, wpm, accuracy, passed, keyErrors = {}, skipServerSync = false }) {
   const progress = loadProgress();
   const prev = lessonState(progress, lesson.id);
   const required = lesson.requiredPasses || 1;
@@ -181,7 +193,7 @@ export function recordAttempt({ lesson, wpm, accuracy, passed, keyErrors = {} })
   }
   saveProgress(progress);
 
-  if (lesson.id === 'problem-keys') return { ...next, xpEarned, totalXp: progress.totalXp };
+  if (lesson.id === 'problem-keys' || skipServerSync) return { ...next, xpEarned, totalXp: progress.totalXp };
 
   sendTrainingEvent({
     eventId: createEventId(),

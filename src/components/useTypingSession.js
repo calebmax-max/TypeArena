@@ -25,7 +25,7 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
         typedText: finalTypedText,
         elapsedSeconds: elapsed,
       });
-      onFinish?.(stats);
+      onFinish?.(stats, finalTypedText);
     },
     [onFinish, startedAt, targetText],
   );

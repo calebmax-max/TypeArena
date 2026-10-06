@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
-import { fetchTrainingCourses, fetchTrainingProblemKeys } from '../utils/typingApi';
+import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress } from '../utils/typingApi';
 import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
   loadProgress,
   setCurrentLesson,
   getCurrentLessonId,
+  applyServerProgress,
   flushQueuedTrainingEvents,
 } from './trainingProgress';
 import './Training.css';
@@ -24,9 +25,14 @@ export default function TrainingPage() {
   const lessons = useMemo(() => flattenLessons(courses), [courses]);
 
   useEffect(() => {
-    flushQueuedTrainingEvents();
-    Promise.all([fetchTrainingCourses(), fetchTrainingProblemKeys()])
-      .then(([payload, problemPayload]) => { setCourses(normalizeCourseResponse(payload)); setProblemKeys(Array.isArray(problemPayload?.keys) ? problemPayload.keys : []); })
+    (async () => {
+      await flushQueuedTrainingEvents();
+      const [payload, problemPayload, progressPayload] = await Promise.all([fetchTrainingCourses(), fetchTrainingProblemKeys(), fetchTrainingProgress()]);
+      const hydrated = applyServerProgress(progressPayload);
+      setProgress(hydrated);
+      setCourses(normalizeCourseResponse(payload));
+      setProblemKeys(Array.isArray(problemPayload?.keys) ? problemPayload.keys : []);
+    })()
       .catch((err) => setError(err.message || 'Could not load training courses.'))
       .finally(() => setLoading(false));
   }, []);

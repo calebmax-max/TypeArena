@@ -33,6 +33,13 @@ export const fetchTrainingProblemKeys = async () => {
   const response = await apiFetch(buildApiUrl('/api/training/problem-keys'), { headers: buildHeaders() });
   return parseResponse(response);
 };
+export const fetchTrainingProgress = async () => parseResponse(await apiFetch(buildApiUrl('/api/training/progress'), { headers: buildHeaders() }));
+export const startTrainingLesson = async (lessonId) => parseResponse(await apiFetch(buildApiUrl(`/api/training/lessons/${encodeURIComponent(lessonId)}/start`), {
+  method: 'POST', headers: buildHeaders(), body: JSON.stringify({}),
+}));
+export const submitTrainingAttempt = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/training-events'), {
+  method: 'POST', headers: buildHeaders(), body: JSON.stringify(payload),
+}));
 
 export const fetchAdminTrainingCourses = async () => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { headers: buildAdminHeaders() }));
 export const createAdminTrainingCourse = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));

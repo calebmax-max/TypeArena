@@ -205,6 +205,36 @@
   text-transform: uppercase;
 }
 
+.training-beginner-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--tp-sage-border);
+  border-radius: var(--tp-radius);
+  background: linear-gradient(135deg, #fff 0%, var(--tp-sage) 100%);
+}
+
+.training-beginner-guide h3,
+.training-beginner-guide p { margin: .25rem 0 0; }
+.training-beginner-guide h3 { color: var(--tp-forest); }
+.training-beginner-guide p { color: var(--tp-muted); }
+.training-beginner-guide__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .8rem;
+}
+.training-beginner-guide__grid div {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  padding: .75rem;
+  border-radius: .6rem;
+  background: rgba(255, 255, 255, .72);
+}
+.training-beginner-guide__grid strong { color: var(--tp-forest); font-size: .9rem; }
+.training-beginner-guide__grid span { color: var(--tp-muted); font-size: .82rem; line-height: 1.45; }
+
 /* The pass-requirement bar: a visible pill, not caption text */
 .training-lesson__bar {
   display: inline-flex;
@@ -552,6 +582,10 @@
 
   .training-lesson__header h2 {
     font-size: 1.25rem;
+  }
+
+  .training-beginner-guide__grid {
+    grid-template-columns: 1fr;
   }
 
   .training-lesson__pass-segment {
