@@ -1,4 +1,4 @@
-.practical-tasks-page { min-height: 100vh; padding: 3rem 1.2rem; background: #0c1512; color: #eff8f2; }
+.practical-tasks-page { width: 100%; min-height: 100vh; margin: 0; padding: 3rem 1.2rem; background: #0c1512; color: #eff8f2; box-sizing: border-box; }
 .practical-tasks-hero, .practical-tasks-layout { max-width: 1100px; margin: 0 auto; }
 .practical-tasks-hero { margin-bottom: 2rem; }
 .practical-tasks-hero > span, .practical-tasks-kicker { color: #7be0a8; font-size: .75rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
