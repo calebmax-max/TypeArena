@@ -34,6 +34,25 @@
   color: #172033;
 }
 
+.hiring-test-stage {
+  margin-top: 1rem;
+}
+
+.hiring-test-stage .training-typing-box__passage,
+.hiring-test-stage .training-typing-box__input {
+  background: #0c1512;
+  color: #edf8f2;
+  border-color: rgba(123, 224, 168, .3);
+}
+
+.hiring-test-stage .training-typing-box__passage {
+  max-width: none;
+}
+
+.hiring-test-stage .training-typing-box__input {
+  caret-color: #7be0a8;
+}
+
 @media (max-width: 640px) {
   .hiring-input {
     font-size: 16px;

@@ -13,6 +13,7 @@ export default function TypingBox({
   disabled,
   autoFocus = true,
   blockPaste = false,
+  onPasteAttempt,
 }) {
   // Simple, local guard: refuses pasted input so WPM/accuracy reflect actual
   // typing. This is intentionally independent of utils/typingEngine's
@@ -21,7 +22,10 @@ export default function TypingBox({
   // (e.g. logging the attempt, not just silently blocking it), swap this
   // handler out for that shared util instead.
   function handlePaste(event) {
-    if (blockPaste) event.preventDefault();
+    if (blockPaste) {
+      event.preventDefault();
+      onPasteAttempt?.();
+    }
   }
 
   return (
