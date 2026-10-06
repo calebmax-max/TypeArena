@@ -15,6 +15,9 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
       percentage: courseLessons.length ? Math.round((passed / courseLessons.length) * 100) : 0,
     };
   });
+  const featuredCourse = coursePathway.find((course) => course.lessons.some((lesson) => String(lesson.id) === String(summary.currentLesson?.id)))
+    || coursePathway.find((course) => !course.isLocked)
+    || coursePathway[0];
 
   return (
     <section className="training-course-dashboard" aria-labelledby="beginner-course-title">
@@ -32,6 +35,21 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
       <div className="training-course-dashboard__track" aria-hidden="true">
         <span style={{ width: `${summary.percentage}%` }} />
       </div>
+      {featuredCourse && <section className="training-course-outcome" aria-labelledby="course-outcome-title">
+        <div className="training-course-outcome__heading">
+          <div>
+            <span className="training-eyebrow">What this course delivers</span>
+            <h2 id="course-outcome-title">{featuredCourse.title}</h2>
+          </div>
+          <span>{featuredCourse.skill_level || 'All levels'} · {featuredCourse.expected_duration || 'Self-paced'}</span>
+        </div>
+        <div className="training-course-outcome__grid">
+          <div><strong>Target</strong><span>{featuredCourse.target_skill || featuredCourse.stage_focus || 'Build reliable typing ability'}</span></div>
+          <div><strong>Practical outcome</strong><span>{featuredCourse.practical_outcome || featuredCourse.description || 'Complete structured keyboard practice with measured progress.'}</span></div>
+          <div><strong>Assessment</strong><span>{featuredCourse.assessment_requirements || `${featuredCourse.gate_wpm || 0} WPM and ${featuredCourse.gate_accuracy || 90}% accuracy gate`}</span></div>
+          <div><strong>Certificate and work relevance</strong><span>{featuredCourse.certificate_outcome || 'Verified course completion'} · {featuredCourse.job_relevance || 'Typing and digital-work foundations'}</span></div>
+        </div>
+      </section>}
       <section className={`training-assessment-callout${summary.completed ? ' training-assessment-callout--ready' : ''}`} aria-labelledby="training-assessment-title">
         <div>
           <span className="training-eyebrow">Verified pathway</span>

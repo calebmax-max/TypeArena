@@ -29,6 +29,9 @@ import {
   addFundsToWallet,
   fetchCurrentUser,
   fetchRaceHistory,
+  fetchSkillsPassport,
+  createSkillsPassport,
+  revokeSkillsPassport,
   fetchTrainingCourses,
   fetchTrainingProgress,
   fetchSubscriptionPlans,
@@ -150,6 +153,8 @@ export default function TypeProfile() {
   const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '', accountType: 'player' });
   const [raceHistory,   setRaceHistory]    = useState([]);
   const [trainingSnapshot, setTrainingSnapshot] = useState({ courses: [], progress: null });
+  const [skillsPassport, setSkillsPassport] = useState(null);
+  const [passportNotice, setPassportNotice] = useState('');
   const [walletHistory, setWalletHistory]  = useState([]);
   const [walletConfig,  setWalletConfig]   = useState({ topUpMethods: [], withdrawMethods: [] });
   const [loading,       setLoading]        = useState(() => !getStoredUserSnapshot());
@@ -176,6 +181,7 @@ export default function TypeProfile() {
   const [activeTab,     setActiveTab]      = useState('wallet');
   const [walletSection, setWalletSection]  = useState('topup'); // 'topup' | 'withdraw'
   const [topUpLoading,     setTopUpLoading]     = useState(false);
+  const [topUpIdempotencyKey, setTopUpIdempotencyKey] = useState('');
   const [withdrawLoading,  setWithdrawLoading]  = useState(false);
   const profileRequestRef = useRef(0);
 
@@ -229,21 +235,24 @@ export default function TypeProfile() {
       setRaceHistory([]);
       setWalletHistory([]);
       setTrainingSnapshot({ courses: [], progress: null });
+      setSkillsPassport(null);
       return;
     }
     try {
-      const [cfg, history, wallet, trainingCourses, trainingProgress] = await Promise.all([
+      const [cfg, history, wallet, trainingCourses, trainingProgress, passport] = await Promise.all([
         fetchWalletConfig(),
         fetchRaceHistory(user.id),
         fetchWalletHistory(),
         fetchTrainingCourses().catch(() => ({ courses: [] })),
         fetchTrainingProgress().catch(() => null),
+        fetchSkillsPassport().catch(() => ({ passport: null })),
       ]);
       if (requestId !== profileRequestRef.current) return;
       setWalletConfig(cfg || { topUpMethods: [], withdrawMethods: [] });
       setRaceHistory(history || []);
       setWalletHistory(wallet?.items || []);
       setTrainingSnapshot({ courses: Array.isArray(trainingCourses?.courses) ? trainingCourses.courses : [], progress: trainingProgress });
+      setSkillsPassport(passport?.passport || null);
     } catch (err) {
       if (requestId !== profileRequestRef.current) return;
       console.error('Failed to load wallet/race data:', err);
@@ -387,6 +396,31 @@ export default function TypeProfile() {
       setProfileSaving(false);
     }
   };
+
+  const handleCreateSkillsPassport = async () => {
+    setPassportNotice('');
+    try {
+      const result = await createSkillsPassport();
+      setSkillsPassport(result.passport || null);
+      setPassportNotice('Your shareable skills passport is ready.');
+    } catch (error) {
+      setPassportNotice(error.message || 'Could not create the skills passport.');
+    }
+  };
+
+  const handleRevokeSkillsPassport = async () => {
+    try {
+      await revokeSkillsPassport();
+      setSkillsPassport(null);
+      setPassportNotice('Your public skills passport was revoked.');
+    } catch (error) {
+      setPassportNotice(error.message || 'Could not revoke the skills passport.');
+    }
+  };
+
+  const skillsPassportUrl = skillsPassport?.shareCode
+    ? `${window.location.origin}/passport/${encodeURIComponent(skillsPassport.shareCode)}`
+    : '';
 
   const handleProUpgrade = async () => {
     if (!currentUser?.id) {
@@ -543,8 +577,10 @@ export default function TypeProfile() {
     e.preventDefault();
     if (topUpLoading) return;
     setTopUpLoading(true);
+    const requestKey = topUpIdempotencyKey || `wallet-topup-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    if (!topUpIdempotencyKey) setTopUpIdempotencyKey(requestKey);
     try {
-      const result = await addFundsToWallet(topUpAmount, topUpAccount, topUpMethod, topUpMethod === 'mpesa' ? 'KES' : 'USD');
+      const result = await addFundsToWallet(topUpAmount, topUpAccount, topUpMethod, topUpMethod === 'mpesa' ? 'KES' : 'USD', requestKey);
       if (result?.checkoutUrl) {
         setWalletNotice(result.message || 'Redirecting to secure checkout...');
         window.location.href = result.checkoutUrl;
@@ -554,10 +590,12 @@ export default function TypeProfile() {
         setWalletNotice(result.message || 'M-Pesa prompt sent. Waiting for payment confirmation...');
         setTopUpAmount('');
         await watchMpesaTopupStatus(result.mpesa.CheckoutRequestID);
+        setTopUpIdempotencyKey('');
         return;
       }
       setWalletNotice(result.message || 'Top-up completed.');
       setTopUpAmount('');
+      setTopUpIdempotencyKey('');
       if (result?.user) applyFreshUserState(result.user);
       await loadProfile();
     } catch (err) {
@@ -1041,6 +1079,22 @@ export default function TypeProfile() {
                   <span className="tp-account-row__value">{currentUser.premium || currentUser.accountPlan === 'pro' || currentUser.accountPlan === 'pro_monthly' || currentUser.accountPlan === 'pro_annual' ? 'Active' : 'Not active'}</span>
                 </div>
               </div>
+
+              <section className="tp-passport-card" aria-labelledby="skills-passport-title">
+                <div className="tp-section-head">
+                  <h3 id="skills-passport-title">Skills passport</h3>
+                  <span className="tp-section-head__sub">Share verified evidence</span>
+                </div>
+                <p className="tp-panel__help">Show schools or employers what you have actually completed. The public page excludes your email, phone number, wallet, and private race history.</p>
+                {skillsPassport ? (
+                  <>
+                    <div className="tp-passport-link"><span>{skillsPassportUrl}</span><button type="button" className="tp-btn tp-btn--primary tp-btn--sm" onClick={async () => { try { await navigator.clipboard.writeText(skillsPassportUrl); setPassportNotice('Verification link copied.'); } catch { setPassportNotice('Copy failed. Select the link to copy it manually.'); } }}>Copy link</button></div>
+                    <div className="tp-passport-meta"><span>{skillsPassport.confidenceLevel}</span><span>{skillsPassport.assessments?.length || 0} verified assessment(s)</span><span>{skillsPassport.certificates?.length || 0} certificate(s)</span></div>
+                    <button type="button" className="tp-btn tp-btn--ghost tp-btn--sm" onClick={handleRevokeSkillsPassport}>Revoke public link</button>
+                  </>
+                ) : <button type="button" className="tp-btn tp-btn--primary" onClick={handleCreateSkillsPassport}>Create skills passport</button>}
+                {passportNotice && <small className="tp-passport-notice" role="status">{passportNotice}</small>}
+              </section>
 
               <div id="typearena-pro" className="tp-section-head tp-pro-section-head" style={{ marginTop: '2rem' }}>
                 <h3>TypeArena Pro</h3>

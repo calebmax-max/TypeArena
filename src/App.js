@@ -26,6 +26,8 @@ import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
 import SchoolDashboard from './components/SchoolDashboard';
 import CertificationTest, { CertificateVerification } from './components/Certification';
+import SkillsPassport from './components/SkillsPassport';
+import PracticalTasks from './components/PracticalTasks';
 import Tournaments from './components/Tournaments';
 import { EmployerHiring, CandidateHiringTest } from './components/Hiring';
 
@@ -268,6 +270,7 @@ function AppLayout() {
           <nav id="arena-primary-nav" className={`arena-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
             <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
             <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}>Training</NavLink>
+            <NavLink to="/tasks" className={navLinkClassName}>Skills Lab</NavLink>
             <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
             <NavLink data-tour="nav-tournaments" to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
             <NavLink to="/school" className={navLinkClassName}>School</NavLink>
@@ -297,6 +300,7 @@ function AppLayout() {
           <Route path="/" element={<Home currentUser={currentUser} />} />
           <Route path="/play" element={<Play />} />
           <Route path="/training" element={<TrainingPage />} />
+          <Route path="/tasks" element={<PracticalTasks />} />
           <Route path="/practice" element={<Play practicePage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/tournaments" element={<Tournaments />} />
@@ -306,6 +310,7 @@ function AppLayout() {
           <Route path="/test/:publicCode" element={<CandidateHiringTest currentUser={currentUser} />} />
           <Route path="/certification" element={<CertificationTest />} />
           <Route path="/verify/:certificateId" element={<CertificateVerification />} />
+          <Route path="/passport/:shareCode" element={<SkillsPassport />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/results/:raceId" element={<Results />} />

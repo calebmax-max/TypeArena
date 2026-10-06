@@ -43,6 +43,8 @@ from sponsored_event_features import (
     register_sponsored_event_routes,
 )
 from training_features import register_training_routes
+from skills_passport_features import register_skills_passport_routes
+from practical_tasks_features import register_practical_task_routes
 try:
     from flask_compress import Compress
 except ImportError:  # pragma: no cover - only hit if the dependency isn't installed yet
@@ -3468,6 +3470,18 @@ def _withdrawal_fee_for_method(amount: float, payout_method: str) -> float:
             return fee
 
     return 309.0
+
+
+def _ensure_mpesa_idempotency_column(cur) -> None:
+    cur.execute("SHOW TABLES LIKE 'mpesa_transactions'")
+    if not cur.fetchone():
+        return
+    cur.execute("SHOW COLUMNS FROM mpesa_transactions LIKE 'idempotency_key'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE mpesa_transactions ADD COLUMN idempotency_key VARCHAR(100) NULL AFTER tx_code")
+    cur.execute("SHOW INDEX FROM mpesa_transactions WHERE Key_name='uq_mpesa_user_idempotency'")
+    if not cur.fetchone():
+        cur.execute("CREATE UNIQUE INDEX uq_mpesa_user_idempotency ON mpesa_transactions (user_id, idempotency_key)")
 
 
 def _wallet_capabilities() -> Dict[str, Any]:
@@ -7053,6 +7067,21 @@ def wallet_withdraw():
         user = _get_user_from_header(conn)
         if not user:
             return jsonify({'message': 'Unauthorized'}), 401
+
+        idempotency_key = str(payload.get('idempotencyKey') or '').strip()[:100] or None
+        with conn.cursor() as cur:
+            _ensure_mpesa_idempotency_column(cur)
+            if idempotency_key:
+                cur.execute('SELECT * FROM mpesa_transactions WHERE user_id=%s AND idempotency_key=%s LIMIT 1', (user['id'], idempotency_key))
+                existing = cur.fetchone()
+                if existing:
+                    return jsonify({
+                        'message': 'This payment request was already received.',
+                        'status': existing.get('status'),
+                        'paymentMethod': 'mpesa' if existing.get('mode') == 'live' else existing.get('mode'),
+                        'transactionId': existing.get('tx_code'),
+                        'mpesa': {'CheckoutRequestID': existing.get('checkout_request_id')} if existing.get('checkout_request_id') else None,
+                    })
 
         capabilities = _wallet_capabilities()
         payout_method = str(payload.get('payoutMethod') or payload.get('paymentMethod') or 'paypal').strip().lower()
@@ -11008,6 +11037,20 @@ _ensure_training_tables = register_training_routes(
     is_admin=lambda user: bool(user.get('is_admin') or user.get('isAdmin')) or _is_admin_email(user.get('email')),
 )
 
+_ensure_skills_passport_tables = register_skills_passport_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+)
+
+_ensure_practical_task_tables = register_practical_task_routes(
+    app,
+    get_connection=lambda: get_connection(),
+    return_connection=lambda conn: _return_connection(conn),
+    get_user=lambda conn: _get_user_from_header(conn),
+)
+
 
 def _bootstrap_db() -> None:
     """Create all required tables and columns once at startup."""
@@ -11035,11 +11078,14 @@ def _bootstrap_db() -> None:
                 _ensure_certification_tables(cur)
                 _ensure_sponsored_event_tables(cur)
                 _ensure_training_tables(cur)
+                _ensure_skills_passport_tables(cur)
+                _ensure_practical_task_tables(cur)
                 _ensure_auth_token_column(cur)
                 _ensure_terms_acceptance_columns(cur)
                 _ensure_user_equipped_columns(cur)
                 _ensure_season_tables(cur)
                 _ensure_race_history_audit_columns(cur)
+                _ensure_mpesa_idempotency_column(cur)
                 _ensure_anti_cheat_columns(cur)
                 _backfill_legacy_race_history(cur)
                 # PERF: create these lookup indexes (if missing) at startup

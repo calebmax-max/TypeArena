@@ -479,9 +479,14 @@ export default function SchoolDashboard({ currentUser }) {
                     <div style={cardStyle}><small>Active learners</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.learnerCount ?? selected.learners.length}</strong></div>
                     <div style={cardStyle}><small>Pending approvals</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.pendingCount ?? 0}</strong></div>
                     <div style={cardStyle}><small>Average WPM</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.averageWpm ?? 0}</strong></div>
+                    <div style={cardStyle}><small>Average accuracy</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.averageAccuracy ?? 0}%</strong></div>
                     <div style={cardStyle}><small>Completed assignments</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.completionCount ?? 0}</strong></div>
                     <div style={cardStyle}><small>Ready for review</small><strong style={{ display: 'block', fontSize: 24 }}>{learnersReadyForReview.length}</strong></div>
                     <div style={{ ...cardStyle, borderColor: learnersNeedingSupport.length ? 'rgba(245,158,11,.45)' : 'rgba(99,202,183,.22)' }}><small>Needs attention</small><strong style={{ display: 'block', fontSize: 24 }}>{learnersNeedingSupport.length}</strong></div>
+                    <div style={cardStyle}><small>Active this week</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.activeThisWeek ?? 0}</strong></div>
+                    <div style={cardStyle}><small>Course completion</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.completionRate ?? 0}%</strong></div>
+                    <div style={cardStyle}><small>Certificates issued</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.certificatesIssued ?? 0}</strong></div>
+                    <div style={cardStyle}><small>Failed assessments</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.failedAssessments ?? 0}</strong></div>
                   </div>
                   {['org_admin', 'teacher'].includes(selected.role) && (
                     <section aria-labelledby="support-learners-title" style={{ marginBottom: 20, padding: 14, borderRadius: 12, background: learnersNeedingSupport.length ? 'rgba(245,158,11,.08)' : 'rgba(99,202,183,.06)', border: `1px solid ${learnersNeedingSupport.length ? 'rgba(245,158,11,.28)' : 'rgba(99,202,183,.2)'}` }}>
@@ -563,6 +568,7 @@ export default function SchoolDashboard({ currentUser }) {
                   {visibleLearners.map((learner) => (
                     <div key={learner.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
                       <span>{learner.username} <small style={{ opacity: .65 }}>({learner.status})</small></span>
+                      <small style={{ width: '100%', opacity: .68 }}>Training: {learner.training?.passedLessons || 0}/{learner.training?.totalLessons || 0} lessons · last activity {learner.training?.lastActivity ? new Date(learner.training.lastActivity).toLocaleDateString() : 'not recorded'}{learner.training?.weakKeys?.length ? ` · weak keys: ${learner.training.weakKeys.join(', ')}` : ''}</small>
                       <span>{learner.wpm} WPM · {learner.accuracy}%</span>
                       {['org_admin', 'teacher'].includes(selected.role) && (
                         <span style={{ display: 'flex', gap: 6 }}>

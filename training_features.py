@@ -85,7 +85,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4''')
         cur.execute("SHOW COLUMNS FROM training_courses LIKE 'prerequisite_course_id'")
         if not cur.fetchone(): cur.execute("ALTER TABLE training_courses ADD COLUMN prerequisite_course_id BIGINT NULL AFTER is_pro")
-        for column, definition in [('stage_number', 'INT NULL'), ('stage_focus', 'VARCHAR(180) NULL'), ('gate_wpm', 'DECIMAL(7,2) NOT NULL DEFAULT 0'), ('gate_accuracy', 'DECIMAL(6,2) NOT NULL DEFAULT 90')]:
+        for column, definition in [('stage_number', 'INT NULL'), ('stage_focus', 'VARCHAR(180) NULL'), ('gate_wpm', 'DECIMAL(7,2) NOT NULL DEFAULT 0'), ('gate_accuracy', 'DECIMAL(6,2) NOT NULL DEFAULT 90'), ('skill_level', 'VARCHAR(80) NULL'), ('target_skill', 'VARCHAR(180) NULL'), ('expected_duration', 'VARCHAR(80) NULL'), ('practical_outcome', 'TEXT NULL'), ('assessment_requirements', 'TEXT NULL'), ('certificate_outcome', 'VARCHAR(180) NULL'), ('job_relevance', 'TEXT NULL')]:
             cur.execute(f"SHOW COLUMNS FROM training_courses LIKE '{column}'")
             if not cur.fetchone(): cur.execute(f"ALTER TABLE training_courses ADD COLUMN {column} {definition}")
         cur.execute('''CREATE TABLE IF NOT EXISTS training_lessons (
@@ -153,7 +153,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 current_user = get_user(conn)
                 account_plan = str((current_user or {}).get('account_plan') or (current_user or {}).get('accountPlan') or 'free').lower()
                 has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool((current_user or {}).get('is_admin') or (current_user or {}).get('isAdmin'))
-                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
+                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
                     cur.execute('SELECT id,course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number FROM training_lessons WHERE course_id=%s AND is_archived=0 ORDER BY order_number,id', (course['id'],))
@@ -239,7 +239,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             with conn.cursor() as cur:
                 ensure_tables(cur)
                 if not admin_allowed(conn): return jsonify({'message': 'Admin access required.'}), 403
-                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,is_archived FROM training_courses ORDER BY COALESCE(stage_number,99),id')
+                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance,is_archived FROM training_courses ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
                     cur.execute('SELECT id,course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number,is_archived FROM training_lessons WHERE course_id=%s ORDER BY order_number,id', (course['id'],))
@@ -274,11 +274,11 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 if gate_wpm < 0 or gate_accuracy < 0 or gate_accuracy > 100:
                     return jsonify({'message': 'Gate WPM must be non-negative and accuracy must be between 0 and 100.'}), 400
                 stage_focus = str(data.get('stageFocus') or '').strip()[:180]
-                values = (slug, title, str(data.get('description') or '').strip(), int(bool(data.get('isPro'))), int(data.get('prerequisiteCourseId') or 0) or None, stage_number, stage_focus, gate_wpm, gate_accuracy, int(bool(data.get('isArchived'))))
+                values = (slug, title, str(data.get('description') or '').strip(), int(bool(data.get('isPro'))), int(data.get('prerequisiteCourseId') or 0) or None, stage_number, stage_focus, gate_wpm, gate_accuracy, str(data.get('skillLevel') or '').strip()[:80], str(data.get('targetSkill') or '').strip()[:180], str(data.get('expectedDuration') or '').strip()[:80], str(data.get('practicalOutcome') or '').strip(), str(data.get('assessmentRequirements') or '').strip(), str(data.get('certificateOutcome') or '').strip()[:180], str(data.get('jobRelevance') or '').strip(), int(bool(data.get('isArchived'))))
                 if course_id:
-                    cur.execute('UPDATE training_courses SET slug=%s,title=%s,description=%s,is_pro=%s,prerequisite_course_id=%s,stage_number=%s,stage_focus=%s,gate_wpm=%s,gate_accuracy=%s,is_archived=%s WHERE id=%s', (*values, course_id))
+                    cur.execute('UPDATE training_courses SET slug=%s,title=%s,description=%s,is_pro=%s,prerequisite_course_id=%s,stage_number=%s,stage_focus=%s,gate_wpm=%s,gate_accuracy=%s,skill_level=%s,target_skill=%s,expected_duration=%s,practical_outcome=%s,assessment_requirements=%s,certificate_outcome=%s,job_relevance=%s,is_archived=%s WHERE id=%s', (*values, course_id))
                 else:
-                    cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,is_archived) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', values)
+                    cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance,is_archived) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', values)
                     course_id = cur.lastrowid
                 conn.commit(); return jsonify({'id': course_id})
         finally: return_connection(conn)

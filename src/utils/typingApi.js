@@ -40,6 +40,12 @@ export const startTrainingLesson = async (lessonId) => parseResponse(await apiFe
 export const submitTrainingAttempt = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/training-events'), {
   method: 'POST', headers: buildHeaders(), body: JSON.stringify(payload),
 }));
+export const fetchSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { headers: buildHeaders() }));
+export const createSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { method: 'POST', headers: buildHeaders(), body: JSON.stringify({}) }));
+export const revokeSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { method: 'DELETE', headers: buildHeaders() }));
+export const fetchPublicSkillsPassport = async (shareCode) => parseResponse(await apiFetch(buildApiUrl(`/api/skills-passport/${encodeURIComponent(shareCode)}`)));
+export const fetchPracticalTasks = async () => parseResponse(await apiFetch(buildApiUrl('/api/practical-tasks')));
+export const submitPracticalTask = async (slug, response) => parseResponse(await apiFetch(buildApiUrl(`/api/practical-tasks/${encodeURIComponent(slug)}/submit`), { method: 'POST', headers: buildHeaders(), body: JSON.stringify(response) }));
 
 export const fetchAdminTrainingCourses = async () => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { headers: buildAdminHeaders() }));
 export const createAdminTrainingCourse = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/admin/training/courses'), { method: 'POST', headers: buildAdminHeaders(), body: JSON.stringify(payload) }));
@@ -590,24 +596,17 @@ export const updateUserProfile = async (userId, updates) => {
   }
 };
 
-export const addFundsToWallet = async (amount, accountIdentifier, paymentMethod = 'stripe_checkout', currency = 'USD') => {
+export const addFundsToWallet = async (amount, accountIdentifier, paymentMethod = 'stripe_checkout', currency = 'USD', idempotencyKey = '') => {
   try {
-    const endpoint = paymentMethod === 'mpesa' ? '/api/mpesa_payment' : '/api/wallet/topup';
-    const body =
-      paymentMethod === 'mpesa'
-        ? {
-            amount: Number(amount),
-            phone: accountIdentifier,
-            phoneNumber: accountIdentifier,
-            accountReference: 'account',
-            transactionDesc: 'account',
-          }
-        : {
-            amount: Number(amount),
-            accountIdentifier,
-            paymentMethod,
-            currency,
-          };
+    const endpoint = '/api/wallet/topup';
+    const body = {
+      amount: Number(amount),
+      accountIdentifier,
+      phoneNumber: accountIdentifier,
+      paymentMethod,
+      currency,
+      idempotencyKey,
+    };
     const response = await apiFetch(buildApiUrl(endpoint), {
       method: 'POST',
       headers: buildHeaders(),

@@ -408,6 +408,34 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                       AND cm.status IN ('active','pending','suspended')
                     ORDER BY FIELD(cm.status,'pending','active','suspended'),u.username""", (cls['organization_id'], class_id))
                 learners = [{'id': r['id'], 'username': r['username'], 'email': r['email'], 'wpm': float(r.get('wpm') or 0), 'accuracy': float(r.get('accuracy') or 0), 'status': r['status'], 'joinedAt': r['joined_at'].isoformat() if r.get('joined_at') else None} for r in cur.fetchall()]
+                learner_reports = {}
+                if learners:
+                    cur.execute('''SELECT cm.user_id,COUNT(DISTINCT l.id) total_lessons,
+                        COUNT(DISTINCT CASE WHEN a.passed=1 THEN l.id END) passed_lessons,
+                        ROUND(AVG(CASE WHEN a.passed=1 THEN a.wpm END),1) average_wpm,
+                        ROUND(AVG(CASE WHEN a.passed=1 THEN a.accuracy END),1) average_accuracy,
+                        MAX(a.created_at) last_activity
+                        FROM class_members cm
+                        LEFT JOIN class_training_courses ctc ON ctc.class_id=cm.class_id AND ctc.status='active'
+                        LEFT JOIN training_lessons l ON l.course_id=ctc.course_id AND l.is_archived=0
+                        LEFT JOIN training_attempts a ON CAST(a.lesson_id AS UNSIGNED)=l.id AND a.user_id=cm.user_id
+                        WHERE cm.class_id=%s AND cm.status IN ('active','pending','suspended')
+                        GROUP BY cm.user_id''', (class_id,))
+                    learner_reports = {row['user_id']: {'totalLessons': int(row.get('total_lessons') or 0), 'passedLessons': int(row.get('passed_lessons') or 0), 'averageWpm': float(row.get('average_wpm') or 0), 'averageAccuracy': float(row.get('average_accuracy') or 0), 'lastActivity': row.get('last_activity').isoformat() if row.get('last_activity') else None, 'weakKeys': {}} for row in cur.fetchall()}
+                    cur.execute('SELECT user_id,key_errors_json FROM training_attempts WHERE user_id IN (SELECT user_id FROM class_members WHERE class_id=%s AND status IN (\'active\',\'pending\',\'suspended\'))', (class_id,))
+                    for row in cur.fetchall():
+                        report = learner_reports.setdefault(row['user_id'], {'totalLessons': 0, 'passedLessons': 0, 'averageWpm': 0, 'averageAccuracy': 0, 'lastActivity': None, 'weakKeys': {}})
+                        try:
+                            errors = json.loads(row.get('key_errors_json') or '{}')
+                        except (TypeError, ValueError):
+                            errors = {}
+                        for key, count in errors.items():
+                            report['weakKeys'][key] = report['weakKeys'].get(key, 0) + int(count or 0)
+                    for report in learner_reports.values():
+                        report['weakKeys'] = [key for key, _ in sorted(report['weakKeys'].items(), key=lambda item: item[1], reverse=True)[:5]]
+                for learner in learners:
+                    report = learner_reports.get(learner['id'], {})
+                    learner['training'] = report
                 cur.execute('SELECT * FROM assignments WHERE class_id=%s ORDER BY created_at DESC', (class_id,))
                 assignments = []
                 for r in cur.fetchall():
@@ -416,8 +444,14 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                     cur.execute(f"SELECT s.user_id,s.wpm,s.accuracy,s.passed,s.status,s.verification_method,s.race_id,s.submitted_at,u.username FROM assignment_submissions s JOIN users u ON u.id=s.user_id WHERE s.assignment_id=%s{submission_filter} ORDER BY s.submitted_at DESC", submission_params)
                     submissions = [{'userId': x['user_id'], 'username': x['username'], 'wpm': float(x['wpm'] or 0), 'accuracy': float(x['accuracy'] or 0), 'passed': bool(x.get('passed')), 'status': x.get('status') or 'failed', 'verificationMethod': x.get('verification_method') or 'legacy', 'raceId': x.get('race_id'), 'submittedAt': x['submitted_at'].isoformat() if x.get('submitted_at') else None} for x in cur.fetchall()]
                     assignments.append({'id': r['id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'passage': r.get('passage') or '', 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'mode': r['mode'], 'status': r.get('status') or 'published', 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'submissions': submissions if role in ('org_admin', 'teacher') else [], 'mySubmission': submissions[0] if role not in ('org_admin', 'teacher') and submissions else None, 'completionCount': len(submissions) if role in ('org_admin', 'teacher') else int(bool(submissions))})
-            active_learners = [learner for learner in learners if learner['status'] == 'active']
-            return jsonify({
+                active_learners = [learner for learner in learners if learner['status'] == 'active']
+                cur.execute("SELECT COUNT(DISTINCT user_id) active_this_week FROM training_attempts WHERE user_id IN (SELECT user_id FROM class_members WHERE class_id=%s AND status='active') AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)", (class_id,))
+                active_this_week = int((cur.fetchone() or {}).get('active_this_week') or 0)
+                cur.execute("SELECT COUNT(*) certificates_issued FROM school_certificates WHERE class_id=%s AND status='valid'", (class_id,))
+                certificates_issued = int((cur.fetchone() or {}).get('certificates_issued') or 0)
+                completed_learners = sum(bool(learner.get('training', {}).get('totalLessons') and learner['training'].get('passedLessons', 0) >= learner['training'].get('totalLessons', 0)) for learner in active_learners)
+                failed_assessments = sum(sum(not submission['passed'] for submission in item['submissions']) for item in assignments) if role in ('org_admin', 'teacher') else 0
+                return jsonify({
                 'class': class_payload(cls),
                 'role': role,
                 'learners': learners,
@@ -426,6 +460,11 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                     'learnerCount': len(active_learners),
                     'pendingCount': sum(learner['status'] == 'pending' for learner in learners),
                     'averageWpm': round(sum(learner['wpm'] for learner in active_learners) / len(active_learners), 1) if active_learners else 0,
+                    'averageAccuracy': round(sum(learner['accuracy'] for learner in active_learners) / len(active_learners), 1) if active_learners else 0,
+                    'activeThisWeek': active_this_week,
+                    'completionRate': round((completed_learners / len(active_learners)) * 100, 1) if active_learners else 0,
+                    'failedAssessments': failed_assessments,
+                    'certificatesIssued': certificates_issued,
                     'assignmentCount': len(assignments),
                     'completionCount': sum(item['completionCount'] for item in assignments) if role in ('org_admin', 'teacher') else sum(bool(item['mySubmission']) for item in assignments),
                 },

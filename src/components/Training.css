@@ -59,6 +59,14 @@
 .training-course-dashboard__progress span { color: var(--tp-muted); font-size: .8rem; }
 .training-course-dashboard__track { height: .55rem; margin: 1rem 0; overflow: hidden; border-radius: 999px; background: var(--tp-sage); }
 .training-course-dashboard__track span { display: block; height: 100%; border-radius: inherit; background: var(--tp-moss); transition: width .25s ease; }
+.training-course-outcome { margin: 1rem 0; padding: 1rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: #fff; }
+.training-course-outcome__heading { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.training-course-outcome__heading h2 { margin: .2rem 0 0; color: var(--tp-forest); font-size: 1.05rem; }
+.training-course-outcome__heading > span { color: var(--tp-moss); font-size: .8rem; font-weight: 700; }
+.training-course-outcome__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-top: .9rem; }
+.training-course-outcome__grid div { display: flex; flex-direction: column; gap: .2rem; padding: .7rem; border-radius: 8px; background: var(--tp-paper); }
+.training-course-outcome__grid strong { color: var(--tp-forest); font-size: .75rem; }
+.training-course-outcome__grid span { color: var(--tp-muted); font-size: .82rem; line-height: 1.45; }
 .training-assessment-callout { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: rgba(227, 240, 230, .36); }
 .training-assessment-callout--ready { border-color: var(--tp-moss); background: linear-gradient(135deg, var(--tp-sage), #fff); }
 .training-assessment-callout h2 { margin: .2rem 0; color: var(--tp-forest); font-size: 1rem; }
@@ -545,6 +553,8 @@
   .training-course-dashboard__meta { align-items: flex-start; flex-direction: column; }
   .training-course-dashboard__progress { text-align: left; }
   .training-assessment-callout { align-items: flex-start; flex-direction: column; }
+  .training-course-outcome__heading { align-items: flex-start; flex-direction: column; }
+  .training-course-outcome__grid { grid-template-columns: 1fr; }
   .training-lesson__objective { align-items: flex-start; flex-direction: column; }
   .training-lesson__objective p { max-width: none; text-align: left; }
   .training-pathway__heading { align-items: flex-start; flex-direction: column; }

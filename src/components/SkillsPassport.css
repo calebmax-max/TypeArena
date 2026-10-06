@@ -1,0 +1,26 @@
+.skills-passport-page { min-height: 100vh; padding: 3rem 1rem; background: #0c1512; color: #eff8f2; }
+.skills-passport-card { max-width: 900px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 2.5rem); border: 1px solid rgba(123, 224, 168, .25); border-radius: 20px; background: linear-gradient(145deg, rgba(31, 77, 59, .84), rgba(14, 28, 22, .96)); box-shadow: 0 24px 70px rgba(0, 0, 0, .3); }
+.skills-passport-header { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; }
+.skills-passport-eyebrow { color: #7be0a8; font-size: .75rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.skills-passport-header h1 { margin: .45rem 0; font-size: clamp(2rem, 5vw, 3.2rem); }
+.skills-passport-header p { max-width: 62ch; margin: 0; color: rgba(239, 248, 242, .7); line-height: 1.55; }
+.skills-passport-status { flex-shrink: 0; padding: .45rem .7rem; border: 1px solid rgba(123, 224, 168, .4); border-radius: 999px; color: #7be0a8; font-size: .75rem; font-weight: 700; }
+.skills-passport-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; margin: 2rem 0 .8rem; }
+.skills-passport-stats div { padding: .9rem; border-radius: 12px; background: rgba(255, 255, 255, .06); }
+.skills-passport-stats strong, .skills-passport-stats span { display: block; }
+.skills-passport-stats strong { color: #7be0a8; font-size: 1.35rem; }
+.skills-passport-stats span { margin-top: .25rem; color: rgba(239, 248, 242, .6); font-size: .72rem; }
+.skills-passport-date { color: rgba(239, 248, 242, .58); font-size: .8rem; }
+.skills-passport-section { margin-top: 2rem; }
+.skills-passport-section h2 { margin-bottom: .7rem; font-size: 1.1rem; }
+.skills-passport-course, .skills-passport-assessment, .skills-passport-certificate { display: block; padding: .9rem 0; border-top: 1px solid rgba(255, 255, 255, .1); color: inherit; text-decoration: none; }
+.skills-passport-course div, .skills-passport-assessment { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+.skills-passport-course span, .skills-passport-course p, .skills-passport-course small, .skills-passport-assessment span, .skills-passport-certificate span { display: block; color: rgba(239, 248, 242, .62); font-size: .82rem; }
+.skills-passport-course p { margin: .35rem 0; line-height: 1.45; }
+.skills-passport-assessment strong { color: #7be0a8; }
+.skills-passport-assessment em { color: #7be0a8; font-size: .75rem; font-style: normal; }
+.skills-passport-certificate:hover { background: rgba(255, 255, 255, .05); }
+.skills-passport-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, .1); color: rgba(239, 248, 242, .45); font-size: .72rem; }
+.skills-passport-state { max-width: 560px; margin: 8rem auto; padding: 2rem; border-radius: 16px; background: #14251d; text-align: center; }
+.skills-passport-button { display: inline-block; margin-top: 1rem; padding: .7rem 1rem; border-radius: 8px; background: #7be0a8; color: #10261a; font-weight: 700; text-decoration: none; }
+@media (max-width: 640px) { .skills-passport-header { flex-direction: column; } .skills-passport-stats { grid-template-columns: repeat(2, 1fr); } .skills-passport-course div, .skills-passport-assessment { align-items: flex-start; flex-direction: column; gap: .25rem; } }
