@@ -32,12 +32,16 @@ export default function TrainingPage() {
 
   useEffect(() => {
     (async () => {
-      await flushQueuedTrainingEvents();
-      const [payload, problemPayload, progressPayload] = await Promise.all([fetchTrainingCourses(), fetchTrainingProblemKeys(), fetchTrainingProgress()]);
+      // Do not make the learner wait for an old offline-event queue to flush
+      // before showing the curriculum. It is background synchronization.
+      flushQueuedTrainingEvents().catch(() => {});
+      const [payload, progressPayload] = await Promise.all([fetchTrainingCourses(), fetchTrainingProgress()]);
       const hydrated = applyServerProgress(progressPayload);
       setProgress(hydrated);
       setCourses(normalizeCourseResponse(payload));
-      setProblemKeys(Array.isArray(problemPayload?.keys) ? problemPayload.keys : []);
+      fetchTrainingProblemKeys()
+        .then((problemPayload) => setProblemKeys(Array.isArray(problemPayload?.keys) ? problemPayload.keys : []))
+        .catch(() => setProblemKeys([]));
     })()
       .catch((err) => setError(err.message || 'Could not load training courses.'))
       .finally(() => setLoading(false));
@@ -123,7 +127,7 @@ export default function TrainingPage() {
     }
   }
 
-  if (loading) return <div className="training-page"><p>Loading courses...</p></div>;
+  if (loading) return <div className="training-page training-page--loading" role="status" aria-live="polite"><div className="training-loading-card"><span className="training-eyebrow">Your learning pathway</span><h1>Loading courses</h1><p>Preparing your lessons and progress...</p><span className="training-loading-card__bar" aria-hidden="true" /></div></div>;
   if (error) return (
     <div className="training-page">
       <section className="training-state-card training-state-card--error" role="alert">
