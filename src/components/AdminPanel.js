@@ -91,9 +91,23 @@ const NAV_ITEMS = [
   { id: 'ai', label: 'AI Settings', icon: 'AI' },
   { id: 'schools', label: 'Schools', icon: 'S' },
 ];
+const SECTION_META = {
+  overview: ['Overview', 'A clear view of platform health, activity, and financial signals.'],
+  wallet: ['Wallet', 'Review balances, transactions, and controlled transfers.'],
+  tournaments: ['Tournaments', 'Create, schedule, and manage competitive events.'],
+  sponsoredEvents: ['Sponsor Events', 'Manage sponsored opportunities and qualifying activity.'],
+  players: ['Top Players', 'Review player performance and account activity.'],
+  leaderboard: ['Leaderboard', 'Tune ranking thresholds and public competition settings.'],
+  content: ['Content', 'Maintain the passages, announcements, and assessment material.'],
+  training: ['Training Courses', 'Build structured learning paths and review learner impact.'],
+  marketplace: ['Marketplace', 'Manage the catalogue, pricing, and availability.'],
+  ai: ['AI Settings', 'Control coaching providers and safe fallback behavior.'],
+  schools: ['Schools', 'Support organisations, classes, and learner outcomes.'],
+};
 
 export default function AdminPanel() {
   const navigate = useNavigate();
+  const adminIdentity = getStoredUserSnapshot() || {};
   // Admin access now rides on the same session token issued at regular
   // login (see auth_login in app_backend.py) - there's no separate admin
   // token to store or fetch. We just check the stored user's isAdmin flag.
@@ -665,23 +679,21 @@ export default function AdminPanel() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
-
         :root {
-          --ap-bg:        #080a0f;
-          --ap-surface:   #0d1117;
-          --ap-surface2:  #131820;
-          --ap-border:    rgba(255,255,255,0.07);
-          --ap-border2:   rgba(255,255,255,0.12);
-          --ap-accent:    #63cab7;
-          --ap-accent2:   #8b8fff;
-          --ap-warn:      #e07b5a;
-          --ap-gold:      #c9a84c;
-          --ap-text:      #e8edf5;
-          --ap-muted:     rgba(232,237,245,0.4);
-          --ap-sidebar:   200px;
-          --ap-font-head: 'Syne', sans-serif;
-          --ap-font-mono: 'DM Mono', monospace;
+          --ap-bg:        #f5f7fb;
+          --ap-surface:   #ffffff;
+          --ap-surface2:  #f8fafc;
+          --ap-border:    #e7ebf2;
+          --ap-border2:   #d7dee9;
+          --ap-accent:    #147d6e;
+          --ap-accent2:   #5263a8;
+          --ap-warn:      #c65b4d;
+          --ap-gold:      #a97818;
+          --ap-text:      #17202e;
+          --ap-muted:     #718096;
+          --ap-sidebar:   244px;
+          --ap-font-head: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          --ap-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
         .ap-root {
@@ -689,13 +701,13 @@ export default function AdminPanel() {
           min-height: 100vh;
           background: var(--ap-bg);
           color: var(--ap-text);
-          font-family: var(--ap-font-mono);
+          font-family: var(--ap-font-head);
         }
 
         /* ---- Sidebar ---- */
         .ap-sidebar {
           width: var(--ap-sidebar);
-          background: var(--ap-surface);
+          background: #101b2d;
           border-right: 1px solid var(--ap-border);
           display: flex;
           flex-direction: column;
@@ -708,64 +720,86 @@ export default function AdminPanel() {
           z-index: 10;
         }
         .ap-sidebar-logo {
-          padding: 28px 20px 20px;
-          border-bottom: 1px solid var(--ap-border);
-          margin-bottom: 8px;
+          display: flex;
+          align-items: center;
+          gap: 11px;
+          padding: 25px 22px 23px;
+          border-bottom: 1px solid rgba(255,255,255,0.09);
+          margin-bottom: 18px;
         }
+        .ap-brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: #55c8ad; color: #102035; font-size: .72rem; font-weight: 800; letter-spacing: -.04em; }
         .ap-sidebar-logo-text {
           font-family: var(--ap-font-head);
           font-size: 1.1rem;
           font-weight: 800;
-          color: var(--ap-accent);
+          color: #f4fbf9;
           letter-spacing: -0.02em;
           line-height: 1;
         }
         .ap-sidebar-logo-sub {
           font-size: 0.62rem;
-          color: var(--ap-muted);
+          color: rgba(232,242,246,0.48);
           letter-spacing: 0.12em;
           text-transform: uppercase;
           margin-top: 4px;
           display: block;
         }
+        .ap-nav-heading { padding: 0 22px 9px; color: rgba(232,242,246,0.36); font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
         .ap-nav-item {
+          width: 100%;
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 10px 20px;
+          padding: 11px 22px;
+          background: transparent;
+          border: 0;
+          border-left: 3px solid transparent;
+          text-align: left;
+          font-family: inherit;
           font-size: 0.78rem;
-          color: var(--ap-muted);
+          color: rgba(232,242,246,0.62);
           cursor: pointer;
-          border-left: 2px solid transparent;
           transition: all 0.15s;
           letter-spacing: 0.03em;
           user-select: none;
         }
-        .ap-nav-item:hover { color: var(--ap-text); background: rgba(255,255,255,0.03); }
+        .ap-nav-item:hover { color: #fff; background: rgba(255,255,255,0.06); }
         .ap-nav-item.active {
-          color: var(--ap-accent);
-          border-left-color: var(--ap-accent);
-          background: rgba(99,202,183,0.06);
+          color: #fff;
+          border-left-color: #55c8ad;
+          background: rgba(85,200,173,0.13);
           font-weight: 500;
         }
         .ap-nav-icon {
-          font-size: 1rem;
-          width: 18px;
+          display: grid;
+          place-items: center;
+          width: 24px;
+          height: 24px;
+          border: 1px solid rgba(255,255,255,0.14);
+          border-radius: 7px;
+          color: rgba(232,242,246,0.68);
+          font-size: .56rem;
+          font-weight: 800;
           text-align: center;
           flex-shrink: 0;
         }
         .ap-sidebar-footer {
           margin-top: auto;
           padding: 16px 20px;
-          border-top: 1px solid var(--ap-border);
+          border-top: 1px solid rgba(255,255,255,0.09);
         }
+        .ap-sidebar-user { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; min-width: 0; color: #fff; }
+        .ap-sidebar-user > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+        .ap-sidebar-user strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; }
+        .ap-sidebar-user small { color: rgba(232,242,246,0.45); font-size: .62rem; margin-top: 2px; }
+        .ap-user-avatar { display: grid; place-items: center; width: 29px; height: 29px; flex: 0 0 29px; border-radius: 50%; background: rgba(85,200,173,.18); color: #7be0c5; font-weight: 800; font-size: .75rem; }
         .ap-signout-btn {
           width: 100%;
           background: transparent;
-          border: 1px solid rgba(224,123,90,0.3);
-          border-radius: 6px;
-          color: var(--ap-warn);
-          font-family: var(--ap-font-mono);
+          border: 1px solid rgba(255,160,143,0.35);
+          border-radius: 8px;
+          color: #ffad9e;
+          font-family: inherit;
           font-size: 0.72rem;
           padding: 8px;
           cursor: pointer;
@@ -778,9 +812,17 @@ export default function AdminPanel() {
         .ap-main {
           flex: 1;
           min-width: 0;
-          padding: 36px 40px;
+          padding: 30px 42px 52px;
           overflow-y: auto;
         }
+        .ap-main > * { max-width: 1280px; margin-left: auto; margin-right: auto; }
+        .ap-topbar { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 31px; padding-bottom: 24px; border-bottom: 1px solid var(--ap-border); }
+        .ap-topbar h1 { margin: 4px 0 0; color: var(--ap-text); font-size: 1.35rem; letter-spacing: -.025em; }
+        .ap-topbar-subtitle { margin: 5px 0 0; color: var(--ap-muted); font-size: .72rem; }
+        .ap-topbar-kicker { color: var(--ap-accent); font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+        .ap-topbar-actions { display: flex; align-items: center; gap: 13px; }
+        .ap-system-status { display: inline-flex; align-items: center; gap: 7px; color: #567064; font-size: .68rem; white-space: nowrap; }
+        .ap-system-status i { width: 7px; height: 7px; border-radius: 50%; background: #3eb88d; box-shadow: 0 0 0 3px rgba(62,184,141,.13); }
 
         /* ---- Section header ---- */
         .ap-section-header {
@@ -1262,7 +1304,10 @@ export default function AdminPanel() {
           .ap-nav-label { display: none; }
           .ap-sidebar-logo-text { display: none; }
           .ap-sidebar-logo-sub { display: none; }
+          .ap-sidebar-logo { justify-content: center; padding-left: 8px; padding-right: 8px; }
           .ap-main { padding: 20px 16px; }
+          .ap-topbar { align-items: flex-start; flex-direction: column; gap: 14px; margin-bottom: 22px; padding-bottom: 18px; }
+          .ap-topbar-actions { width: 100%; justify-content: space-between; }
           .ap-two-col, .ap-three-col { grid-template-columns: 1fr; }
           .ap-wallet-row { flex-direction: column; }
         }
@@ -1288,20 +1333,30 @@ export default function AdminPanel() {
           {/* ---- Sidebar ---- */}
           <aside className="ap-sidebar">
             <div className="ap-sidebar-logo">
-              <div className="ap-sidebar-logo-text">TypeArena</div>
-              <span className="ap-sidebar-logo-sub">Admin Console</span>
+              <div className="ap-brand-mark" aria-hidden="true">TA</div>
+              <div>
+                <div className="ap-sidebar-logo-text">TypeArena</div>
+                <span className="ap-sidebar-logo-sub">Admin Console</span>
+              </div>
             </div>
+            <div className="ap-nav-heading">Workspace</div>
             {NAV_ITEMS.map(item => (
-              <div
+              <button
+                type="button"
                 key={item.id}
                 className={`ap-nav-item${activeSection === item.id ? ' active' : ''}`}
                 onClick={() => setActiveSection(item.id)}
+                aria-current={activeSection === item.id ? 'page' : undefined}
               >
                 <span className="ap-nav-icon">{item.icon}</span>
                 <span className="ap-nav-label">{item.label}</span>
-              </div>
+              </button>
             ))}
             <div className="ap-sidebar-footer">
+              <div className="ap-sidebar-user">
+                <span className="ap-user-avatar" aria-hidden="true">{String(adminIdentity.username || adminIdentity.email || 'A').slice(0, 1).toUpperCase()}</span>
+                <span><strong>{adminIdentity.username || 'Administrator'}</strong><small>Admin account</small></span>
+              </div>
               <button className="ap-signout-btn" onClick={handleSignOut}>Sign Out</button>
             </div>
           </aside>
@@ -1309,6 +1364,17 @@ export default function AdminPanel() {
           {/* ---- Main ---- */}
           <main className="ap-main">
             {notice && <div className="ap-toast">{notice}</div>}
+            <div className="ap-topbar">
+              <div>
+                <span className="ap-topbar-kicker">TypeArena / Control center</span>
+                <h1>Admin workspace</h1>
+                <p className="ap-topbar-subtitle">{SECTION_META[activeSection]?.[1]}</p>
+              </div>
+              <div className="ap-topbar-actions">
+                <span className="ap-system-status"><i aria-hidden="true" /> System operational</span>
+                <button type="button" className="ap-btn ap-btn-ghost ap-btn-sm" onClick={() => navigate('/')}>View site</button>
+              </div>
+            </div>
 
             {/* OVERVIEW */}
             {activeSection === 'overview' && (
