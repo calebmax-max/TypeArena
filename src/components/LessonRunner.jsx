@@ -1,35 +1,40 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import TypingBox from './TypingBox';
+import PlayKeyboardDeck from './PlayKeyboardDeck';
 import { useTypingSession } from './useTypingSession';
 import { recordAttempt } from './trainingProgress';
-import { startTrainingLesson, submitTrainingAttempt } from '../utils/typingApi';
+import { startProblemKeyPractice, startTrainingLesson, submitTrainingAttempt } from '../utils/typingApi';
 
 export default function LessonRunner({ lesson, onLessonPassed }) {
   const [attemptKey, setAttemptKey] = useState(0);
   const [outcome, setOutcome] = useState(null); // { wpm, accuracy, passed, passCount }
   const [attempt, setAttempt] = useState(null);
   const [attemptError, setAttemptError] = useState('');
+  const [showKeyboard, setShowKeyboard] = useState(true);
   // attemptKey isn't read inside generateLessonText - it exists purely to force a
   // fresh passage when moving on to the next required pass (nextAttempt).
   // A failed retry (retrySamePassage) intentionally leaves attemptKey alone
   // so the learner re-types the exact passage they just failed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const targetText = useMemo(() => lesson.content || '', [lesson, attemptKey]);
-  const required = 1;
+  const required = Number(lesson.requiredPasses || 1);
 
   useEffect(() => {
     let active = true;
     setAttempt(null);
     setAttemptError('');
-    if (lesson.id === 'problem-keys') return undefined;
-    startTrainingLesson(lesson.id)
+    const startRequest = lesson.id === 'problem-keys'
+      ? startProblemKeyPractice(lesson.content)
+      : startTrainingLesson(lesson.id);
+    startRequest
       .then((result) => { if (active) setAttempt(result); })
       .catch((error) => { if (active) setAttemptError(error.message || 'Could not start this lesson.'); });
     return () => { active = false; };
   }, [lesson.id]);
 
   const { typedText, finished, handleChange, reset, inputRef, liveStats } = useTypingSession(targetText, {
-    onFinish: async (stats, finalTypedText) => {
+    maxDurationSeconds: Number(lesson.duration) || 120,
+    onFinish: async (stats, finalTypedText, keystrokeLog) => {
       const keyErrors = {};
       for (let index = 0; index < targetText.length; index += 1) {
         if ((finalTypedText[index] || '') !== targetText[index]) {
@@ -44,6 +49,8 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
           unitId: lesson.unitId,
           attemptToken: attempt.token,
           typedText: finalTypedText,
+          targetText: lesson.id === 'problem-keys' ? targetText : undefined,
+          keystrokeLog,
           keyErrors,
         }) : null;
         const result = serverResult || stats;
@@ -81,6 +88,7 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
           ? 'Apply your keyboard control when the exercise becomes more demanding.'
           : 'Build accuracy and rhythm through one focused practice exercise.'
   );
+  const expectedKey = targetText[typedText.length] || '';
 
   return (
     <div className="training-lesson">
@@ -143,6 +151,11 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
 
       {!outcome && (
         <>
+          <div className="training-keyboard-toggle">
+            <label><input type="checkbox" checked={showKeyboard} onChange={(event) => setShowKeyboard(event.target.checked)} /> Show keyboard guide</label>
+            <span>Use it while learning, hide it when you want no-look practice.</span>
+          </div>
+          {showKeyboard && <PlayKeyboardDeck phase="racing" normalizeKeyboardKey={(key) => (key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key)} expectedKey={expectedKey} />}
           {liveStats && (
             <p className="training-lesson__live-stats" aria-live="polite">
               {Math.round(liveStats.wpm)} WPM · {Math.round(liveStats.accuracy)}% accuracy so far

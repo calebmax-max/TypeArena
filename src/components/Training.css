@@ -40,6 +40,9 @@
 }
 
 .training-page__course-header { flex: 0 0 100%; }
+.training-keyboard-toggle { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin: 1rem 0 .5rem; color: var(--tp-muted); font-size: .82rem; }
+.training-keyboard-toggle label { color: var(--tp-forest); font-weight: 700; }
+.training-keyboard-toggle input { margin-right: .4rem; }
 .training-course-dashboard {
   padding: 1.25rem;
   border: 1px solid var(--tp-sage-border);

@@ -73,7 +73,10 @@ export function loadProgress() {
 export function applyServerProgress(serverProgress) {
   const progress = loadProgress();
   const serverLessons = serverProgress?.lessons && typeof serverProgress.lessons === 'object' ? serverProgress.lessons : {};
-  progress.lessons = { ...progress.lessons, ...serverLessons };
+  // Once authenticated progress is loaded, the server is authoritative. A
+  // browser cache may contain stale passes from another account or an older
+  // curriculum and must not be allowed to unlock lessons locally.
+  progress.lessons = { ...serverLessons };
   progress.totalXp = Number(serverProgress?.totalXp) || 0;
   progress.badges = Object.entries(progress.lessons)
     .filter(([, state]) => Number(state?.passCount) > 0)

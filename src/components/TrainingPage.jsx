@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
 import PlacementTest from './PlacementTest';
-import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress } from '../utils/typingApi';
+import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress, purchaseTrainingCourse } from '../utils/typingApi';
 import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
   loadProgress,
@@ -23,6 +24,9 @@ export default function TrainingPage() {
   const [activeLessonId, setActiveLessonId] = useState(null);
   const [justCertified, setJustCertified] = useState(false);
   const [showPlacement, setShowPlacement] = useState(false);
+  const [stageComplete, setStageComplete] = useState(null);
+  const [purchaseError, setPurchaseError] = useState('');
+  const [purchasingCourseId, setPurchasingCourseId] = useState(null);
 
   const lessons = useMemo(() => flattenLessons(courses), [courses]);
 
@@ -54,6 +58,7 @@ export default function TrainingPage() {
 
   function handleSelectLesson(lessonId) {
     setJustCertified(false);
+    setStageComplete(null);
     setActiveLessonId(lessonId);
   }
 
@@ -65,16 +70,32 @@ export default function TrainingPage() {
     refreshProgress();
   }
 
-  function handleLessonPassed(lessonId) {
+  async function handleLessonPassed(lessonId) {
     if (lessonId === 'problem-keys') {
       setActiveLessonId(getCurrentLessonId(lessons));
       refreshProgress();
       return;
     }
-    const nextId = getNextLessonId(lessons, lessonId);
+    let nextLessons = lessons;
+    let nextCourseList = courses;
+    try {
+      const refreshed = normalizeCourseResponse(await fetchTrainingCourses());
+      setCourses(refreshed);
+      nextCourseList = refreshed;
+      nextLessons = flattenLessons(refreshed);
+    } catch {
+      // The attempt is already saved; retain the current map if a refresh is
+      // temporarily unavailable and let the next page load reconcile it.
+    }
+    const nextId = getNextLessonId(nextLessons, lessonId);
     if (nextId) {
+      const currentCourse = nextCourseList.find((course) => course.lessons?.some((lesson) => String(lesson.id) === String(lessonId)));
+      const nextCourse = nextCourseList.find((course) => course.lessons?.some((lesson) => String(lesson.id) === String(nextId)));
       setCurrentLesson(nextId);
       setActiveLessonId(nextId);
+      if (currentCourse && nextCourse && String(currentCourse.id) !== String(nextCourse.id)) {
+        setStageComplete({ title: currentCourse.title, nextId, locked: Boolean(nextCourse.isLocked), nextTitle: nextCourse.title });
+      }
     } else {
       // Passed the very last lesson in the sequence (all required passes
       // complete). Nowhere further to advance to, so stay on this lesson
@@ -84,6 +105,22 @@ export default function TrainingPage() {
       setJustCertified(true);
     }
     refreshProgress();
+  }
+
+
+  async function handlePurchase(course) {
+    setPurchaseError('');
+    setPurchasingCourseId(course.id);
+    try {
+      await purchaseTrainingCourse(course.id);
+      const [payload, progressPayload] = await Promise.all([fetchTrainingCourses(), fetchTrainingProgress()]);
+      setCourses(normalizeCourseResponse(payload));
+      setProgress(applyServerProgress(progressPayload));
+    } catch (purchaseFailure) {
+      setPurchaseError(purchaseFailure.message || 'Could not unlock this course.');
+    } finally {
+      setPurchasingCourseId(null);
+    }
   }
 
   if (loading) return <div className="training-page"><p>Loading courses...</p></div>;
@@ -109,13 +146,23 @@ export default function TrainingPage() {
   );
 
   const activeLesson = activeLessonId ? getLessonById(lessons, activeLessonId) : null;
-  const problemLesson = { id: 'problem-keys', unitId: 'adaptive', title: 'Problem-key practice', content: problemKeys.map((item) => `${item.key} ${item.key} ${item.key}`).join(' '), minWpm: 10, minAccuracy: 90, lessonType: 'challenge', requiredPasses: 1 };
+  const problemWords = {
+    q: 'quiet quick queen', w: 'water work away', e: 'every learn week', r: 'reader river ready',
+    t: 'type start steady', y: 'your rhythm young', u: 'use true useful', i: 'inside simple input',
+    o: 'good room smooth', p: 'practice people proper', a: 'again data calm', s: 'steady skills same',
+    d: 'daily design idea', f: 'focus finish safe', g: 'good typing goal', h: 'home rhythm with',
+    j: 'just join adjust', k: 'keep key skill', l: 'learn level well', z: 'zero zone lazy',
+    x: 'exact extra text', c: 'clean accuracy focus', v: 'every value move', b: 'build better habit',
+    n: 'nice rhythm now', m: 'more time improve', ';': 'class lesson; practice;',
+  };
+  const problemLesson = { id: 'problem-keys', unitId: 'adaptive', title: 'Problem-key practice', content: problemKeys.map((item) => problemWords[item.key.toLowerCase()] || `${item.key} practice`).join(' '), minWpm: 10, minAccuracy: 90, lessonType: 'challenge', requiredPasses: 1 };
   const displayedLesson = activeLessonId === 'problem-keys' ? problemLesson : activeLesson;
   const currentLessonId = getCurrentLessonId(lessons);
 
   return (
     <div className="training-page training-page--curriculum">
       <div className="training-page__course-header">
+        {purchaseError && <p className="training-lesson__error" role="alert">{purchaseError}</p>}
         <CourseDashboard
           progress={progress}
           courses={courses}
@@ -124,6 +171,7 @@ export default function TrainingPage() {
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
           onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); }}
           onPlacement={() => { setJustCertified(false); setShowPlacement(true); }}
+          onPurchase={purchasingCourseId ? undefined : handlePurchase}
         />
       </div>
       <aside className="training-page__sidebar">
@@ -139,6 +187,14 @@ export default function TrainingPage() {
       <main className="training-page__main">
         {showPlacement ? (
           <PlacementTest lessons={lessons} onComplete={handlePlacementComplete} onCancel={() => setShowPlacement(false)} />
+        ) : stageComplete ? (
+          <div className="training-certified">
+            <span className="training-eyebrow">Stage complete</span>
+            <h2>You passed {stageComplete.title}</h2>
+            <p>{stageComplete.locked ? `Your next stage, ${stageComplete.nextTitle}, is locked. Unlock it from the pathway above when you are ready.` : 'Your lessons are saved to your account. The next stage is now ready when you are.'}</p>
+            {!stageComplete.locked && <button type="button" className="training-button" onClick={() => { setStageComplete(null); setActiveLessonId(stageComplete.nextId); }}>Start next stage</button>}
+            {stageComplete.locked && <button type="button" className="training-button training-button--quiet" onClick={() => setStageComplete(null)}>View pathway</button>}
+          </div>
         ) : justCertified ? (
           <div className="training-certified">
             <h2>Training complete</h2>
@@ -155,6 +211,7 @@ export default function TrainingPage() {
             >
               Review this lesson again
             </button>
+            <Link className="training-button training-button--quiet" to="/certification">Take certification exam</Link>
           </div>
         ) : displayedLesson ? (
           <LessonRunner

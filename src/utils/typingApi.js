@@ -37,8 +37,14 @@ export const fetchTrainingProgress = async () => parseResponse(await apiFetch(bu
 export const startTrainingLesson = async (lessonId) => parseResponse(await apiFetch(buildApiUrl(`/api/training/lessons/${encodeURIComponent(lessonId)}/start`), {
   method: 'POST', headers: buildHeaders(), body: JSON.stringify({}),
 }));
+export const startProblemKeyPractice = async (targetText) => parseResponse(await apiFetch(buildApiUrl('/api/training/problem-keys/start'), {
+  method: 'POST', headers: buildHeaders(), body: JSON.stringify({ targetText }),
+}));
 export const submitTrainingAttempt = async (payload) => parseResponse(await apiFetch(buildApiUrl('/api/training-events'), {
   method: 'POST', headers: buildHeaders(), body: JSON.stringify(payload),
+}));
+export const purchaseTrainingCourse = async (courseId) => parseResponse(await apiFetch(buildApiUrl(`/api/training/courses/${encodeURIComponent(courseId)}/purchase`), {
+  method: 'POST', headers: buildHeaders(), body: JSON.stringify({}),
 }));
 export const fetchSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { headers: buildHeaders() }));
 export const createSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { method: 'POST', headers: buildHeaders(), body: JSON.stringify({}) }));

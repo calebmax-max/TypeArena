@@ -42,6 +42,15 @@ STAGE_SEEDS = [
 ]
 
 
+def _seed_drill(text: str) -> str:
+    """Turn a seed phrase into a useful 150-300 character repetition drill."""
+    phrase = ' '.join(str(text or '').split())
+    if len(phrase) >= 150:
+        return phrase[:300]
+    repetitions = (phrase + ' ') * ((180 // max(1, len(phrase))) + 1)
+    return repetitions[:300].rstrip()
+
+
 def _training_attempt_secret() -> bytes:
     return (os.getenv('TYPEARENA_TRAINING_ATTEMPT_SECRET') or os.getenv('SECRET_KEY') or 'typearena-training-attempt-secret').encode('utf-8')
 
@@ -69,20 +78,68 @@ def _verify_training_token(token: str, user_id: int, lesson_id: str) -> dict:
 
 def _server_typing_stats(target_text: str, typed_text: str, started_at: float) -> tuple[float, float]:
     elapsed_seconds = max(0.001, time.time() - float(started_at or time.time()))
-    words_typed = len(typed_text.strip()) / 5
+    # Levenshtein alignment prevents one omitted character from making every
+    # following character wrong, while still charging for substitutions,
+    # insertions, and deletions. WPM is net of those errors.
+    previous = list(range(len(typed_text) + 1))
+    for target_index, target_char in enumerate(target_text, 1):
+        current = [target_index]
+        for typed_index, typed_char in enumerate(typed_text, 1):
+            current.append(min(
+                current[-1] + 1,
+                previous[typed_index] + 1,
+                previous[typed_index - 1] + (target_char != typed_char),
+            ))
+        previous = current
+    distance = previous[-1] if target_text else len(typed_text)
+    correct = max(0, len(typed_text) - distance)
+    words_typed = correct / 5
     wpm = max(0.0, round(words_typed / max(elapsed_seconds / 60, 1 / 60), 1))
-    correct = sum(1 for index, char in enumerate(typed_text[:len(target_text)]) if target_text[index] == char)
     accuracy = max(0.0, min(100.0, round((correct / len(typed_text)) * 100, 1))) if typed_text else 0.0
     return wpm, accuracy
 
 
+def _validate_keystroke_log(log, typed_text: str, started_at: float, duration_seconds: int) -> None:
+    if not isinstance(log, list) or not log:
+        raise ValueError('A keystroke log is required for verified training attempts.')
+    if len(log) > max(500, len(typed_text) * 4 + 20):
+        raise ValueError('The keystroke log is not plausible for this passage.')
+    previous_time = -1
+    meaningful = 0
+    replayed = ''
+    for entry in log:
+        if not isinstance(entry, dict):
+            raise ValueError('Invalid keystroke log.')
+        timestamp = int(entry.get('t') or 0)
+        char = str(entry.get('ch') or '')
+        if timestamp < previous_time or timestamp < 0:
+            raise ValueError('Keystroke timestamps must be ordered.')
+        if timestamp > (duration_seconds + 30) * 1000:
+            raise ValueError('Keystroke log exceeds the lesson time limit.')
+        if len(char) > 1 and char != '<BACKSPACE>':
+            raise ValueError('Pasted text is not accepted in verified lessons.')
+        if char:
+            meaningful += 1
+            replayed = replayed[:-1] if char == '<BACKSPACE>' else replayed + char
+        previous_time = timestamp
+    if replayed != typed_text or meaningful < len(typed_text):
+        raise ValueError('The typed passage does not match the keystroke log.')
+
+
 def register_training_routes(app, *, get_connection, return_connection, get_user, is_admin=None):
+    schema_ready = False
+
     def ensure_tables(cur):
+        nonlocal schema_ready
+        if schema_ready:
+            return
         cur.execute('''CREATE TABLE IF NOT EXISTS training_courses (
             id BIGINT AUTO_INCREMENT PRIMARY KEY, slug VARCHAR(80) NOT NULL UNIQUE,
             title VARCHAR(160) NOT NULL, description TEXT NULL, is_pro TINYINT(1) NOT NULL DEFAULT 0,
             is_archived TINYINT(1) NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4''')
+        cur.execute("SHOW COLUMNS FROM training_courses LIKE 'price'")
+        if not cur.fetchone(): cur.execute("ALTER TABLE training_courses ADD COLUMN price DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER is_pro")
         cur.execute("SHOW COLUMNS FROM training_courses LIKE 'prerequisite_course_id'")
         if not cur.fetchone(): cur.execute("ALTER TABLE training_courses ADD COLUMN prerequisite_course_id BIGINT NULL AFTER is_pro")
         for column, definition in [('stage_number', 'INT NULL'), ('stage_focus', 'VARCHAR(180) NULL'), ('gate_wpm', 'DECIMAL(7,2) NOT NULL DEFAULT 0'), ('gate_accuracy', 'DECIMAL(6,2) NOT NULL DEFAULT 90'), ('skill_level', 'VARCHAR(80) NULL'), ('target_skill', 'VARCHAR(180) NULL'), ('expected_duration', 'VARCHAR(80) NULL'), ('practical_outcome', 'TEXT NULL'), ('assessment_requirements', 'TEXT NULL'), ('certificate_outcome', 'VARCHAR(180) NULL'), ('job_relevance', 'TEXT NULL')]:
@@ -107,7 +164,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             for order_number, (title, content, wpm, accuracy, duration) in enumerate(SEED_LESSONS, 1):
                 unit = 'Getting Started' if order_number == 1 else 'Home Row' if order_number <= 5 else 'Building Words'
                 lesson_type = 'intro' if order_number == 1 else 'test' if order_number == len(SEED_LESSONS) else 'practice'
-                cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', (course_id, unit, lesson_type, title, content, wpm, accuracy, duration, order_number))
+                cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', (course_id, unit, lesson_type, title, _seed_drill(content), wpm, accuracy, duration, order_number))
         cur.execute("UPDATE training_lessons SET unit_title=CASE WHEN order_number=1 THEN 'Getting Started' WHEN order_number<=5 THEN 'Home Row' ELSE 'Building Words' END WHERE unit_title IS NULL")
         cur.execute("UPDATE training_courses SET stage_number=1,stage_focus='Posture, finger placement, and home row',gate_accuracy=90 WHERE slug='beginner' AND stage_number IS NULL")
         cur.execute("SELECT id FROM training_courses WHERE slug='beginner'")
@@ -119,11 +176,20 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             if existing_stage:
                 previous_id = existing_stage['id']
                 continue
-            cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy) VALUES (%s,%s,%s,0,%s,%s,%s,%s,%s)', (slug, f'Stage {stage_number}: {title}', focus, previous_id, stage_number, focus, gate_wpm, gate_accuracy))
+            is_pro = int(stage_number >= 8)
+            price = 500 if stage_number == 8 else 750 if stage_number == 9 else 1000 if stage_number == 10 else 0
+            cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,price,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (slug, f'Stage {stage_number}: {title}', focus, is_pro, price, previous_id, stage_number, focus, gate_wpm, gate_accuracy))
             stage_id = cur.lastrowid
             for order_number, (lesson_title, content, wpm, accuracy, lesson_type) in enumerate(lessons, 1):
-                cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', (stage_id, title, lesson_type, lesson_title, content, wpm, accuracy, 120, order_number))
+                cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', (stage_id, title, lesson_type, lesson_title, _seed_drill(content), wpm, accuracy, 120, order_number))
             previous_id = stage_id
+        seed_titles = {item[0] for item in SEED_LESSONS}
+        seed_titles.update(lesson[0] for stage in STAGE_SEEDS for lesson in stage[5])
+        cur.execute("UPDATE training_courses SET is_pro=1,price=CASE stage_number WHEN 8 THEN 500 WHEN 9 THEN 750 WHEN 10 THEN 1000 ELSE price END WHERE stage_number IN (8,9,10) AND price=0")
+        cur.execute('SELECT id,title,content FROM training_lessons WHERE CHAR_LENGTH(content) < 150')
+        for short_lesson in cur.fetchall():
+            if short_lesson.get('title') in seed_titles:
+                cur.execute('UPDATE training_lessons SET content=%s WHERE id=%s', (_seed_drill(short_lesson.get('content') or short_lesson.get('title')), short_lesson['id']))
         cur.execute('''
             CREATE TABLE IF NOT EXISTS training_attempts (
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -143,6 +209,19 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         ''')
         cur.execute("SHOW COLUMNS FROM training_attempts LIKE 'key_errors_json'")
         if not cur.fetchone(): cur.execute("ALTER TABLE training_attempts ADD COLUMN key_errors_json TEXT NULL AFTER xp_earned")
+        cur.execute('''CREATE TABLE IF NOT EXISTS course_purchases (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            course_id BIGINT NOT NULL,
+            amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            method VARCHAR(30) NOT NULL DEFAULT 'wallet',
+            status VARCHAR(20) NOT NULL DEFAULT 'completed',
+            purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_course_purchase_user_course (user_id, course_id),
+            KEY idx_course_purchase_user (user_id),
+            KEY idx_course_purchase_course (course_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4''')
+        schema_ready = True
 
     @app.get('/api/training/courses')
     def training_courses():
@@ -153,16 +232,42 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 current_user = get_user(conn)
                 account_plan = str((current_user or {}).get('account_plan') or (current_user or {}).get('accountPlan') or 'free').lower()
                 has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool((current_user or {}).get('is_admin') or (current_user or {}).get('isAdmin'))
-                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
+                cur.execute('SELECT id,slug,title,description,is_pro,price,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
+                purchased_courses = set()
+                if current_user:
+                    cur.execute("SELECT course_id FROM course_purchases WHERE user_id=%s AND status='completed'", (current_user['id'],))
+                    purchased_courses = {int(row['course_id']) for row in cur.fetchall()}
+                progress_by_lesson = {}
+                if current_user:
+                    cur.execute('''SELECT lesson_id, COUNT(*) attempts, COUNT(DISTINCT CASE WHEN passed=1 THEN lesson_id END) passed,
+                        MAX(wpm) best_wpm, MAX(accuracy) best_accuracy
+                        FROM training_attempts WHERE user_id=%s GROUP BY lesson_id''', (current_user['id'],))
+                    progress_by_lesson = {str(row['lesson_id']): row for row in cur.fetchall()}
+                lessons_by_course = {}
+                if courses:
+                    course_placeholders = ','.join(['%s'] * len(courses))
+                    cur.execute(f'SELECT id,course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number FROM training_lessons WHERE course_id IN ({course_placeholders}) AND is_archived=0 ORDER BY order_number,id', tuple(course['id'] for course in courses))
+                    for lesson in cur.fetchall():
+                        lessons_by_course.setdefault(int(lesson['course_id']), []).append(lesson)
                 for course in courses:
-                    cur.execute('SELECT id,course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number FROM training_lessons WHERE course_id=%s AND is_archived=0 ORDER BY order_number,id', (course['id'],))
-                    course['lessons'] = cur.fetchall()
-                    cur.execute('SELECT COUNT(*) total, SUM(CASE WHEN passed=1 THEN 1 ELSE 0 END) passed FROM training_attempts a JOIN training_lessons l ON CAST(a.lesson_id AS UNSIGNED)=l.id WHERE a.user_id=%s AND l.course_id=%s AND l.is_archived=0', (current_user['id'] if current_user else 0, course['id']))
-                    stats = cur.fetchone() or {}
-                    course['progress'] = {'totalLessons': int(stats.get('total') or 0), 'passedLessons': int(stats.get('passed') or 0)}
+                    course['lessons'] = lessons_by_course.get(int(course['id']), [])
+                    total_lessons = len(course['lessons'])
+                    passed_lessons = 0
+                    for lesson in course['lessons']:
+                        lesson_progress = progress_by_lesson.get(str(lesson['id'])) or {}
+                        lesson['progress'] = {
+                            'attempts': int(lesson_progress.get('attempts') or 0),
+                            'passed': bool(lesson_progress.get('passed')),
+                            'bestWpm': float(lesson_progress.get('best_wpm') or 0),
+                            'bestAccuracy': float(lesson_progress.get('best_accuracy') or 0),
+                        }
+                        passed_lessons += int(lesson['progress']['passed'])
+                    course['progress'] = {'totalLessons': total_lessons, 'passedLessons': passed_lessons}
                     course['completed'] = course['progress']['totalLessons'] > 0 and course['progress']['passedLessons'] >= course['progress']['totalLessons']
-                    course['isLocked'] = bool(course.get('is_pro')) and not has_paid_access
+                    course_paid = int(course['id']) in purchased_courses
+                    course['hasPurchase'] = course_paid
+                    course['isLocked'] = bool(course.get('is_pro')) and not (has_paid_access or course_paid)
                     if course.get('prerequisite_course_id'):
                         prerequisite = next((item for item in courses if item['id'] == course['prerequisite_course_id']), None)
                         course['isLocked'] = course['isLocked'] or not bool(prerequisite and prerequisite.get('completed'))
@@ -171,7 +276,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                         # Keep lesson metadata for the curriculum map, but never
                         # send protected passage content to an unauthorized client.
                         for lesson in course['lessons']:
-                            lesson['content'] = ''
+                            lesson['content'] = None
                 conn.commit()
                 return jsonify({'courses': courses})
         finally:
@@ -228,6 +333,40 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         finally:
             return_connection(conn)
 
+    @app.post('/api/training/courses/<int:course_id>/purchase')
+    def purchase_training_course(course_id):
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user:
+                return jsonify({'message': 'Sign in to purchase a course.'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('SELECT id,title,is_pro,price,is_archived FROM training_courses WHERE id=%s', (course_id,))
+                course = cur.fetchone()
+                if not course or course.get('is_archived'):
+                    return jsonify({'message': 'Course not found.'}), 404
+                cur.execute("SELECT id FROM course_purchases WHERE user_id=%s AND course_id=%s AND status='completed' LIMIT 1", (user['id'], course_id))
+                if cur.fetchone():
+                    return jsonify({'message': 'You already own this course.', 'purchased': True})
+                amount = max(0.0, float(course.get('price') or 0))
+                if not course.get('is_pro'):
+                    return jsonify({'message': 'This course is available without purchase.'}), 400
+                cur.execute('SELECT balance FROM users WHERE id=%s FOR UPDATE', (user['id'],))
+                wallet = cur.fetchone() or {}
+                balance = float(wallet.get('balance') or 0)
+                if balance < amount:
+                    return jsonify({'message': f'Insufficient wallet balance. Add KES {amount - balance:.2f} using M-Pesa top-up, then try again.'}), 400
+                cur.execute('UPDATE users SET balance=balance-%s WHERE id=%s', (amount, user['id']))
+                cur.execute("INSERT INTO course_purchases (user_id,course_id,amount,method,status) VALUES (%s,%s,%s,'wallet','completed')", (user['id'], course_id, amount))
+                conn.commit()
+                return jsonify({'purchased': True, 'courseId': course_id, 'amount': amount, 'balance': balance - amount})
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            return_connection(conn)
+
     def admin_allowed(conn):
         user = get_user(conn)
         return bool(user and (is_admin(user) if is_admin else user.get('is_admin') or user.get('isAdmin')))
@@ -239,7 +378,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             with conn.cursor() as cur:
                 ensure_tables(cur)
                 if not admin_allowed(conn): return jsonify({'message': 'Admin access required.'}), 403
-                cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance,is_archived FROM training_courses ORDER BY COALESCE(stage_number,99),id')
+                cur.execute('SELECT id,slug,title,description,is_pro,price,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance,is_archived FROM training_courses ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
                     cur.execute('SELECT id,course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number,is_archived FROM training_lessons WHERE course_id=%s ORDER BY order_number,id', (course['id'],))
@@ -274,11 +413,11 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 if gate_wpm < 0 or gate_accuracy < 0 or gate_accuracy > 100:
                     return jsonify({'message': 'Gate WPM must be non-negative and accuracy must be between 0 and 100.'}), 400
                 stage_focus = str(data.get('stageFocus') or '').strip()[:180]
-                values = (slug, title, str(data.get('description') or '').strip(), int(bool(data.get('isPro'))), int(data.get('prerequisiteCourseId') or 0) or None, stage_number, stage_focus, gate_wpm, gate_accuracy, str(data.get('skillLevel') or '').strip()[:80], str(data.get('targetSkill') or '').strip()[:180], str(data.get('expectedDuration') or '').strip()[:80], str(data.get('practicalOutcome') or '').strip(), str(data.get('assessmentRequirements') or '').strip(), str(data.get('certificateOutcome') or '').strip()[:180], str(data.get('jobRelevance') or '').strip(), int(bool(data.get('isArchived'))))
+                values = (slug, title, str(data.get('description') or '').strip(), int(bool(data.get('isPro'))), max(0.0, float(data.get('price') or 0)), int(data.get('prerequisiteCourseId') or 0) or None, stage_number, stage_focus, gate_wpm, gate_accuracy, str(data.get('skillLevel') or '').strip()[:80], str(data.get('targetSkill') or '').strip()[:180], str(data.get('expectedDuration') or '').strip()[:80], str(data.get('practicalOutcome') or '').strip(), str(data.get('assessmentRequirements') or '').strip(), str(data.get('certificateOutcome') or '').strip()[:180], str(data.get('jobRelevance') or '').strip(), int(bool(data.get('isArchived'))))
                 if course_id:
-                    cur.execute('UPDATE training_courses SET slug=%s,title=%s,description=%s,is_pro=%s,prerequisite_course_id=%s,stage_number=%s,stage_focus=%s,gate_wpm=%s,gate_accuracy=%s,skill_level=%s,target_skill=%s,expected_duration=%s,practical_outcome=%s,assessment_requirements=%s,certificate_outcome=%s,job_relevance=%s,is_archived=%s WHERE id=%s', (*values, course_id))
+                    cur.execute('UPDATE training_courses SET slug=%s,title=%s,description=%s,is_pro=%s,price=%s,prerequisite_course_id=%s,stage_number=%s,stage_focus=%s,gate_wpm=%s,gate_accuracy=%s,skill_level=%s,target_skill=%s,expected_duration=%s,practical_outcome=%s,assessment_requirements=%s,certificate_outcome=%s,job_relevance=%s,is_archived=%s WHERE id=%s', (*values, course_id))
                 else:
-                    cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance,is_archived) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', values)
+                    cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,price,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance,is_archived) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', values)
                     course_id = cur.lastrowid
                 conn.commit(); return jsonify({'id': course_id})
         finally: return_connection(conn)
@@ -366,7 +505,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 return jsonify({'message': 'Sign in to start training.'}), 401
             with conn.cursor() as cur:
                 ensure_tables(cur)
-                cur.execute('''SELECT l.id,l.content,l.duration_seconds,c.prerequisite_course_id,c.is_pro
+                cur.execute('''SELECT l.id,l.content,l.duration_seconds,c.id course_id,c.prerequisite_course_id,c.is_pro,c.price
                     FROM training_lessons l JOIN training_courses c ON c.id=l.course_id
                     WHERE l.id=%s AND l.is_archived=0 AND c.is_archived=0''', (lesson_id,))
                 lesson = cur.fetchone()
@@ -374,7 +513,9 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                     return jsonify({'message': 'Unknown training lesson.'}), 404
                 account_plan = str(user.get('account_plan') or user.get('accountPlan') or 'free').lower()
                 has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool(user.get('is_admin') or user.get('isAdmin'))
-                if lesson.get('is_pro') and not has_paid_access:
+                cur.execute("SELECT 1 FROM course_purchases WHERE user_id=%s AND course_id=%s AND status='completed' LIMIT 1", (user['id'], lesson['course_id']))
+                has_course_purchase = bool(cur.fetchone())
+                if lesson.get('is_pro') and not (has_paid_access or has_course_purchase):
                     return jsonify({'message': 'This course requires paid or sponsored access.'}), 403
                 if lesson.get('prerequisite_course_id'):
                     cur.execute('SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0', (lesson['prerequisite_course_id'],))
@@ -389,10 +530,29 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 token = _training_token({
                     'userId': int(user['id']), 'lessonId': str(lesson_id),
                     'textHash': hashlib.sha256(str(lesson['content']).encode('utf-8')).hexdigest(),
-                    'startedAt': now, 'expiresAt': now + max(60, int(lesson.get('duration_seconds') or 120) + 300),
+                    'startedAt': now, 'durationSeconds': int(lesson.get('duration_seconds') or 120),
+                    'expiresAt': now + max(60, int(lesson.get('duration_seconds') or 120) + 300),
                 })
                 conn.commit()
                 return jsonify({'token': token, 'serverStartTs': now, 'durationSeconds': int(lesson.get('duration_seconds') or 120)})
+        finally:
+            return_connection(conn)
+
+    @app.post('/api/training/problem-keys/start')
+    def start_problem_key_practice():
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user: return jsonify({'message': 'Sign in to start training.'}), 401
+            payload = request.get_json(silent=True) or {}
+            target_text = str(payload.get('targetText') or '').strip()
+            if len(target_text) < 20 or len(target_text) > 500:
+                return jsonify({'message': 'Problem-key practice passage is invalid.'}), 400
+            now = time.time()
+            token = _training_token({'userId': int(user['id']), 'lessonId': 'problem-keys',
+                'textHash': hashlib.sha256(target_text.encode('utf-8')).hexdigest(),
+                'startedAt': now, 'durationSeconds': 120, 'expiresAt': now + 420})
+            return jsonify({'token': token, 'serverStartTs': now, 'durationSeconds': 120})
         finally:
             return_connection(conn)
 
@@ -423,8 +583,14 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 try: numeric_lesson_id = int(lesson_id)
                 except ValueError: numeric_lesson_id = None
                 if numeric_lesson_id:
-                    access_cur.execute('''SELECT c.prerequisite_course_id FROM training_lessons l JOIN training_courses c ON c.id=l.course_id WHERE l.id=%s''', (numeric_lesson_id,))
+                    access_cur.execute('''SELECT c.id course_id,c.prerequisite_course_id,c.is_pro FROM training_lessons l JOIN training_courses c ON c.id=l.course_id WHERE l.id=%s''', (numeric_lesson_id,))
                     access = access_cur.fetchone() or {}
+                    access_cur.execute("SELECT 1 FROM course_purchases WHERE user_id=%s AND course_id=%s AND status='completed' LIMIT 1", (user['id'], access.get('course_id')))
+                    has_course_purchase = bool(access_cur.fetchone())
+                    account_plan = str(user.get('account_plan') or user.get('accountPlan') or 'free').lower()
+                    has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool(user.get('is_admin') or user.get('isAdmin'))
+                    if access.get('is_pro') and not (has_paid_access or has_course_purchase):
+                        return jsonify({'message': 'This course requires paid or sponsored access.'}), 403
                     if access.get('prerequisite_course_id'):
                         access_cur.execute('SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0', (access['prerequisite_course_id'],))
                         total = int((access_cur.fetchone() or {}).get('total') or 0)
@@ -439,12 +605,16 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             typed_text = str(payload.get('typedText') or '')
             if attempt_token:
                 attempt = _verify_training_token(attempt_token, int(user['id']), lesson_id)
-                with conn.cursor() as lesson_cur:
-                    lesson_cur.execute('SELECT content FROM training_lessons WHERE id=%s AND is_archived=0', (int(lesson_id),))
-                    server_lesson = lesson_cur.fetchone()
-                target_text = str((server_lesson or {}).get('content') or '')
+                if lesson_id == 'problem-keys':
+                    target_text = str(payload.get('targetText') or '').strip()
+                else:
+                    with conn.cursor() as lesson_cur:
+                        lesson_cur.execute('SELECT content FROM training_lessons WHERE id=%s AND is_archived=0', (int(lesson_id),))
+                        server_lesson = lesson_cur.fetchone()
+                    target_text = str((server_lesson or {}).get('content') or '')
                 if hashlib.sha256(target_text.encode('utf-8')).hexdigest() != str(attempt.get('textHash')):
                     return jsonify({'message': 'Training passage does not match the server-issued attempt.'}), 400
+                _validate_keystroke_log(payload.get('keystrokeLog'), typed_text, attempt['startedAt'], int(attempt.get('durationSeconds') or 120))
                 wpm, accuracy = _server_typing_stats(target_text, typed_text, attempt['startedAt'])
             else:
                 # Numeric database lessons are never allowed to trust client

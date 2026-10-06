@@ -13,6 +13,9 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
   const [finished, setFinished] = useState(false);
   const finishedRef = useRef(false);
   const inputRef = useRef(null);
+  const previousValueRef = useRef('');
+  const sessionStartedAtRef = useRef(null);
+  const keystrokeLogRef = useRef([]);
 
   const finish = useCallback(
     (finalTypedText) => {
@@ -25,7 +28,7 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
         typedText: finalTypedText,
         elapsedSeconds: elapsed,
       });
-      onFinish?.(stats, finalTypedText);
+      onFinish?.(stats, finalTypedText, keystrokeLogRef.current.slice());
     },
     [onFinish, startedAt, targetText],
   );
@@ -34,6 +37,18 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
     (event) => {
       if (finishedRef.current) return;
       const value = event.target.value;
+      const previous = previousValueRef.current;
+      if (!sessionStartedAtRef.current && value.length > 0) sessionStartedAtRef.current = Date.now();
+      const elapsed = sessionStartedAtRef.current ? Date.now() - sessionStartedAtRef.current : 0;
+      if (value.length > previous.length) {
+        const appended = value.slice(previous.length);
+        keystrokeLogRef.current.push({ t: elapsed, ch: appended });
+      } else if (value.length < previous.length) {
+        for (let index = 0; index < previous.length - value.length; index += 1) {
+          keystrokeLogRef.current.push({ t: elapsed, ch: '<BACKSPACE>' });
+        }
+      }
+      previousValueRef.current = value;
       if (!startedAt && value.length > 0) {
         setStartedAt(Date.now());
       }
@@ -78,6 +93,9 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
     setElapsedSeconds(0);
     setFinished(false);
     finishedRef.current = false;
+    previousValueRef.current = '';
+    sessionStartedAtRef.current = null;
+    keystrokeLogRef.current = [];
     inputRef.current?.focus();
   }, []);
 
@@ -89,6 +107,7 @@ export function useTypingSession(targetText, { maxDurationSeconds, onFinish } = 
     reset,
     inputRef,
     liveStats,
+    keystrokeLog: keystrokeLogRef.current,
     timeRemaining: maxDurationSeconds ? Math.max(0, maxDurationSeconds - elapsedSeconds) : null,
   };
 }
