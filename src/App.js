@@ -261,7 +261,6 @@ function AppLayout() {
       <header className="arena-navbar">
         <div className="arena-navbar__inner">
           <Link to="/" className="arena-brand" aria-label="TypeArena home">
-            <span className="arena-brand__mark">TA</span>
             <span className="arena-brand__copy"><strong>TypeArena</strong><small>Learn. Prove. Progress.</small></span>
           </Link>
           <button type="button" className={`arena-menu-toggle${menuOpen ? ' is-open' : ''}`} aria-expanded={menuOpen} aria-controls="arena-primary-nav" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} onClick={() => setMenuOpen((open) => !open)}>

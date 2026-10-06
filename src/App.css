@@ -4709,7 +4709,8 @@ img {
 .arena-navbar__inner { width: min(1260px, 100%); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .arena-brand { display: inline-flex; align-items: center; gap: 0.7rem; color: #fff; text-decoration: none; }
 .arena-brand__mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: linear-gradient(135deg, #f0bc47, #b97a14); font-weight: 900; letter-spacing: -0.08em; }
-.arena-brand__copy { display: grid; gap: 0.1rem; text-align: left; }
+.arena-brand__copy { display: grid; gap: 0.18rem; text-align: left; }
+.arena-brand__copy strong { color: #fff; font-family: Georgia, 'Times New Roman', serif; font-size: 1.25rem; font-weight: 700; letter-spacing: -.035em; }
 .arena-brand__copy small { color: rgba(255,255,255,0.62); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .arena-nav { display: flex; align-items: center; gap: 0.25rem; }
 .arena-nav__section { display: contents; }
