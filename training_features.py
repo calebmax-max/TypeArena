@@ -148,19 +148,28 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         try:
             with conn.cursor() as cur:
                 ensure_tables(cur)
+                current_user = get_user(conn)
+                account_plan = str((current_user or {}).get('account_plan') or (current_user or {}).get('accountPlan') or 'free').lower()
+                has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool((current_user or {}).get('is_admin') or (current_user or {}).get('isAdmin'))
                 cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
                     cur.execute('SELECT id,course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number FROM training_lessons WHERE course_id=%s AND is_archived=0 ORDER BY order_number,id', (course['id'],))
                     course['lessons'] = cur.fetchall()
-                    cur.execute('SELECT COUNT(*) total, SUM(CASE WHEN passed=1 THEN 1 ELSE 0 END) passed FROM training_attempts a JOIN training_lessons l ON CAST(a.lesson_id AS UNSIGNED)=l.id WHERE a.user_id=%s AND l.course_id=%s AND l.is_archived=0', (get_user(conn)['id'] if get_user(conn) else 0, course['id']))
+                    cur.execute('SELECT COUNT(*) total, SUM(CASE WHEN passed=1 THEN 1 ELSE 0 END) passed FROM training_attempts a JOIN training_lessons l ON CAST(a.lesson_id AS UNSIGNED)=l.id WHERE a.user_id=%s AND l.course_id=%s AND l.is_archived=0', (current_user['id'] if current_user else 0, course['id']))
                     stats = cur.fetchone() or {}
                     course['progress'] = {'totalLessons': int(stats.get('total') or 0), 'passedLessons': int(stats.get('passed') or 0)}
                     course['completed'] = course['progress']['totalLessons'] > 0 and course['progress']['passedLessons'] >= course['progress']['totalLessons']
-                    course['isLocked'] = False
+                    course['isLocked'] = bool(course.get('is_pro')) and not has_paid_access
                     if course.get('prerequisite_course_id'):
                         prerequisite = next((item for item in courses if item['id'] == course['prerequisite_course_id']), None)
-                        course['isLocked'] = not bool(prerequisite and prerequisite.get('completed'))
+                        course['isLocked'] = course['isLocked'] or not bool(prerequisite and prerequisite.get('completed'))
+                    course['accessReason'] = 'paid' if course.get('is_pro') and not has_paid_access else 'prerequisite' if course['isLocked'] else None
+                    if course['isLocked']:
+                        # Keep lesson metadata for the curriculum map, but never
+                        # send protected passage content to an unauthorized client.
+                        for lesson in course['lessons']:
+                            lesson['content'] = ''
                 conn.commit()
                 return jsonify({'courses': courses})
         finally:
@@ -315,7 +324,26 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 ensure_tables(cur)
                 if not admin_allowed(conn): return jsonify({'message': 'Admin access required.'}), 403
                 cur.execute('SELECT lesson_id,COUNT(*) attempts,SUM(passed) passes,ROUND(AVG(wpm),1) average_wpm,ROUND(AVG(accuracy),1) average_accuracy FROM training_attempts GROUP BY lesson_id ORDER BY lesson_id')
-                return jsonify({'lessons': cur.fetchall()})
+                lessons = cur.fetchall()
+                cur.execute('''SELECT COUNT(DISTINCT user_id) learners, COUNT(*) attempts,
+                    SUM(passed) passes, ROUND(AVG(wpm),1) average_wpm,
+                    ROUND(AVG(accuracy),1) average_accuracy,
+                    COUNT(DISTINCT CASE WHEN created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY) THEN user_id END) active_learners_30d
+                    FROM training_attempts''')
+                impact = cur.fetchone() or {}
+                attempts = int(impact.get('attempts') or 0)
+                passes = int(impact.get('passes') or 0)
+                impact['learners'] = int(impact.get('learners') or 0)
+                impact['attempts'] = attempts
+                impact['passes'] = passes
+                impact['passRate'] = round(passes / attempts, 3) if attempts else 0
+                impact['activeLearners30d'] = int(impact.get('active_learners_30d') or 0)
+                impact.pop('active_learners_30d', None)
+                impact['averageWpm'] = float(impact.get('average_wpm') or 0)
+                impact['averageAccuracy'] = float(impact.get('average_accuracy') or 0)
+                impact.pop('average_wpm', None)
+                impact.pop('average_accuracy', None)
+                return jsonify({'lessons': lessons, 'impact': impact})
         finally: return_connection(conn)
 
     @app.post('/api/training/lessons/<int:lesson_id>/start')
@@ -327,12 +355,16 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 return jsonify({'message': 'Sign in to start training.'}), 401
             with conn.cursor() as cur:
                 ensure_tables(cur)
-                cur.execute('''SELECT l.id,l.content,l.duration_seconds,c.prerequisite_course_id
+                cur.execute('''SELECT l.id,l.content,l.duration_seconds,c.prerequisite_course_id,c.is_pro
                     FROM training_lessons l JOIN training_courses c ON c.id=l.course_id
                     WHERE l.id=%s AND l.is_archived=0 AND c.is_archived=0''', (lesson_id,))
                 lesson = cur.fetchone()
                 if not lesson:
                     return jsonify({'message': 'Unknown training lesson.'}), 404
+                account_plan = str(user.get('account_plan') or user.get('accountPlan') or 'free').lower()
+                has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool(user.get('is_admin') or user.get('isAdmin'))
+                if lesson.get('is_pro') and not has_paid_access:
+                    return jsonify({'message': 'This course requires paid or sponsored access.'}), 403
                 if lesson.get('prerequisite_course_id'):
                     cur.execute('SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0', (lesson['prerequisite_course_id'],))
                     total = int((cur.fetchone() or {}).get('total') or 0)

@@ -117,6 +117,7 @@ export default function AdminPanel() {
   const [adminContent, setAdminContent] = useState([]);
   const [trainingCourses, setTrainingCourses] = useState([]);
   const [trainingProgress, setTrainingProgress] = useState([]);
+  const [trainingImpact, setTrainingImpact] = useState(null);
   const [trainingCourseForm, setTrainingCourseForm] = useState({ id: null, title: '', description: '', isPro: false, prerequisiteCourseId: '', isArchived: false });
   const [trainingLessonForm, setTrainingLessonForm] = useState({ id: null, courseId: '', unitTitle: 'Course lessons', lessonType: 'practice', title: '', content: '', targetWpm: 10, targetAccuracy: 90, durationSeconds: 120, orderNumber: 1, isArchived: false });
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
@@ -178,6 +179,7 @@ export default function AdminPanel() {
         if (!active) return;
         setTrainingCourses(Array.isArray(courses?.courses) ? courses.courses : []);
         setTrainingProgress(Array.isArray(progress?.lessons) ? progress.lessons : []);
+        setTrainingImpact(progress?.impact || null);
       })
       .catch((error) => { if (active) setNotice(error.message || 'Could not load training courses.'); });
     return () => { active = false; };
@@ -1831,6 +1833,7 @@ export default function AdminPanel() {
                     </tbody></table>
                   </div>
                 ))}
+                {trainingImpact && <div className="ap-card"><p className="ap-card-title">Training impact</p><div className="ap-metrics-secondary"><span>Learners: <strong>{trainingImpact.learners}</strong></span><span>Attempts: <strong>{trainingImpact.attempts}</strong></span><span>Pass rate: <strong>{Math.round(Number(trainingImpact.passRate || 0) * 100)}%</strong></span><span>Active 30d: <strong>{trainingImpact.activeLearners30d}</strong></span><span>Average: <strong>{trainingImpact.averageWpm} WPM / {trainingImpact.averageAccuracy}%</strong></span></div></div>}
                 <div className="ap-card"><p className="ap-card-title">Learner testing progress</p><table className="ap-table"><thead><tr><th>Lesson</th><th>Attempts</th><th>Passes</th><th>Average</th></tr></thead><tbody>{trainingProgress.map((row) => <tr key={row.lesson_id}><td>{row.lesson_id}</td><td>{row.attempts}</td><td>{row.passes || 0}</td><td>{row.average_wpm || 0} WPM / {row.average_accuracy || 0}%</td></tr>)}</tbody></table></div>
               </>
             )}

@@ -10,3 +10,6 @@ services:
         value: 3.14.3
       - key: TYPEARENA_SOCKETIO_ASYNC_MODE
         value: gevent
+      # Set this in the Render dashboard; never commit the secret itself.
+      - key: TYPEARENA_TRAINING_ATTEMPT_SECRET
+        sync: false

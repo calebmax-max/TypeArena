@@ -101,7 +101,7 @@ export default function CurriculumMap({ progress, courses, lessons, currentLesso
                         {status === 'passed' && (required > 1 ? `Passed (${passCount}/${required})` : 'Passed')}
                         {status === 'current' && 'Current'}
                         {status === 'unlocked' && 'Available'}
-                        {status === 'locked' && 'Locked'}
+                        {status === 'locked' && (lesson.accessReason === 'paid' ? 'Paid access' : 'Locked')}
                       </span>
                     </button>
                   </li>

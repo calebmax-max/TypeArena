@@ -2,9 +2,12 @@ export function normalizeCourseResponse(payload) {
   const courses = Array.isArray(payload?.courses) ? payload.courses : [];
   return courses.map((course) => ({
     ...course,
+    accessReason: course.accessReason || null,
+    isPro: Boolean(course.is_pro || course.isPro),
     lessons: (Array.isArray(course.lessons) ? course.lessons : []).map((lesson) => ({
       ...lesson,
       courseLocked: Boolean(course.isLocked),
+      accessReason: course.accessReason || null,
       id: String(lesson.id),
       unitId: String(lesson.course_id || course.id),
       unitTitle: lesson.unit_title || lesson.unitTitle || 'Course lessons',
