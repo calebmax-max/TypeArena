@@ -22,6 +22,7 @@ export default function TrainingPage() {
   const [problemKeys, setProblemKeys] = useState([]);
   const [progress, setProgress] = useState(loadProgress());
   const [activeLessonId, setActiveLessonId] = useState(null);
+  const [showLessonList, setShowLessonList] = useState(true);
   const [justCertified, setJustCertified] = useState(false);
   const [showPlacement, setShowPlacement] = useState(false);
   const [stageComplete, setStageComplete] = useState(null);
@@ -64,6 +65,7 @@ export default function TrainingPage() {
     setJustCertified(false);
     setStageComplete(null);
     setActiveLessonId(lessonId);
+    setShowLessonList(false);
   }
 
   function handlePlacementComplete(startLessonId) {
@@ -71,6 +73,7 @@ export default function TrainingPage() {
     setShowPlacement(false);
     setJustCertified(false);
     setActiveLessonId(startLessonId);
+    setShowLessonList(false);
     refreshProgress();
   }
 
@@ -173,12 +176,12 @@ export default function TrainingPage() {
           lessons={lessons}
           problemKeys={problemKeys}
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
-          onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); }}
+          onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); setShowLessonList(false); }}
           onPlacement={() => { setJustCertified(false); setShowPlacement(true); }}
           onPurchase={purchasingCourseId ? undefined : handlePurchase}
         />
       </div>
-      <aside className="training-page__sidebar">
+      {showLessonList && <aside className="training-page__sidebar">
         <CurriculumMap
           progress={progress}
           courses={courses}
@@ -187,8 +190,11 @@ export default function TrainingPage() {
           activeLessonId={activeLessonId}
           onSelectLesson={handleSelectLesson}
         />
-      </aside>
+      </aside>}
       <main className="training-page__main">
+        {!showLessonList && <button type="button" className="training-map__back" onClick={() => setShowLessonList(true)}>
+          ← All lessons
+        </button>}
         {showPlacement ? (
           <PlacementTest lessons={lessons} onComplete={handlePlacementComplete} onCancel={() => setShowPlacement(false)} />
         ) : stageComplete ? (

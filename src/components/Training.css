@@ -120,6 +120,25 @@
   min-width: 0;
 }
 
+.training-map__back {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-bottom: .9rem;
+  padding: .55rem .8rem;
+  border: 1px solid var(--tp-sage-border);
+  border-radius: var(--tp-radius);
+  background: #fff;
+  color: var(--tp-forest);
+  font: inherit;
+  font-size: .85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.training-map__back:hover { background: var(--tp-sage); }
+.training-map__back:focus-visible { outline: 2px solid var(--tp-moss); outline-offset: 2px; }
+
 /* ==========================================================================
    Placement test
    ========================================================================== */

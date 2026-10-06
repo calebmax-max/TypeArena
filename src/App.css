@@ -4747,6 +4747,7 @@ img {
   .App--workspace .arena-nav__signout { margin-top: 1.25rem; color: rgba(255,255,255,.55); }
   .App--workspace main, .App--workspace .site-marquee, .App--workspace .arena-footer { margin-left: 238px; }
   .App--workspace main { width: calc(100% - 238px); max-width: calc(100% - 238px); min-width: 0; box-sizing: border-box; }
+  .App--workspace main > .app-dashboard { width: min(1180px, calc(100% - 2rem)); max-width: 100%; margin-inline: auto; }
   .App--workspace .site-marquee { width: calc(100% - 238px); }
   .App--workspace .arena-footer__inner, .App--workspace .arena-footer__bottom { width: min(1100px, calc(100% - 2rem)); }
 }
