@@ -259,7 +259,7 @@ function AppLayout() {
         <div className="arena-navbar__inner">
           <Link to="/" className="arena-brand" aria-label="TypeArena home">
             <span className="arena-brand__mark">TA</span>
-            <span className="arena-brand__copy"><strong>TypeArena</strong><small>Compete. Type. Win.</small></span>
+            <span className="arena-brand__copy"><strong>TypeArena</strong><small>Learn. Prove. Progress.</small></span>
           </Link>
           <button type="button" className={`arena-menu-toggle${menuOpen ? ' is-open' : ''}`} aria-expanded={menuOpen} aria-controls="arena-primary-nav" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} onClick={() => setMenuOpen((open) => !open)}>
             <span /><span /><span />
@@ -315,10 +315,10 @@ function AppLayout() {
 
       <footer className="arena-footer">
         <div className="arena-footer__inner">
-          <div><strong>TypeArena</strong><p>Skill-based typing races for people who like a little pressure.</p></div>
+          <div><strong>TypeArena</strong><p>Practical typing and digital skills for learners, schools, and employers.</p></div>
           <div className="arena-footer__links"><Link to="/play">Play a race</Link><Link to="/tournaments">Tournaments</Link><Link to="/school">School mode</Link><Link to="/leaderboard">Leaderboard</Link><Link to="/profile">Your profile</Link></div>
         </div>
-        <p className="arena-footer__bottom">&copy; 2026 TypeArena. Compete. Type. Win.</p>
+        <p className="arena-footer__bottom">&copy; 2026 TypeArena. Learn. Prove. Progress.</p>
       </footer>
 
       <OnboardingTour

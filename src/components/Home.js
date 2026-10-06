@@ -2,16 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { buildHeaders } from '../utils/typingApi';
 import { buildApiUrl } from '../utils/api';
-import { preloadPlayContent, preloadRoute } from '../utils/navigationPrefetch';
 import '../styles/Home.css';
 
 const DEMO_SENTENCES = [
   "Speed is nothing without accuracy behind it.",
-  "Every keystroke in the arena counts for cash.",
-  "The best racers type with rhythm, not urgency.",
-  "KES rewards go to the fastest fingers in the room.",
-  "Consistency at 120 WPM beats bursts at 160.",
-  "Train hard, race live, win real money today.",
+  "Good typing starts with relaxed hands and steady rhythm.",
+  "Practice the keys you miss most and measure your progress.",
+  "Clear digital skills create more opportunities at school and work.",
+  "Accuracy first. Speed follows with deliberate practice.",
+  "Your next lesson is one focused practice session away.",
 ];
 
 function LiveTypingDemo() {
@@ -63,7 +62,7 @@ function LiveTypingDemo() {
         <span className="dot dot-red" />
         <span className="dot dot-yellow" />
         <span className="dot dot-green" />
-        <span className="terminal-label">TypeArena - Live Race</span>
+        <span className="terminal-label">TypeArena - Skills practice</span>
       </div>
       <div className="terminal-body">
         <div className="terminal-prompt">
@@ -89,33 +88,33 @@ function LiveTypingDemo() {
 const features = [
   {
     icon: '⚡',
-    label: 'Real-Time Racing',
-    desc: 'Sub-10ms precision engine. Every keystroke registered, every millisecond matters.',
+    label: 'Structured learning',
+    desc: 'Follow a clear pathway from keyboard foundations to practical computer skills.',
   },
   {
     icon: '🏆',
-    label: 'Cash Prizes',
-    desc: 'Top performers earn real KES rewards direct to their M-Pesa wallet. No delays.',
+    label: 'Measurable progress',
+    desc: 'Track WPM, accuracy, weak keys, lesson completion, and assessment results.',
   },
   {
     icon: '🌐',
-    label: 'Live Tournaments',
-    desc: 'Scheduled arenas with 2–128 players. Daily, weekly, and flash events.',
+    label: 'Job-ready practice',
+    desc: 'Train for typing, data entry, office administration, customer support, and digital work.',
   },
   {
     icon: '🛡️',
-    label: 'Fair Play',
-    desc: 'Keystroke biometrics and AI anti-cheat keep the arena clean.',
+    label: 'Verified evidence',
+    desc: 'Create shareable assessment results and certificates that explain what was tested.',
   },
   {
     icon: '⏱️',
-    label: 'Timed Modes',
-    desc: '30s blitz, 60s sprint, 120s marathon. Find your distance.',
+    label: 'Built for classrooms',
+    desc: 'Teachers assign courses, monitor learners, and understand who needs support.',
   },
   {
     icon: '📊',
-    label: 'Deep Stats',
-    desc: 'WPM curves, accuracy heatmaps, and head-to-head replays after every race.',
+    label: 'Compete when ready',
+    desc: 'Optional live races make practice motivating without replacing the learning pathway.',
   },
 ];
 
@@ -233,14 +232,6 @@ export default function Home({ currentUser }) {
   const heroBadgeLabel = currentUser?.id
     ? `${onlineCount} online`
     : `${liveCount === null ? 'N/A' : liveCount} live now`;
-  const preloadPlayPage = () => {
-    void preloadRoute('play');
-    void preloadPlayContent();
-  };
-  const preloadTournamentsPage = () => {
-    void preloadRoute('tournaments');
-  };
-
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') {
       document.querySelectorAll('.reveal').forEach((el) => el.classList.add('in-view'));
@@ -268,24 +259,24 @@ export default function Home({ currentUser }) {
 
         <div className="hero-inner">
           <div className="hero-text">
-            <div className="hero-eyebrow reveal">Competitive Typing Platform</div>
+            <div className="hero-eyebrow reveal">Digital skills and typing school</div>
             <h1 className="hero-title reveal">
-              Where Precision<br />
-              <span className="accent">Meets</span><br />
-              Prize Money.
+              Learn the skill.<br />
+              <span className="accent">Prove</span> the progress.<br />
+              Open the door.
             </h1>
             <p className="hero-sub reveal">
-              Enter paid typing tournaments, race live opponents,
-              and withdraw KES winnings straight to M-Pesa.
+              Build keyboard fluency and practical computer skills with structured lessons,
+              measurable progress, and reliable evidence of what you can do.
             </p>
             <div className="hero-pills reveal">
-              <span className="pill">1v1 Live Races</span>
-              <span className="pill">Private Rooms</span>
-              <span className="pill">KES Wallet</span>
+              <span className="pill">Learn step by step</span>
+              <span className="pill">Verified results</span>
+              <span className="pill">Built for classrooms</span>
             </div>
             <div className="hero-cta reveal">
-              <Link to="/play" data-tour="home-start-typing" className="btn-primary-hero" onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Start Typing →</Link>
-              <Link to="/tournaments" data-tour="home-browse-tournaments" className="btn-ghost-hero" onMouseEnter={preloadTournamentsPage} onFocus={preloadTournamentsPage} onTouchStart={preloadTournamentsPage}>Browse Tournaments</Link>
+              <Link to="/training" data-tour="home-start-typing" className="btn-primary-hero">Start learning -&gt;</Link>
+              <Link to="/school" data-tour="home-browse-tournaments" className="btn-ghost-hero">For schools</Link>
             </div>
           </div>
 
@@ -329,11 +320,38 @@ export default function Home({ currentUser }) {
         </div>
       </section>
 
+      <section className="pathways-section reveal">
+        <div className="section-header">
+          <span className="section-tag">Choose your path</span>
+          <h2>One platform.<br />Three useful outcomes.</h2>
+        </div>
+        <div className="pathways-grid">
+          <Link className="pathway-card" to="/training">
+            <span className="pathway-card__number">01</span>
+            <h3>Learn</h3>
+            <p>Follow guided lessons from keyboard foundations to practical digital work.</p>
+            <span>Explore training -&gt;</span>
+          </Link>
+          <Link className="pathway-card" to="/school">
+            <span className="pathway-card__number">02</span>
+            <h3>Train a class</h3>
+            <p>Give teachers a clear pathway for assigning courses and supporting learners.</p>
+            <span>Explore schools -&gt;</span>
+          </Link>
+          <Link className="pathway-card" to="/certification">
+            <span className="pathway-card__number">03</span>
+            <h3>Prove skills</h3>
+            <p>Complete verified assessments and share evidence with schools or employers.</p>
+            <span>View certification -&gt;</span>
+          </Link>
+        </div>
+      </section>
+
       {/* ── HOW IT WORKS ── */}
       <section className="features-section">
         <div className="section-header reveal">
           <span className="section-tag">How It Works</span>
-          <h2>Built for competitors,<br />not casual clickers.</h2>
+          <h2>Built for learners,<br />teachers, and employers.</h2>
         </div>
         <div className="features-grid">
           {features.map((f, i) => (
@@ -349,11 +367,11 @@ export default function Home({ currentUser }) {
       {/* ── CTA ── */}
       <section className="cta-section reveal">
         <div className="cta-glow" />
-        <h2>Ready to prove your speed?</h2>
-        <p>Thousands of typists compete for real prizes every day. Your first race starts in seconds.</p>
+        <h2>Ready to build a useful skill?</h2>
+        <p>Start with a focused lesson, see your progress, and move toward opportunities that value practical ability.</p>
         <div className="cta-buttons">
-          <Link to="/play" className="btn-primary-hero" onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Enter the Arena</Link>
-          <Link to="/tournaments" className="btn-ghost-hero" onMouseEnter={preloadTournamentsPage} onFocus={preloadTournamentsPage} onTouchStart={preloadTournamentsPage}>View Schedule</Link>
+          <Link to="/training" className="btn-primary-hero">Start learning</Link>
+          <Link to="/school" className="btn-ghost-hero">For schools</Link>
         </div>
       </section>
     </div>
