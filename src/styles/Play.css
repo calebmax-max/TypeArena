@@ -7,24 +7,24 @@
 
 /* ── CSS Custom Properties ────────────────────────────────── */
 :root {
-  --arena-bg:            linear-gradient(150deg, hsl(240 12% 9% / 0.9), hsl(240 11% 12% / 0.95));
-  --arena-panel:         hsl(240 12% 7% / 0.72);
-  --arena-panel-border:  hsl(240 10% 19%);
-  --arena-text:          hsl(0 0% 95%);
-  --arena-muted:         hsl(240 5% 60%);
-  --arena-accent:        hsl(145 80% 42%);
-  --arena-accent-soft:   hsl(145 80% 42% / 0.18);
-  --arena-glow:          hsl(145 80% 42% / 0.22);
-  --arena-gold:          hsl(45 100% 68%);
-  --arena-key-bg:        linear-gradient(180deg, hsl(220 17% 18%), hsl(220 19% 10%));
-  --arena-key-border:    hsl(220 15% 28%);
-  --arena-key-text:      hsl(0 0% 95%);
-  --arena-key-highlight: hsl(145 80% 42% / 0.28);
-  --arena-surface:       hsl(240 12% 6% / 0.82);
+  --arena-bg:            linear-gradient(135deg, #0c1512 0%, #10251d 58%, #132c21 100%);
+  --arena-panel:         rgba(20, 37, 29, .92);
+  --arena-panel-border:  rgba(123, 224, 168, .2);
+  --arena-text:          #edf8f2;
+  --arena-muted:         rgba(237, 248, 242, .68);
+  --arena-accent:        #7be0a8;
+  --arena-accent-soft:   rgba(123, 224, 168, .14);
+  --arena-glow:          rgba(123, 224, 168, .22);
+  --arena-gold:          #f0bc47;
+  --arena-key-bg:        linear-gradient(180deg, #193629, #10251d);
+  --arena-key-border:    rgba(123, 224, 168, .24);
+  --arena-key-text:      #edf8f2;
+  --arena-key-highlight: rgba(123, 224, 168, .24);
+  --arena-surface:       rgba(12, 21, 18, .86);
   --arena-radius:        10px;
   --arena-radius-lg:     16px;
   --arena-transition:    0.18s ease;
-  --font-display:        'Syne', sans-serif;
+  --font-display:        'Manrope', sans-serif;
   --font-mono:           'JetBrains Mono', monospace;
 }
 
@@ -74,7 +74,7 @@
    LOBBY — MODE SELECT
    ============================================================ */
 .mode-select {
-  max-width: 860px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 3.5rem 0 2rem;
   position: relative;
