@@ -1,8 +1,19 @@
 import React from 'react';
-import { getCourseSummary } from './trainingProgress';
+import { getCourseSummary, isLessonPassed } from './trainingProgress';
 
-export default function CourseDashboard({ progress, lessons, problemKeys = [], onContinue, onProblemPractice }) {
+export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice }) {
   const summary = getCourseSummary(progress, lessons);
+  const coursePathway = courses.map((course, index) => {
+    const courseLessons = course.lessons || [];
+    const passed = courseLessons.filter((lesson) => isLessonPassed(progress, lesson)).length;
+    return {
+      ...course,
+      stage: Number(course.stage_number || course.stageNumber || index + 1),
+      passed,
+      total: courseLessons.length,
+      percentage: courseLessons.length ? Math.round((passed / courseLessons.length) * 100) : 0,
+    };
+  });
 
   return (
     <section className="training-course-dashboard" aria-labelledby="beginner-course-title">
@@ -19,6 +30,28 @@ export default function CourseDashboard({ progress, lessons, problemKeys = [], o
       </div>
       <div className="training-course-dashboard__track" aria-hidden="true">
         <span style={{ width: `${summary.percentage}%` }} />
+      </div>
+      <div className="training-pathway" aria-labelledby="training-pathway-title">
+        <div className="training-pathway__heading">
+          <div>
+            <p className="training-eyebrow">Your learning pathway</p>
+            <h2 id="training-pathway-title">Progress by stage</h2>
+          </div>
+          <span>Complete each stage to build a reliable foundation.</span>
+        </div>
+        <div className="training-pathway__grid">
+          {coursePathway.map((course) => (
+            <div className={`training-stage-card${course.isLocked ? ' training-stage-card--locked' : ''}`} key={course.id}>
+              <span className="training-stage-card__number">Stage {course.stage}</span>
+              <strong>{course.title}</strong>
+              <span>{course.stage_focus || course.stageFocus || 'Guided typing practice'}</span>
+              <div className="training-stage-card__progress" aria-label={`${course.percentage}% complete`}>
+                <span style={{ width: `${course.percentage}%` }} />
+              </div>
+              <small>{course.isLocked ? 'Unlock after the previous stage' : `${course.passed}/${course.total} lessons complete`}</small>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="training-course-dashboard__meta">
         <span><strong>{summary.totalXp}</strong> XP earned</span>

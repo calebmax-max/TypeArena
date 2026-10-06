@@ -108,6 +108,7 @@ export default function TrainingPage() {
       <div className="training-page__course-header">
         <CourseDashboard
           progress={progress}
+          courses={courses}
           lessons={lessons}
           problemKeys={problemKeys}
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}

@@ -61,6 +61,20 @@
 .training-course-dashboard__track span { display: block; height: 100%; border-radius: inherit; background: var(--tp-moss); transition: width .25s ease; }
 .training-course-dashboard__meta { color: var(--tp-muted); font-size: .85rem; }
 .training-course-dashboard__meta strong { color: var(--tp-forest); }
+.training-pathway { margin: 1.25rem 0; padding: 1rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: rgba(227, 240, 230, .42); }
+.training-pathway__heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .85rem; }
+.training-pathway__heading p { margin: 0; }
+.training-pathway__heading h2 { margin: .2rem 0 0; color: var(--tp-forest); font-size: 1.05rem; }
+.training-pathway__heading > span { color: var(--tp-muted); font-size: .78rem; }
+.training-pathway__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: .65rem; }
+.training-stage-card { display: flex; flex-direction: column; gap: .35rem; min-height: 132px; padding: .85rem; border: 1px solid var(--tp-sage-border); border-radius: 9px; background: #fff; }
+.training-stage-card--locked { opacity: .62; }
+.training-stage-card__number { color: var(--tp-moss); font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.training-stage-card strong { color: var(--tp-forest); font-size: .9rem; }
+.training-stage-card > span:not(.training-stage-card__number) { min-height: 2.2em; color: var(--tp-muted); font-size: .76rem; line-height: 1.4; }
+.training-stage-card__progress { height: .35rem; margin-top: auto; overflow: hidden; border-radius: 999px; background: var(--tp-sage); }
+.training-stage-card__progress span { display: block; height: 100%; border-radius: inherit; background: var(--tp-moss); }
+.training-stage-card small { color: var(--tp-muted); font-size: .7rem; }
 .training-problem-keys { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--tp-sage-border); }
 .training-problem-keys div { display: flex; flex-direction: column; gap: .2rem; }
 .training-problem-keys span { color: var(--tp-muted); font-size: .85rem; }
@@ -486,6 +500,7 @@
   .training-course-dashboard__intro,
   .training-course-dashboard__meta { align-items: flex-start; flex-direction: column; }
   .training-course-dashboard__progress { text-align: left; }
+  .training-pathway__heading { align-items: flex-start; flex-direction: column; }
   .training-problem-keys { align-items: flex-start; flex-direction: column; }
 
   .training-page__sidebar {
