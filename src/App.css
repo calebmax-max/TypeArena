@@ -4749,3 +4749,34 @@ img {
   .App--workspace .site-marquee { width: calc(100% - 238px); }
   .App--workspace .arena-footer__inner, .App--workspace .arena-footer__bottom { width: min(1100px, calc(100% - 2rem)); }
 }
+
+/* Responsive safety net for the app shell and data-heavy screens. */
+html, body, #root { max-width: 100%; overflow-x: hidden; }
+img, video, canvas, svg { max-width: 100%; }
+button, input, textarea, select { max-width: 100%; }
+
+.school-dashboard-page,
+.school-dashboard-page > *,
+.school-dashboard-page section,
+.school-dashboard-page aside { min-width: 0; }
+
+.school-dashboard-page table { max-width: 100%; }
+
+@media (max-width: 820px) {
+  .App--workspace .arena-navbar { position: sticky; inset: auto; width: 100%; padding: .65rem .75rem; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .App--workspace .arena-navbar__inner { width: 100%; height: auto; flex-direction: row; align-items: center; }
+  .App--workspace .arena-brand { padding: 0; }
+  .App--workspace .arena-nav { margin-top: 0; }
+  .App--workspace main, .App--workspace .site-marquee, .App--workspace .arena-footer { width: 100%; margin-left: 0; }
+  .App--workspace .site-marquee { width: 100%; }
+  .App--workspace main { padding-top: .75rem; }
+}
+
+@media (max-width: 760px) {
+  .school-dashboard-page { padding: 28px 12px !important; }
+  .school-dashboard__create-grid,
+  .school-dashboard__workspace-grid { grid-template-columns: 1fr !important; }
+  .school-dashboard-page table { display: block; overflow-x: auto; white-space: nowrap; }
+  .school-dashboard-page .profile-hero h1,
+  .school-dashboard-page .profile-hero h2 { overflow-wrap: anywhere; }
+}

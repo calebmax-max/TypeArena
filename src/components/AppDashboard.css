@@ -1,4 +1,6 @@
-.app-dashboard { width: min(1240px, 100%); margin: 0 auto; padding: 2.5rem 1.25rem 4rem; color: #edf8f2; }
+.app-dashboard { width: min(1240px, 100%); min-width: 0; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; color: #edf8f2; }
+.app-dashboard__hero-copy, .app-dashboard__hero-art, .app-dashboard__stat, .app-dashboard__panel, .app-dashboard__action { min-width: 0; }
+.app-dashboard h1, .app-dashboard h2, .app-dashboard p { overflow-wrap: anywhere; }
 .app-dashboard__hero { position: relative; display: grid; grid-template-columns: 1.1fr .9fr; gap: 2rem; min-height: 330px; overflow: hidden; padding: clamp(2rem, 5vw, 4rem); border: 1px solid rgba(123,224,168,.22); border-radius: 28px; background: linear-gradient(120deg, #11291f 0%, #173c2c 52%, #10251d 100%); box-shadow: 0 28px 70px rgba(0,0,0,.2); }
 .app-dashboard__hero::after { position: absolute; inset: 0; background: linear-gradient(110deg, rgba(123,224,168,.1), transparent 44%); content: ''; pointer-events: none; }
 .app-dashboard__hero-copy { position: relative; z-index: 2; align-self: center; max-width: 610px; }
@@ -48,4 +50,4 @@
 .app-dashboard__panel--proof h2 { max-width: 14ch; font-size: 1.6rem; }
 .app-dashboard__proof-links { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; }
 @media (max-width: 850px) { .app-dashboard__hero { grid-template-columns: 1fr; } .app-dashboard__hero-art { min-height: 170px; } .app-dashboard__actions { grid-template-columns: repeat(2, 1fr); } .app-dashboard__lower-grid { grid-template-columns: 1fr; } }
-@media (max-width: 560px) { .app-dashboard { padding: 1.25rem .8rem 3rem; } .app-dashboard__hero { min-height: 520px; padding: 1.5rem; } .app-dashboard__hero-art { min-height: 190px; } .app-dashboard__keyboard { right: 0; transform: rotate(-5deg) scale(.88); transform-origin: right center; } .app-dashboard__stats { grid-template-columns: 1fr; } .app-dashboard__actions { grid-template-columns: 1fr; } .app-dashboard__action { min-height: 88px; } }
+@media (max-width: 560px) { .app-dashboard { padding: 1.25rem .8rem 3rem; } .app-dashboard__hero { min-height: 520px; padding: 1.5rem; } .app-dashboard__hero-art { min-height: 190px; overflow: hidden; } .app-dashboard__keyboard { right: 0; transform: rotate(-5deg) scale(.78); transform-origin: right center; } .app-dashboard__hero-badge { right: .25rem; } .app-dashboard__stats { grid-template-columns: 1fr; } .app-dashboard__actions { grid-template-columns: 1fr; } .app-dashboard__action { min-height: 88px; } .app-dashboard__section-heading, .app-dashboard__panel-heading { align-items: flex-start; flex-direction: column; } }

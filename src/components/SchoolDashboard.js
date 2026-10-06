@@ -279,7 +279,7 @@ export default function SchoolDashboard({ currentUser }) {
   }
 
   return (
-    <div className="profile-container" style={{ maxWidth: 1180, margin: '0 auto', padding: '42px 18px' }}>
+    <div className="profile-container school-dashboard-page" style={{ maxWidth: 1180, margin: '0 auto', padding: '42px 18px' }}>
       <section className="profile-hero" style={{ marginBottom: 24 }}>
         <span className="eyebrow">TypeArena School</span>
         <h1>Learn. Practise. Demonstrate.</h1>
@@ -319,7 +319,7 @@ export default function SchoolDashboard({ currentUser }) {
         </section>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 18 }}>
+      <div className="school-dashboard__create-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 16, marginBottom: 18 }}>
         <form style={cardStyle} onSubmit={(event) => {
           event.preventDefault();
           run(async () => {
@@ -357,7 +357,7 @@ export default function SchoolDashboard({ currentUser }) {
         </form>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,.7fr) minmax(320px,1.3fr)', gap: 18, alignItems: 'start' }}>
+      <div className="school-dashboard__workspace-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px,.7fr) minmax(320px,1.3fr)', gap: 18, alignItems: 'start' }}>
         <aside style={cardStyle}>
           <h2>Your school spaces</h2>
           {!overview?.organizations?.length && <p>Create an organisation or accept an invitation to get started.</p>}

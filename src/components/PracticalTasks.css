@@ -24,3 +24,9 @@
 .practical-task-result.is-pass { background: rgba(123,224,168,.14); color: #7be0a8; }.practical-task-result.is-retry { background: rgba(245,158,11,.12); color: #fbbf24; }
 .practical-task-result span, .practical-task-result small { color: rgba(239,248,242,.68); }.practical-task-empty { padding: 4rem 1rem; text-align: center; color: rgba(239,248,242,.62); }.practical-tasks-error { max-width: 1100px; margin: 0 auto 1rem; color: #fca5a5; }
 @media (max-width: 760px) { .practical-tasks-layout { grid-template-columns: 1fr; } }
+@media (max-width: 520px) {
+  .practical-tasks-page { padding: 1.5rem .75rem; }
+  .practical-task-list, .practical-task-workspace { min-width: 0; padding: .8rem; }
+  .practical-task-workspace h2 { font-size: 1.35rem; overflow-wrap: anywhere; }
+  .practical-task-list button { min-width: 0; }
+}
