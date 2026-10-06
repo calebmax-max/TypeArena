@@ -1604,12 +1604,16 @@
 }
 
 .tp-main-heading__eyebrow {
-  color: var(--tp-accent);
+  color: var(--tp-gold);
   font-size: .7rem;
   font-weight: 800;
   letter-spacing: .14em;
   text-transform: uppercase;
 }
+
+.tp-stat-row__head strong,
+.tp-count__n,
+.tp-section-head__sub { color: var(--tp-gold); }
 
 .tp-main-heading h2 { margin: .35rem 0 .4rem; color: #fff; font-size: clamp(1.6rem, 3vw, 2.4rem); letter-spacing: -.04em; }
 .tp-main-heading p { max-width: 58ch; margin: 0; color: var(--tp-muted); font-size: .88rem; line-height: 1.55; }

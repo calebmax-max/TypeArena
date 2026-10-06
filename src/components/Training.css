@@ -852,3 +852,7 @@
 .training-placement__result,
 .training-state-card,
 .training-loading-card { color: #edf8f2; }
+
+.training-eyebrow,
+.training-stage-card__number,
+.training-course-dashboard__progress strong { color: #f0bc47; }
