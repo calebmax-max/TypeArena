@@ -76,8 +76,12 @@ def _verify_training_token(token: str, user_id: int, lesson_id: str) -> dict:
     return payload
 
 
-def _server_typing_stats(target_text: str, typed_text: str, started_at: float) -> tuple[float, float]:
-    elapsed_seconds = max(0.001, time.time() - float(started_at or time.time()))
+def _server_typing_stats(target_text: str, typed_text: str, started_at: float, elapsed_seconds: float | None = None) -> tuple[float, float]:
+    # The signed token is issued before the learner starts typing. Scoring
+    # against token age includes preparation time and the network round-trip
+    # after the final key. Verified clients provide a monotonic keystroke
+    # timeline, so use that timeline for the typing duration instead.
+    elapsed_seconds = max(0.001, float(elapsed_seconds) if elapsed_seconds is not None else time.time() - float(started_at or time.time()))
     # Levenshtein alignment prevents one omitted character from making every
     # following character wrong, while still charging for substitutions,
     # insertions, and deletions. WPM is net of those errors.
@@ -614,8 +618,10 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                     target_text = str((server_lesson or {}).get('content') or '')
                 if hashlib.sha256(target_text.encode('utf-8')).hexdigest() != str(attempt.get('textHash')):
                     return jsonify({'message': 'Training passage does not match the server-issued attempt.'}), 400
-                _validate_keystroke_log(payload.get('keystrokeLog'), typed_text, attempt['startedAt'], int(attempt.get('durationSeconds') or 120))
-                wpm, accuracy = _server_typing_stats(target_text, typed_text, attempt['startedAt'])
+                keystroke_log = payload.get('keystrokeLog')
+                _validate_keystroke_log(keystroke_log, typed_text, attempt['startedAt'], int(attempt.get('durationSeconds') or 120))
+                typing_elapsed = max(1.0 / 60.0, max(int(entry.get('t') or 0) for entry in keystroke_log) / 1000.0)
+                wpm, accuracy = _server_typing_stats(target_text, typed_text, attempt['startedAt'], typing_elapsed)
             else:
                 # Numeric database lessons are never allowed to trust client
                 # supplied scores. Legacy non-database lesson IDs remain
