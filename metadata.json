@@ -1,0 +1,7 @@
+{
+  "name": "TypeArena",
+  "description": "Skill-based typing races, tournaments, and practice battles.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
