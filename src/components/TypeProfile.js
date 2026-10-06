@@ -178,7 +178,7 @@ export default function TypeProfile() {
   const [termsAccepted, setTermsAccepted]  = useState(false);
   const [profileName,   setProfileName]    = useState('');
   const [profileSaving, setProfileSaving]  = useState(false);
-  const [activeTab,     setActiveTab]      = useState('wallet');
+  const [activeTab,     setActiveTab]      = useState('history');
   const [walletSection, setWalletSection]  = useState('topup'); // 'topup' | 'withdraw'
   const [topUpLoading,     setTopUpLoading]     = useState(false);
   const [topUpIdempotencyKey, setTopUpIdempotencyKey] = useState('');
@@ -802,12 +802,6 @@ export default function TypeProfile() {
 
           <p className="tp-sidebar__email">{currentUser.email}</p>
 
-          {/* Balance pill */}
-          <div className="tp-balance">
-            <span className="tp-balance__label">Wallet</span>
-            <span className="tp-balance__value">KES {Number(currentUser.balance || 0).toFixed(2)}</span>
-          </div>
-
           {/* Stat bars */}
           <div className="tp-stats">
             <div className="tp-stat-row">
@@ -869,17 +863,6 @@ export default function TypeProfile() {
             <small>{trainingSummary.nextCourse ? `Next: ${trainingSummary.nextCourse.title}` : trainingSummary.totalLessons ? 'All available lessons completed.' : 'Start your first lesson to build your skills record.'}</small>
           </div>
 
-          {/* Equipped items */}
-          <div className="tp-equipped">
-            <h3 className="tp-equipped__title">Equipped</h3>
-            {Object.entries(EQUIPPED_LABELS).map(([key, label]) => (
-              <div key={key} className="tp-equipped__row">
-                <span className="tp-equipped__label">{label}</span>
-                <span className="tp-equipped__value">{currentUser.equippedItems?.[key] || 'None'}</span>
-              </div>
-            ))}
-          </div>
-
           {/* Sign out */}
           <button className="tp-btn tp-btn--danger tp-sidebar__signout" onClick={handleSignOut}>
             Sign Out
@@ -900,7 +883,6 @@ export default function TypeProfile() {
 
           {/* Tab bar */}
           <div className="tp-tabs" role="tablist">
-            <Tab id="wallet" active={activeTab === 'wallet'} onClick={setActiveTab}>Wallet</Tab>
             <Tab id="history" active={activeTab === 'history'} onClick={setActiveTab}>Race History</Tab>
             <Tab id="account" active={activeTab === 'account'} onClick={setActiveTab}>Account</Tab>
           </div>
