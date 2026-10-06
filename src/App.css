@@ -4733,3 +4733,19 @@ img {
   .arena-footer__inner { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { .arena-nav { transition: none; } }
+
+/* Signed-in workspace shell: a quieter, application-style rail leaves the
+   content area free for dashboards, lessons, and data-heavy school screens. */
+@media (min-width: 821px) {
+  .App--workspace .arena-navbar { position: fixed; inset: 0 auto 0 0; width: 238px; padding: 1.25rem .9rem; border-right: 1px solid rgba(255,255,255,.1); border-bottom: 0; }
+  .App--workspace .arena-navbar__inner { width: 100%; height: 100%; flex-direction: column; align-items: stretch; justify-content: flex-start; }
+  .App--workspace .arena-brand { padding: .25rem .45rem 1.5rem; }
+  .App--workspace .arena-nav { display: grid; align-content: start; gap: .3rem; margin-top: 1rem; }
+  .App--workspace .arena-nav .nav-link, .App--workspace .arena-nav__signout, .App--workspace .arena-nav__upgrade { width: 100%; padding: .72rem .85rem; border-radius: 10px; text-align: left; }
+  .App--workspace .arena-nav .nav-link--active { background: linear-gradient(90deg, rgba(123,224,168,.2), rgba(123,224,168,.05)); color: #7be0a8; }
+  .App--workspace .arena-nav__profile { margin: 1rem 0 0; }
+  .App--workspace .arena-nav__signout { margin-top: 1.25rem; color: rgba(255,255,255,.55); }
+  .App--workspace main, .App--workspace .site-marquee, .App--workspace .arena-footer { margin-left: 238px; }
+  .App--workspace .site-marquee { width: calc(100% - 238px); }
+  .App--workspace .arena-footer__inner, .App--workspace .arena-footer__bottom { width: min(1100px, calc(100% - 2rem)); }
+}

@@ -2,6 +2,7 @@ import './App.css';
 import { BrowserRouter, Routes, Route, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import Home from './components/Home';
+import AppDashboard from './components/AppDashboard';
 import InviteInbox from './components/InviteInbox';
 
 // Inside your layout/App component, pass in currentUser:
@@ -255,7 +256,7 @@ function AppLayout() {
   );
 
   return (
-    <div className="App">
+    <div className={`App${currentUser ? ' App--workspace' : ''}`}>
       <OfflineBanner />
       <header className="arena-navbar">
         <div className="arena-navbar__inner">
@@ -268,6 +269,7 @@ function AppLayout() {
             <span className="arena-menu-toggle__label">Menu</span>
           </button>
           <nav id="arena-primary-nav" className={`arena-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
+            <NavLink to="/" className={navLinkClassName}>Dashboard</NavLink>
             <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
             <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}>Training</NavLink>
             <NavLink to="/tasks" className={navLinkClassName}>Skills Lab</NavLink>
@@ -297,7 +299,7 @@ function AppLayout() {
       <main>
         <InviteInbox currentUser={currentUser} />
         <Routes>
-          <Route path="/" element={<Home currentUser={currentUser} />} />
+          <Route path="/" element={currentUser ? <AppDashboard currentUser={currentUser} /> : <Home currentUser={currentUser} />} />
           <Route path="/play" element={<Play />} />
           <Route path="/training" element={<TrainingPage />} />
           <Route path="/tasks" element={<PracticalTasks />} />
