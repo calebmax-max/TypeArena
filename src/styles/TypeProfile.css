@@ -1550,15 +1550,39 @@
 
 /* Profile workspace refresh */
 .tp-root {
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   background: linear-gradient(135deg, #0c1512 0%, #10251d 58%, #132c21 100%);
 }
 
 .tp-sidebar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "identity identity balance"
+    "email stats stats"
+    "counts counts counts"
+    "training-cta training-summary signout"
+    "equipped equipped equipped";
+  align-items: start;
+  gap: 1rem 1.25rem;
+  height: auto;
+  min-height: 0;
+  position: relative;
   background: linear-gradient(180deg, rgba(8, 24, 17, .96), rgba(15, 38, 27, .94));
-  border-right-color: rgba(123, 224, 168, .18);
+  border-right: 0;
+  border-bottom: 1px solid rgba(123, 224, 168, .18);
   padding: 2.25rem 1.35rem 1.5rem;
 }
+
+.tp-sidebar > .tp-identity { grid-area: identity; }
+.tp-sidebar > .tp-sidebar__email { grid-area: email; align-self: center; }
+.tp-sidebar > .tp-balance { grid-area: balance; }
+.tp-sidebar > .tp-stats { grid-area: stats; }
+.tp-sidebar > .tp-counts { grid-area: counts; }
+.tp-sidebar > .tp-btn--full { grid-area: training-cta; align-self: center; }
+.tp-sidebar > .tp-training-summary { grid-area: training-summary; margin-top: 0; }
+.tp-sidebar > .tp-equipped { grid-area: equipped; }
+.tp-sidebar > .tp-sidebar__signout { grid-area: signout; align-self: end; margin-top: 0; }
 
 .tp-main {
   width: min(100%, 1120px);
@@ -1613,6 +1637,8 @@
 
 @media (max-width: 800px) {
   .tp-main { width: 100%; padding: 1rem; }
+  .tp-sidebar { display: flex; flex-direction: column; gap: 1.25rem; }
+  .tp-sidebar > .tp-training-summary { margin-top: 0; }
   .tp-main-heading { align-items: flex-start; flex-direction: column; margin-bottom: 1rem; }
   .tp-main-heading .tp-btn { width: 100%; }
   .tp-tabs { width: 100%; overflow-x: auto; }
