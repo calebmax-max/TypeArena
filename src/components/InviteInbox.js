@@ -64,7 +64,6 @@ const styles = {
     border: '1px solid rgba(255,193,7,0.45)',
     fontSize: '0.85rem',
   },
-  confirmRow: { display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginTop: '0.5rem' },
   actions: { display: 'flex', gap: '0.5rem', marginTop: '0.85rem', flexWrap: 'wrap' },
   error: { marginTop: '0.6rem', fontSize: '0.82rem', color: '#ff8a8a' },
   more: { marginTop: '0.6rem', fontSize: '0.75rem', opacity: 0.7 },
@@ -83,7 +82,6 @@ function InviteInbox({ currentUser }) {
 
   const [invites, setInvites] = useState([]);
   const [dismissed, setDismissed] = useState(() => new Set());
-  const [confirmedStake, setConfirmedStake] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -185,7 +183,6 @@ function InviteInbox({ currentUser }) {
   // Reset per-invite UI state when the invite on screen changes.
   const currentId = current?.id;
   useEffect(() => {
-    setConfirmedStake(false);
     setError('');
   }, [currentId]);
 
@@ -193,8 +190,6 @@ function InviteInbox({ currentUser }) {
 
   const elapsed = Math.floor((now - receivedAtRef.current) / 1000);
   const secondsLeft = Math.max(0, Number(current.secondsLeft || 0) - elapsed);
-  const stake = Number(current.stakeAmount || 0);
-  const isStaked = stake > 0;
 
   const dismiss = (id) => {
     setDismissed((prev) => {
@@ -217,10 +212,6 @@ function InviteInbox({ currentUser }) {
   };
 
   const handleAccept = async () => {
-    if (isStaked && !confirmedStake) {
-      setError(`Tick the box to confirm you are happy to stake KES ${stake.toLocaleString()}.`);
-      return;
-    }
     setBusy(true);
     setError('');
     try {
@@ -242,23 +233,6 @@ function InviteInbox({ currentUser }) {
       <p style={styles.title}>{current.fromUsername} invited you to a private room</p>
       <p style={styles.sub}>Expires in {formatSeconds(secondsLeft)}</p>
 
-      {isStaked && (
-        <div style={styles.stake}>
-          <strong>Staked room: KES {stake.toLocaleString()}</strong>
-          <div style={{ marginTop: '0.25rem' }}>
-            This amount is taken from your wallet when you press Join on the next screen.
-          </div>
-          <label style={styles.confirmRow}>
-            <input
-              type="checkbox"
-              checked={confirmedStake}
-              onChange={(event) => setConfirmedStake(event.target.checked)}
-            />
-            <span>I understand and want to stake KES {stake.toLocaleString()}.</span>
-          </label>
-        </div>
-      )}
-
       {error && <div style={styles.error}>{error}</div>}
 
       <div style={styles.actions}>
@@ -266,9 +240,9 @@ function InviteInbox({ currentUser }) {
           type="button"
           className="btn btn-primary btn-sm"
           onClick={handleAccept}
-          disabled={busy || secondsLeft <= 0 || (isStaked && !confirmedStake)}
+          disabled={busy || secondsLeft <= 0}
         >
-          {busy ? 'Please wait...' : isStaked ? 'Accept & go to room' : 'Accept'}
+          {busy ? 'Please wait...' : 'Accept'}
         </button>
         <button type="button" className="btn btn-outline-light btn-sm" onClick={handleDecline} disabled={busy}>
           Decline

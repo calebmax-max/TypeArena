@@ -34,10 +34,10 @@ import {
   revokeSkillsPassport,
   fetchTrainingCourses,
   fetchTrainingProgress,
-  fetchSubscriptionPlans,
   fetchWalletConfig,
   fetchWalletHistory,
   fetchWalletTopupStatus,
+  fetchSubscriptionPlans,
   fetchWalletWithdrawStatus,
   getStoredUserSnapshot,
   loginUser,
@@ -61,15 +61,6 @@ const WITHDRAW_STATUS_POLL_INTERVAL_MS   = 4000;
 const WITHDRAW_STATUS_POLL_MAX_ATTEMPTS  = 20;
 
 const formatMethodLabel = (m) => m.replace(/_/g, ' ');
-
-const EQUIPPED_LABELS = {
-  avatar:  'Avatar',
-  theme:   'Theme',
-  skin:    'Keyboard Skin',
-  badge:   'Badge',
-  effect:  'Effect',
-  frame:   'Profile Frame',
-};
 
 // ──────────────────────────────────────── Helpers ────────────────────────────────────────
 const medalColour = (place) => {
@@ -152,19 +143,19 @@ export default function TypeProfile() {
   const [resetToken,    setResetToken]    = useState('');
   const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '', accountType: 'player' });
   const [raceHistory,   setRaceHistory]    = useState([]);
+  const [walletHistory, setWalletHistory]  = useState([]);
+  const [walletConfig, setWalletConfig]   = useState({ topUpMethods: [], withdrawMethods: [] });
   const [trainingSnapshot, setTrainingSnapshot] = useState({ courses: [], progress: null });
   const [skillsPassport, setSkillsPassport] = useState(null);
   const [passportNotice, setPassportNotice] = useState('');
-  const [walletHistory, setWalletHistory]  = useState([]);
-  const [walletConfig,  setWalletConfig]   = useState({ topUpMethods: [], withdrawMethods: [] });
   const [loading,       setLoading]        = useState(() => !getStoredUserSnapshot());
-  const [topUpAmount,   setTopUpAmount]    = useState('');
-  const [topUpAccount,  setTopUpAccount]   = useState('');
-  const [topUpMethod,   setTopUpMethod]    = useState('stripe_checkout');
+  const [topUpAmount, setTopUpAmount] = useState('');
+  const [topUpAccount, setTopUpAccount] = useState('');
+  const [topUpMethod, setTopUpMethod] = useState('stripe_checkout');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawAccount, setWithdrawAccount] = useState('');
-  const [withdrawMethod,  setWithdrawMethod]  = useState('paypal');
-  const [walletNotice,  setWalletNotice]   = useState('');
+  const [withdrawMethod, setWithdrawMethod] = useState('paypal');
+  const [walletNotice, setWalletNotice] = useState('');
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
   const [selectedPlanKey, setSelectedPlanKey] = useState('pro_monthly');
   const [proPhoneNumber, setProPhoneNumber] = useState('');
@@ -179,10 +170,10 @@ export default function TypeProfile() {
   const [profileName,   setProfileName]    = useState('');
   const [profileSaving, setProfileSaving]  = useState(false);
   const [activeTab,     setActiveTab]      = useState('history');
-  const [walletSection, setWalletSection]  = useState('topup'); // 'topup' | 'withdraw'
-  const [topUpLoading,     setTopUpLoading]     = useState(false);
+  const [walletSection, setWalletSection] = useState('topup');
+  const [topUpLoading, setTopUpLoading] = useState(false);
   const [topUpIdempotencyKey, setTopUpIdempotencyKey] = useState('');
-  const [withdrawLoading,  setWithdrawLoading]  = useState(false);
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
   const profileRequestRef = useRef(0);
 
   useEffect(() => {
@@ -280,7 +271,6 @@ export default function TypeProfile() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const redirect   = params.get('redirect');
-    const needsTopUp = params.get('topup') === '1';
     if (redirect && !currentUser) {
       setShowAuthForm(true);
       setAuthMode('login');
@@ -309,49 +299,7 @@ export default function TypeProfile() {
       setAuthNoticeType('info');
       setAuthNotice('Choose a new password for your TypeArena account.');
     }
-    if (needsTopUp) {
-      setWalletNotice('Add enough funds to your wallet, then return to your private room invite.');
-    }
   }, [currentUser]);
-
-  useEffect(() => {
-    const params        = new URLSearchParams(window.location.search);
-    const checkoutState = params.get('checkout');
-    const sessionId     = params.get('session_id');
-    if (checkoutState === 'cancel') {
-      setWalletNotice('Hosted checkout was canceled before payment completed.');
-      window.history.replaceState({}, document.title, window.location.pathname);
-      return;
-    }
-    if (checkoutState === 'success' && sessionId && currentUser?.id) {
-      verifyWalletTopupSession(sessionId)
-        .then(async (result) => {
-          setWalletNotice(result.message || 'Wallet top-up verified.');
-          await loadProfile();
-        })
-        .catch((err) => { setWalletNotice(err.message || 'Could not verify the hosted checkout yet.'); })
-        .finally(() => { window.history.replaceState({}, document.title, window.location.pathname); });
-    }
-  }, [currentUser?.id, loadProfile]);
-
-  useEffect(() => {
-    if (currentUser?.phoneNumber) {
-      setTopUpAccount(currentUser.phoneNumber);
-      setWithdrawAccount(currentUser.phoneNumber);
-    } else if (currentUser?.email) {
-      setTopUpAccount(currentUser.email);
-      setWithdrawAccount(currentUser.email);
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (walletConfig.topUpMethods?.length) {
-      setTopUpMethod((c) => walletConfig.topUpMethods.includes(c) ? c : walletConfig.topUpMethods[0]);
-    }
-    if (walletConfig.withdrawMethods?.length) {
-      setWithdrawMethod((c) => walletConfig.withdrawMethods.includes(c) ? c : walletConfig.withdrawMethods[0]);
-    }
-  }, [walletConfig]);
 
   useEffect(() => {
     if (!currentUser?.id) return;

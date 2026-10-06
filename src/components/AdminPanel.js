@@ -46,6 +46,10 @@ import {
   updateAdminTrainingLesson,
   archiveAdminTrainingLesson,
   fetchAdminTrainingProgress,
+  fetchAdminHiringTests,
+  updateAdminHiringTest,
+  fetchAdminHiringAttempts,
+  fetchAdminPayments,
   fetchAdminPracticalTasks,
   createAdminPracticalTask,
   updateAdminPracticalTask,
@@ -97,6 +101,8 @@ const NAV_ITEMS = [
   { id: 'marketplace', label: 'Marketplace', icon: 'MK' },
   { id: 'ai', label: 'AI Settings', icon: 'AI' },
   { id: 'schools', label: 'Schools', icon: 'S' },
+  { id: 'hiring', label: 'Hiring Tests', icon: 'H' },
+  { id: 'payments', label: 'Payments', icon: 'PM' },
 ];
 const SECTION_META = {
   overview: ['Overview', 'A clear view of platform health, activity, and financial signals.'],
@@ -111,6 +117,8 @@ const SECTION_META = {
   marketplace: ['Marketplace', 'Manage the catalogue, pricing, and availability.'],
   ai: ['AI Settings', 'Control coaching providers and safe fallback behavior.'],
   schools: ['Schools', 'Support organisations, classes, and learner outcomes.'],
+  hiring: ['Hiring Tests', 'Review employer assessments, candidate attempts, and test status.'],
+  payments: ['Payments', 'Review payment records, pending transactions, and failures.'],
 };
 
 export default function AdminPanel() {
@@ -140,6 +148,10 @@ export default function AdminPanel() {
   const [trainingCourses, setTrainingCourses] = useState([]);
   const [trainingProgress, setTrainingProgress] = useState([]);
   const [trainingImpact, setTrainingImpact] = useState(null);
+  const [hiringTests, setHiringTests] = useState([]);
+  const [hiringAttempts, setHiringAttempts] = useState([]);
+  const [selectedHiringTest, setSelectedHiringTest] = useState(null);
+  const [paymentRecords, setPaymentRecords] = useState([]);
   const [practicalTasks, setPracticalTasks] = useState([]);
   const [practicalTaskForm, setPracticalTaskForm] = useState({ id: null, slug: '', title: '', category: 'General', taskType: 'text', objective: '', instructions: '', hint: '', optionsJson: '[]', verificationJson: '{}', isArchived: false });
   const [trainingCourseForm, setTrainingCourseForm] = useState({ id: null, title: '', description: '', stageNumber: '', stageFocus: '', skillLevel: '', targetSkill: '', expectedDuration: '', practicalOutcome: '', assessmentRequirements: '', certificateOutcome: '', jobRelevance: '', gateWpm: 0, gateAccuracy: 90, price: 0, isPro: false, prerequisiteCourseId: '', isArchived: false });
@@ -194,6 +206,15 @@ export default function AdminPanel() {
       .then((data) => { if (!cancelled) setImpersonationLog(Array.isArray(data?.items) ? data.items : []); })
       .catch(() => { if (!cancelled) setImpersonationLog([]); });
     return () => { cancelled = true; };
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection === 'hiring') {
+      fetchAdminHiringTests().then((items) => setHiringTests(Array.isArray(items) ? items : [])).catch((error) => setNotice(error.message || 'Could not load hiring tests.'));
+    }
+    if (activeSection === 'payments') {
+      fetchAdminPayments().then((data) => setPaymentRecords(Array.isArray(data?.items) ? data.items : [])).catch((error) => setNotice(error.message || 'Could not load payment records.'));
+    }
   }, [activeSection]);
 
   useEffect(() => {
@@ -1978,6 +1999,29 @@ export default function AdminPanel() {
                 <div className="ap-card"><p className="ap-card-title">Learner testing progress</p><table className="ap-table"><thead><tr><th>Lesson</th><th>Attempts</th><th>Passes</th><th>Average</th></tr></thead><tbody>{trainingProgress.map((row) => <tr key={row.lesson_id}><td>{row.lesson_id}</td><td>{row.attempts}</td><td>{row.passes || 0}</td><td>{row.average_wpm || 0} WPM / {row.average_accuracy || 0}%</td></tr>)}</tbody></table></div>
                   </div>
                 </div>
+              </>
+            )}
+
+            {activeSection === 'hiring' && (
+              <>
+                <div className="ap-section-header"><h1 className="ap-section-title">Hiring Tests</h1><p className="ap-section-sub">Review employer tests and verified candidate results.</p></div>
+                <div className="ap-card">
+                  <div className="ap-table-wrap"><table className="ap-table"><thead><tr><th>Test</th><th>Employer</th><th>Status</th><th>Attempts</th><th>Passed</th><th>Actions</th></tr></thead><tbody>
+                    {hiringTests.map((test) => <tr key={test.id}>
+                      <td><strong>{test.title}</strong><small style={{ display: 'block' }}>{test.companyName} · {test.publicCode}</small></td>
+                      <td>{test.employerUsername || test.employerEmail || '—'}</td><td>{test.status}</td><td>{test.attemptCount || 0}</td><td>{test.passedCount || 0}</td>
+                      <td style={{ display: 'flex', gap: 8 }}><button className="ap-btn ap-btn-sm" onClick={async () => { try { setSelectedHiringTest(test); setHiringAttempts(await fetchAdminHiringAttempts(test.id)); } catch (error) { showNotice(error.message || 'Could not load attempts.'); } }}>Attempts</button><button className="ap-btn ap-btn-sm" onClick={async () => { try { await updateAdminHiringTest(test.id, { status: test.status === 'archived' ? 'active' : 'archived' }); setHiringTests(await fetchAdminHiringTests()); showNotice(test.status === 'archived' ? 'Test restored.' : 'Test archived.'); } catch (error) { showNotice(error.message || 'Could not update test.'); } }}>{test.status === 'archived' ? 'Restore' : 'Archive'}</button></td>
+                    </tr>)}
+                  </tbody></table>{!hiringTests.length && <div className="ap-empty">No hiring tests found.</div>}</div>
+                </div>
+                {selectedHiringTest && <div className="ap-card" style={{ marginTop: 16 }}><div className="ap-section-header"><h2 className="ap-section-title">Attempts: {selectedHiringTest.title}</h2><button className="ap-btn ap-btn-sm" onClick={() => setSelectedHiringTest(null)}>Close</button></div><div className="ap-table-wrap"><table className="ap-table"><thead><tr><th>Candidate</th><th>Status</th><th>WPM</th><th>Accuracy</th><th>Result</th><th>Flags</th><th>Completed</th></tr></thead><tbody>{hiringAttempts.map((attempt) => <tr key={attempt.id}><td>{attempt.candidate}<small style={{ display: 'block' }}>{attempt.email}</small></td><td>{attempt.status}</td><td>{attempt.wpm}</td><td>{attempt.accuracy}%</td><td>{attempt.passed ? 'Passed' : 'Not passed'}</td><td>{attempt.suspicious || attempt.flagged ? 'Review' : '—'}</td><td>{attempt.completedAt ? new Date(attempt.completedAt).toLocaleString() : '—'}</td></tr>)}</tbody></table>{!hiringAttempts.length && <div className="ap-empty">No attempts for this test.</div>}</div></div>}
+              </>
+            )}
+
+            {activeSection === 'payments' && (
+              <>
+                <div className="ap-section-header"><h1 className="ap-section-title">Payment Records</h1><p className="ap-section-sub">M-Pesa top-ups and withdrawals, including pending and failed transactions.</p></div>
+                <div className="ap-card"><div className="ap-table-wrap"><table className="ap-table"><thead><tr><th>When</th><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Reference</th><th>Failure detail</th></tr></thead><tbody>{paymentRecords.map((payment) => <tr key={`${payment.kind}-${payment.id}`}><td>{payment.createdAt ? new Date(payment.createdAt).toLocaleString() : '—'}</td><td>{payment.username || payment.email || '—'}</td><td>{payment.kind}</td><td>KES {Number(payment.amount || 0).toLocaleString()}</td><td>{payment.status}</td><td>{payment.code || '—'}</td><td>{payment.status === 'failed' ? (payment.resultDescription || payment.resultCode || 'Failed') : '—'}</td></tr>)}</tbody></table>{!paymentRecords.length && <div className="ap-empty">No payment records found.</div>}</div></div>
               </>
             )}
 

@@ -543,7 +543,6 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
   const [friendBattle, setFriendBattle] = useState({
     inviteCode: '',
     maxPlayers: 2,
-    stakeAmount: 0,
   });
   const autoJoinInviteRef = useRef('');
   const [tournamentId, setTournamentId] = useState('');

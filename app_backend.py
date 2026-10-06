@@ -5757,6 +5757,51 @@ def admin_wallet_summary():
         _return_connection(conn)
 
 
+@app.get('/api/admin/payments')
+def admin_payment_records():
+    """Operational payment ledger, including failed M-Pesa and withdrawals.
+
+    This is intentionally read-only and uses the existing payment tables; it
+    does not expose wallet balances or allow an admin to alter a transaction.
+    """
+    if not _is_admin_request():
+        return jsonify({'message': 'Unauthorized admin request'}), 401
+    try:
+        limit = max(1, min(int(request.args.get('limit') or 100), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('''SELECT m.id, m.user_id, u.username, u.email, m.tx_code AS code,
+                m.amount, m.status, m.mode, m.created_at, m.completed_at, m.result_code,
+                m.result_desc, 'mpesa' AS kind
+                FROM mpesa_transactions m LEFT JOIN users u ON u.id=m.user_id
+                ORDER BY m.created_at DESC LIMIT %s''', (limit,))
+            topups = cur.fetchall()
+            _ensure_prize_payout_tracking_columns(cur)
+            cur.execute('''SELECT p.id, p.user_id, u.username, u.email, p.payout_code AS code,
+                p.amount, p.status, p.payout_method AS mode, p.created_at, p.completed_at,
+                p.result_code, p.result_desc, 'withdrawal' AS kind
+                FROM prize_payouts p LEFT JOIN users u ON u.id=p.user_id
+                ORDER BY p.created_at DESC LIMIT %s''', (limit,))
+            withdrawals = cur.fetchall()
+        records = []
+        for row in [*topups, *withdrawals]:
+            records.append({
+                'id': int(row['id']), 'userId': row.get('user_id'), 'username': row.get('username'),
+                'email': row.get('email'), 'code': row.get('code'), 'amount': float(row.get('amount') or 0),
+                'status': str(row.get('status') or 'unknown').lower(), 'mode': row.get('mode'),
+                'kind': row.get('kind'), 'resultCode': row.get('result_code'), 'resultDescription': row.get('result_desc'),
+                'createdAt': row['created_at'].isoformat() if row.get('created_at') else None,
+                'completedAt': row['completed_at'].isoformat() if row.get('completed_at') else None,
+            })
+        records.sort(key=lambda item: item.get('createdAt') or '', reverse=True)
+        return jsonify({'items': records[:limit]})
+    finally:
+        _return_connection(conn)
+
+
 @app.post('/api/admin/wallet/topup')
 def admin_wallet_topup():
     if not _is_admin_request():

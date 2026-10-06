@@ -284,6 +284,105 @@ def register_hiring_routes(
         finally:
             return_connection(conn)
 
+    # Platform-wide hiring operations are deliberately separate from the
+    # employer endpoints above. Employers can only see their own tests;
+    # administrators can review, edit, archive, and investigate every test.
+    @app.get('/api/admin/hiring/tests')
+    def admin_hiring_tests():
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user or not is_admin_email(str(user.get('email') or '')):
+                return jsonify({'message': 'Admin access required.'}), 403
+            with conn.cursor() as cur:
+                cur.execute('''
+                    SELECT t.*, u.username AS employer_username, u.email AS employer_email,
+                           COUNT(DISTINCT a.id) AS attempt_count,
+                           SUM(CASE WHEN a.status="completed" THEN 1 ELSE 0 END) AS completed_count,
+                           SUM(CASE WHEN a.status="completed" AND a.passed=1 THEN 1 ELSE 0 END) AS passed_count
+                    FROM hiring_tests t
+                    JOIN users u ON u.id=t.employer_id
+                    LEFT JOIN hiring_attempts a ON a.test_id=t.id
+                    GROUP BY t.id
+                    ORDER BY t.created_at DESC
+                ''')
+                rows = cur.fetchall()
+            return jsonify([{
+                **_test_payload(row),
+                'employerUsername': row.get('employer_username'),
+                'employerEmail': row.get('employer_email'),
+                'attemptCount': int(row.get('attempt_count') or 0),
+                'completedCount': int(row.get('completed_count') or 0),
+                'passedCount': int(row.get('passed_count') or 0),
+            } for row in rows])
+        finally:
+            return_connection(conn)
+
+    @app.patch('/api/admin/hiring/tests/<int:test_id>')
+    def admin_update_hiring_test(test_id):
+        payload = request.get_json(silent=True) or {}
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user or not is_admin_email(str(user.get('email') or '')):
+                return jsonify({'message': 'Admin access required.'}), 403
+            allowed = {'title', 'companyName', 'category', 'durationSeconds', 'minWpm', 'minAccuracy', 'maxAttempts', 'status'}
+            updates = {key: payload[key] for key in allowed if key in payload}
+            if not updates:
+                return jsonify({'message': 'No changes supplied.'}), 400
+            if 'status' in updates and updates['status'] not in {'active', 'archived'}:
+                return jsonify({'message': 'Status must be active or archived.'}), 400
+            column_map = {'companyName': 'company_name', 'durationSeconds': 'duration_seconds', 'minWpm': 'min_wpm', 'minAccuracy': 'min_accuracy', 'maxAttempts': 'max_attempts'}
+            assignments = []
+            values = []
+            for key, value in updates.items():
+                column = column_map.get(key, key)
+                if key == 'category' and str(value) not in {'typing', 'customer_support', 'data_entry'}:
+                    return jsonify({'message': 'Unsupported test category.'}), 400
+                if key in {'durationSeconds', 'maxAttempts'}:
+                    value = int(value)
+                elif key in {'minWpm', 'minAccuracy'}:
+                    value = float(value)
+                assignments.append(f'{column}=%s')
+                values.append(value)
+            with conn.cursor() as cur:
+                cur.execute(f"UPDATE hiring_tests SET {', '.join(assignments)} WHERE id=%s", (*values, test_id))
+                if cur.rowcount == 0:
+                    return jsonify({'message': 'Hiring test not found.'}), 404
+                cur.execute('SELECT * FROM hiring_tests WHERE id=%s', (test_id,))
+                row = cur.fetchone()
+            conn.commit()
+            return jsonify(_test_payload(row))
+        finally:
+            return_connection(conn)
+
+    @app.get('/api/admin/hiring/tests/<int:test_id>/attempts')
+    def admin_hiring_test_attempts(test_id):
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user or not is_admin_email(str(user.get('email') or '')):
+                return jsonify({'message': 'Admin access required.'}), 403
+            with conn.cursor() as cur:
+                cur.execute('SELECT id FROM hiring_tests WHERE id=%s', (test_id,))
+                if not cur.fetchone():
+                    return jsonify({'message': 'Hiring test not found.'}), 404
+                cur.execute('''SELECT a.id, u.username AS candidate, u.email, a.status, a.wpm, a.accuracy,
+                    a.elapsed_seconds, a.passed, a.suspicious, a.flagged, a.started_at, a.completed_at
+                    FROM hiring_attempts a JOIN users u ON u.id=a.candidate_id
+                    WHERE a.test_id=%s ORDER BY COALESCE(a.completed_at, a.started_at) DESC''', (test_id,))
+                rows = cur.fetchall()
+            return jsonify([{
+                'id': int(row['id']), 'candidate': row['candidate'], 'email': row['email'],
+                'status': row['status'], 'wpm': float(row['wpm'] or 0), 'accuracy': float(row['accuracy'] or 0),
+                'elapsedSeconds': int(row['elapsed_seconds'] or 0), 'passed': bool(row['passed']),
+                'suspicious': bool(row['suspicious']), 'flagged': bool(row['flagged']),
+                'startedAt': row['started_at'].isoformat() if row.get('started_at') else None,
+                'completedAt': row['completed_at'].isoformat() if row.get('completed_at') else None,
+            } for row in rows])
+        finally:
+            return_connection(conn)
+
     def _ensure_schema(cur):
         ensure_hiring_schema(cur)
 

@@ -435,7 +435,6 @@ export function useLiveRaceSession({
         isPrivate: true,
         inviteCode: '',
         maxPlayers: friendBattle.maxPlayers,
-        stakeAmount: friendBattle.stakeAmount,
         excludeContentIds: getUsedContentIds(mode, language),
         schoolClassId: schoolClassId || undefined,
       });
@@ -459,16 +458,9 @@ export function useLiveRaceSession({
       console.error('Error creating friend battle:', error);
       setPhase('lobby');
       const message = error.message || 'Could not create friend battle.';
-      // Same insufficient-funds handling as joinFriendBattle below: the host
-      // pays their own stake up front (see queue_live_race /
-      // _debit_user_balance in app_backend.py), so creating a staked room can
-      // fail here too if their wallet doesn't cover it.
       if (/unauthorized|sign in/i.test(message)) {
         showNotice('Please sign in first. Taking you to your profile.', 'info');
         navigate(`/profile?redirect=${encodeURIComponent('/play')}`);
-      } else if (/insufficient funds|need kes/i.test(message)) {
-        showNotice('Top up your wallet to cover this stake. Taking you to your profile.', 'warning');
-        navigate(`/profile?redirect=${encodeURIComponent('/play')}&topup=1&amount=${Math.ceil(Number(friendBattle.stakeAmount) || 0)}`);
       } else {
         showNotice(message, 'error');
       }
@@ -480,7 +472,6 @@ export function useLiveRaceSession({
     currentUser,
     duration,
     friendBattle.maxPlayers,
-    friendBattle.stakeAmount,
     getUsedContentIds,
     language,
     mode,
@@ -557,9 +548,6 @@ export function useLiveRaceSession({
       if (/unauthorized|sign in/i.test(message)) {
         showNotice('Please sign in first. Taking you to your profile.', 'info');
         navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}`);
-      } else if (/insufficient funds|need kes/i.test(message)) {
-        showNotice('Top up your wallet to join this room. Taking you to your profile.', 'warning');
-        navigate(`/profile?redirect=${encodeURIComponent(redirectPath)}&topup=1`);
       } else {
         showNotice(message, 'error');
       }

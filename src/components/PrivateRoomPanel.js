@@ -1,5 +1,4 @@
 import React from 'react';
-import './PrivateRoomPayments.css';
 
 export default function PrivateRoomPanel({
   friendBattle,

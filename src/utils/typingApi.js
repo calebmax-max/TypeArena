@@ -431,6 +431,15 @@ export const fetchHiringAttempts = async (testId) => {
   return parseResponse(response);
 };
 
+const adminJsonRequest = async (path, options = {}) => {
+  const response = await apiFetch(buildApiUrl(path), { ...options, headers: { ...buildAdminHeaders(), ...(options.headers || {}) } });
+  return parseResponse(response);
+};
+export const fetchAdminHiringTests = () => adminJsonRequest('/api/admin/hiring/tests');
+export const updateAdminHiringTest = (testId, payload) => adminJsonRequest(`/api/admin/hiring/tests/${encodeURIComponent(testId)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+export const fetchAdminHiringAttempts = (testId) => adminJsonRequest(`/api/admin/hiring/tests/${encodeURIComponent(testId)}/attempts`);
+export const fetchAdminPayments = () => adminJsonRequest('/api/admin/payments');
+
 // Records that the signed-in user accepted the current Terms (existing accounts).
 export const acceptTerms = async (version) => {
   const response = await apiFetch(buildApiUrl('/api/user/accept-terms'), {

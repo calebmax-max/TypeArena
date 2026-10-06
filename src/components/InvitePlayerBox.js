@@ -31,16 +31,13 @@ async function apiFetch(path, opts = {}) {
 // Uses the native share sheet when available (phones), otherwise opens
 // WhatsApp directly.
 // ---------------------------------------------------------------------------
-export function ShareInviteButton({ inviteCode, stakeAmount, showNotice }) {
+export function ShareInviteButton({ inviteCode, showNotice }) {
   if (!inviteCode) return null;
 
   const handleShare = async () => {
     const params = new URLSearchParams({ invite: inviteCode });
     const link = `${window.location.origin}/play?${params.toString()}`;
-    const stakeNote = Number(stakeAmount) > 0
-      ? ` (staked room: KES ${Number(stakeAmount).toLocaleString()} each)`
-      : '';
-    const text = `Race me on TypeArena${stakeNote}! Join my private room: ${link}`;
+    const text = `Race me on TypeArena! Join my private room: ${link}`;
 
     try {
       if (navigator.share) {
