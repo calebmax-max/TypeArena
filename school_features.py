@@ -167,6 +167,42 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS class_training_courses (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                class_id INT NOT NULL,
+                course_id BIGINT NOT NULL,
+                assigned_by INT NOT NULL,
+                assigned_at DATETIME NOT NULL,
+                due_at DATETIME NULL,
+                status ENUM('active','archived') NOT NULL DEFAULT 'active',
+                UNIQUE KEY uniq_class_training_course (class_id, course_id),
+                INDEX idx_class_training_class (class_id),
+                INDEX idx_class_training_course (course_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS school_certificates (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                certificate_code VARCHAR(32) NOT NULL UNIQUE,
+                class_id INT NOT NULL,
+                course_id BIGINT NOT NULL,
+                user_id INT NOT NULL,
+                learner_name VARCHAR(120) NOT NULL,
+                organization_name VARCHAR(160) NOT NULL,
+                class_name VARCHAR(160) NOT NULL,
+                course_title VARCHAR(180) NOT NULL,
+                total_lessons INT NOT NULL DEFAULT 0,
+                issued_at DATETIME NOT NULL,
+                status ENUM('valid','revoked') NOT NULL DEFAULT 'valid',
+                UNIQUE KEY uniq_school_certificate (class_id,course_id,user_id),
+                INDEX idx_school_certificate_user (user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
         for statement in (
             "ALTER TABLE organizations ADD COLUMN settings_json TEXT NULL",
             "ALTER TABLE organizations ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1",
@@ -394,6 +430,134 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                     'completionCount': sum(item['completionCount'] for item in assignments) if role in ('org_admin', 'teacher') else sum(bool(item['mySubmission']) for item in assignments),
                 },
             })
+        finally: return_connection(conn)
+
+    @app.get('/api/school/classes/<int:class_id>/curriculum')
+    def get_class_curriculum(class_id):
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                class_access, error = require_class(cur, user, class_id)
+                if error: return jsonify({'message': error[0]}), error[1]
+                cls, role = class_access
+                if role == 'learner':
+                    cur.execute("SELECT id FROM class_members WHERE class_id=%s AND user_id=%s AND status='active'", (class_id, user['id']))
+                    if not cur.fetchone(): return jsonify({'message': 'Your class membership is inactive.'}), 403
+                cur.execute('''SELECT ctc.id,c.id course_id,c.slug,c.title,c.description,c.stage_number,c.stage_focus,
+                    c.gate_wpm,c.gate_accuracy,ctc.assigned_at,ctc.due_at,ctc.assigned_by,
+                    u.username assigned_by_name
+                    FROM class_training_courses ctc
+                    JOIN training_courses c ON c.id=ctc.course_id AND c.is_archived=0
+                    LEFT JOIN users u ON u.id=ctc.assigned_by
+                    WHERE ctc.class_id=%s AND ctc.status='active'
+                    ORDER BY COALESCE(c.stage_number,99),c.id''', (class_id,))
+                courses = []
+                for course in cur.fetchall():
+                    cur.execute("SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0", (course['course_id'],))
+                    total_lessons = int((cur.fetchone() or {}).get('total') or 0)
+                    progress_query = '''SELECT cm.user_id,u.username,COUNT(DISTINCT l.id) total_lessons,
+                        COUNT(DISTINCT CASE WHEN a.passed=1 THEN l.id END) passed_lessons,
+                        ROUND(AVG(a.wpm),1) average_wpm,ROUND(AVG(a.accuracy),1) average_accuracy
+                        FROM class_members cm JOIN users u ON u.id=cm.user_id
+                        JOIN organization_members om ON om.organization_id=%s AND om.user_id=cm.user_id AND om.role='learner' AND om.status='active'
+                        JOIN training_lessons l ON l.course_id=%s AND l.is_archived=0
+                        LEFT JOIN training_attempts a ON CAST(a.lesson_id AS UNSIGNED)=l.id AND a.user_id=cm.user_id
+                        WHERE cm.class_id=%s AND cm.status='active' GROUP BY cm.user_id,u.username ORDER BY u.username'''
+                    cur.execute(progress_query, (cls['organization_id'], course['course_id'], class_id))
+                    learner_progress = []
+                    for row in cur.fetchall():
+                        learner_progress.append({'userId': row['user_id'], 'username': row['username'], 'totalLessons': int(row['total_lessons'] or 0), 'passedLessons': int(row['passed_lessons'] or 0), 'averageWpm': float(row.get('average_wpm') or 0), 'averageAccuracy': float(row.get('average_accuracy') or 0), 'completed': bool(total_lessons and int(row['passed_lessons'] or 0) >= total_lessons)})
+                    own_progress = next((item for item in learner_progress if int(item['userId']) == int(user['id'])), None)
+                    certificate = None
+                    if role == 'learner':
+                        cur.execute("SELECT certificate_code,issued_at FROM school_certificates WHERE class_id=%s AND course_id=%s AND user_id=%s AND status='valid' LIMIT 1", (class_id, course['course_id'], user['id']))
+                        certificate_row = cur.fetchone()
+                        if certificate_row:
+                            certificate = {'certificateId': certificate_row['certificate_code'], 'issuedAt': certificate_row['issued_at'].isoformat() if certificate_row.get('issued_at') else None}
+                    courses.append({'id': course['id'], 'courseId': course['course_id'], 'slug': course['slug'], 'title': course['title'], 'description': course.get('description') or '', 'stageNumber': course.get('stage_number'), 'stageFocus': course.get('stage_focus') or '', 'gateWpm': float(course.get('gate_wpm') or 0), 'gateAccuracy': float(course.get('gate_accuracy') or 0), 'totalLessons': total_lessons, 'assignedAt': course['assigned_at'].isoformat() if course.get('assigned_at') else None, 'dueAt': course['due_at'].isoformat() if course.get('due_at') else None, 'assignedBy': course.get('assigned_by_name'), 'certificate': certificate, 'progress': own_progress if role == 'learner' else learner_progress})
+                return jsonify({'classId': class_id, 'role': role, 'courses': courses})
+        finally: return_connection(conn)
+
+    @app.post('/api/school/classes/<int:class_id>/curriculum')
+    def assign_class_course(class_id):
+        payload = request.get_json(silent=True) or {}
+        try:
+            course_id = int(payload.get('courseId'))
+        except (TypeError, ValueError):
+            return jsonify({'message': 'A valid course is required.'}), 400
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                class_access, error = require_class(cur, user, class_id, manage=True)
+                if error: return jsonify({'message': error[0]}), error[1]
+                cls, _role = class_access
+                cur.execute('SELECT id FROM training_courses WHERE id=%s AND is_archived=0', (course_id,))
+                if not cur.fetchone(): return jsonify({'message': 'That training course is unavailable.'}), 404
+                cur.execute('''INSERT INTO class_training_courses (class_id,course_id,assigned_by,assigned_at,due_at,status)
+                    VALUES (%s,%s,%s,%s,%s,'active')
+                    ON DUPLICATE KEY UPDATE assigned_by=VALUES(assigned_by),assigned_at=VALUES(assigned_at),due_at=VALUES(due_at),status='active' ''', (class_id, course_id, user['id'], now_db(), payload.get('dueAt') or None))
+            conn.commit(); return jsonify({'message': 'Training course assigned to the class.', 'courseId': course_id}), 201
+        finally: return_connection(conn)
+
+    @app.delete('/api/school/classes/<int:class_id>/curriculum/<int:course_id>')
+    def archive_class_course(class_id, course_id):
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                class_access, error = require_class(cur, user, class_id, manage=True)
+                if error: return jsonify({'message': error[0]}), error[1]
+                cur.execute("UPDATE class_training_courses SET status='archived' WHERE class_id=%s AND course_id=%s", (class_id, course_id))
+            conn.commit(); return jsonify({'archived': True})
+        finally: return_connection(conn)
+
+    @app.post('/api/school/classes/<int:class_id>/curriculum/<int:course_id>/certificate')
+    def issue_class_course_certificate(class_id, course_id):
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                class_access, error = require_class(cur, user, class_id)
+                if error: return jsonify({'message': error[0]}), error[1]
+                cls, role = class_access
+                if role != 'learner': return jsonify({'message': 'Only learners can issue their course certificate.'}), 403
+                cur.execute("SELECT id FROM class_members WHERE class_id=%s AND user_id=%s AND status='active'", (class_id, user['id']))
+                if not cur.fetchone(): return jsonify({'message': 'Your class membership is inactive.'}), 403
+                cur.execute('''SELECT c.id,c.title,o.name organization_name,cl.name class_name
+                    FROM class_training_courses ctc JOIN training_courses c ON c.id=ctc.course_id AND c.is_archived=0
+                    JOIN classes cl ON cl.id=ctc.class_id JOIN organizations o ON o.id=cl.organization_id
+                    WHERE ctc.class_id=%s AND ctc.course_id=%s AND ctc.status='active' LIMIT 1''', (class_id, course_id))
+                course = cur.fetchone()
+                if not course: return jsonify({'message': 'This course is not assigned to your class.'}), 404
+                cur.execute('SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0', (course_id,))
+                total_lessons = int((cur.fetchone() or {}).get('total') or 0)
+                cur.execute('''SELECT COUNT(DISTINCT l.id) passed FROM training_lessons l
+                    JOIN training_attempts a ON CAST(a.lesson_id AS UNSIGNED)=l.id AND a.user_id=%s AND a.passed=1
+                    WHERE l.course_id=%s AND l.is_archived=0''', (user['id'], course_id))
+                passed_lessons = int((cur.fetchone() or {}).get('passed') or 0)
+                if not total_lessons or passed_lessons < total_lessons:
+                    return jsonify({'message': f'Complete all {total_lessons} lessons before issuing a certificate.', 'passedLessons': passed_lessons, 'totalLessons': total_lessons}), 409
+                cur.execute("SELECT certificate_code,issued_at FROM school_certificates WHERE class_id=%s AND course_id=%s AND user_id=%s AND status='valid' LIMIT 1", (class_id, course_id, user['id']))
+                existing = cur.fetchone()
+                if existing:
+                    return jsonify({'certificateId': existing['certificate_code'], 'issuedAt': existing['issued_at'].isoformat() if existing.get('issued_at') else None, 'existing': True})
+                certificate_code = f"TS-{secrets.token_hex(12).upper()}"
+                learner_name = str(user.get('username') or user.get('name') or 'TypeArena learner')[:120]
+                issued_at = now_db()
+                cur.execute('''INSERT INTO school_certificates
+                    (certificate_code,class_id,course_id,user_id,learner_name,organization_name,class_name,course_title,total_lessons,issued_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (certificate_code, class_id, course_id, user['id'], learner_name, course['organization_name'], course['class_name'], course['title'], total_lessons, issued_at))
+            conn.commit(); return jsonify({'certificateId': certificate_code, 'issuedAt': issued_at.isoformat() if hasattr(issued_at, 'isoformat') else str(issued_at), 'message': 'Course certificate issued.'}), 201
         finally: return_connection(conn)
 
     @app.post('/api/school/classes/<int:class_id>/assignments')

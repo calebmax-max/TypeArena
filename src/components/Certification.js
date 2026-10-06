@@ -350,15 +350,26 @@ export function CertificateVerification() {
             <div className="cert-validity"><span aria-hidden="true">✓</span> Valid</div>
             <dl>
               <div><dt>Certificate ID</dt><dd>{certificate.certificateId}</dd></div>
-              <div><dt>Player</dt><dd>{certificate.playerName}</dd></div>
-              <div><dt>Typing speed</dt><dd>{certificate.wpm} WPM</dd></div>
-              <div><dt>Accuracy</dt><dd>{certificate.accuracy}%</dd></div>
-              <div><dt>Test date</dt><dd>{certificate.testDate ? new Date(certificate.testDate).toLocaleDateString() : 'Not available'}</dd></div>
+              <div><dt>Learner</dt><dd>{certificate.playerName}</dd></div>
+              {certificate.certificateType === 'school_course' ? (
+                <>
+                  <div><dt>Programme</dt><dd>{certificate.courseName}</dd></div>
+                  <div><dt>School</dt><dd>{certificate.organizationName}</dd></div>
+                  <div><dt>Class</dt><dd>{certificate.className}</dd></div>
+                  <div><dt>Lessons completed</dt><dd>{certificate.totalLessons}</dd></div>
+                </>
+              ) : (
+                <>
+                  <div><dt>Typing speed</dt><dd>{certificate.wpm} WPM</dd></div>
+                  <div><dt>Accuracy</dt><dd>{certificate.accuracy}%</dd></div>
+                </>
+              )}
+              <div><dt>Issue date</dt><dd>{certificate.testDate ? new Date(certificate.testDate).toLocaleDateString() : 'Not available'}</dd></div>
             </dl>
-            <p className="cert-muted">
+            {certificate.certificateType !== 'school_course' && <p className="cert-muted">
               Test conditions: three minutes; passing threshold {certificate.minimumWpm} WPM,
               {' '}{certificate.minimumAccuracy}% accuracy, and {certificate.minimumCharacters} characters.
-            </p>
+            </p>}
             <p className="cert-muted">{certificate.statement}</p>
           </>
         )}

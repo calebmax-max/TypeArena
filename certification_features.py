@@ -422,7 +422,27 @@ def register_certification_routes(
                 )
                 certificate = cur.fetchone()
             if not certificate:
-                return jsonify({'message': 'Certificate not found or no longer valid.'}), 404
+                try:
+                    cur.execute('''SELECT certificate_code,learner_name,organization_name,class_name,course_title,total_lessons,issued_at
+                        FROM school_certificates WHERE certificate_code=%s AND status='valid' LIMIT 1''', (normalized_code,))
+                    school_certificate = cur.fetchone()
+                except Exception:
+                    school_certificate = None
+                if not school_certificate:
+                    return jsonify({'message': 'Certificate not found or no longer valid.'}), 404
+                issued_at = school_certificate.get('issued_at')
+                return jsonify({
+                    'certificateId': school_certificate['certificate_code'],
+                    'status': 'valid',
+                    'certificateType': 'school_course',
+                    'playerName': school_certificate.get('learner_name') or 'TypeArena learner',
+                    'organizationName': school_certificate.get('organization_name'),
+                    'className': school_certificate.get('class_name'),
+                    'courseName': school_certificate.get('course_title'),
+                    'totalLessons': int(school_certificate.get('total_lessons') or 0),
+                    'testDate': issued_at.isoformat() if issued_at else None,
+                    'statement': 'This certificate verifies completion of the assigned TypeArena School course and its recorded lessons.',
+                })
             issued_at = certificate.get('issued_at')
             return jsonify({
                 'certificateId': certificate['certificate_code'],

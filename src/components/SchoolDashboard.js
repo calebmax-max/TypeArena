@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   acceptSchoolInvitation,
+  assignSchoolCourse,
   createSchoolAssignment,
   createSchoolClass,
   createSchoolOrganisation,
@@ -9,16 +10,19 @@ import {
   exportSchoolClass,
   fetchSchoolAssignments,
   fetchSchoolClass,
+  fetchSchoolClassCurriculum,
   fetchSchoolInvitationsForMe,
   fetchSchoolOrganizationMembers,
   fetchSchoolOverview,
   fetchTrainingCourses,
   importSchoolLearners,
+  issueSchoolCourseCertificate,
   inviteSchoolTeacher,
   joinSchoolClass,
   manageSchoolMember,
   regenerateSchoolJoinCode,
   removeSchoolOrganizationMember,
+  removeSchoolCourse,
   updateSchoolMemberRole,
   updateSchoolOrganisationSettings,
 } from '../utils/typingApi';
@@ -59,6 +63,8 @@ export default function SchoolDashboard({ currentUser }) {
   const [assignment, setAssignment] = useState({ title: '', instructions: '', passage: '', targetWpm: '', targetAccuracy: '' });
   const [learnerAssignments, setLearnerAssignments] = useState([]);
   const [trainingCourses, setTrainingCourses] = useState([]);
+  const [classCurriculum, setClassCurriculum] = useState(null);
+  const [curriculumCourseId, setCurriculumCourseId] = useState('');
   const [teacherEmail, setTeacherEmail] = useState('');
   const [teacherInvite, setTeacherInvite] = useState('');
   const [schoolRoom, setSchoolRoom] = useState(null);
@@ -103,7 +109,9 @@ export default function SchoolDashboard({ currentUser }) {
 
   const chooseClass = async (id) => {
     try {
-      setSelected(await fetchSchoolClass(id));
+      const [classData, curriculumData] = await Promise.all([fetchSchoolClass(id), fetchSchoolClassCurriculum(id)]);
+      setSelected(classData);
+      setClassCurriculum(curriculumData);
       setActiveView('overview');
       setNotice('');
     } catch (error) {
@@ -131,9 +139,49 @@ export default function SchoolDashboard({ currentUser }) {
     }
   };
 
+  const refreshCurriculum = async (classId = selected?.class?.id) => {
+    if (!classId) return;
+    const result = await fetchSchoolClassCurriculum(classId);
+    setClassCurriculum(result);
+  };
+
+  const assignCourseToClass = async () => {
+    if (!selected?.class?.id || !curriculumCourseId) return;
+    try {
+      await assignSchoolCourse(selected.class.id, curriculumCourseId);
+      await refreshCurriculum(selected.class.id);
+      setCurriculumCourseId('');
+      setNotice('Training course assigned to the class.');
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+
+  const unassignCourseFromClass = async (courseId) => {
+    try {
+      await removeSchoolCourse(selected.class.id, courseId);
+      await refreshCurriculum(selected.class.id);
+      setNotice('Training course removed from this class.');
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+
+  const issueCourseCertificate = async (courseId) => {
+    try {
+      const result = await issueSchoolCourseCertificate(selected.class.id, courseId);
+      await refreshCurriculum(selected.class.id);
+      setNotice(result.message || 'Course certificate issued.');
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+
   const selectOrganization = async (organizationId) => {
     setSelectedOrganizationId(String(organizationId));
     setSelected(null);
+    setClassCurriculum(null);
+    setCurriculumCourseId('');
     setOrganizationMembers([]);
     if (organizationId) {
       try {
@@ -424,6 +472,38 @@ export default function SchoolDashboard({ currentUser }) {
                       {schoolRoom && <small style={{ display: 'block', margin: '8px 0', opacity: .8 }}>Invite code: <strong>{schoolRoom.inviteCode}</strong>. Only approved classmates and school staff can join.</small>}
                     </div>
                   )}
+                  <section style={{ marginBottom: 20 }}>
+                    <h3>Class curriculum</h3>
+                    {['org_admin', 'teacher'].includes(selected.role) && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                        <select style={{ ...inputStyle, maxWidth: 420, marginBottom: 0 }} value={curriculumCourseId} onChange={(event) => setCurriculumCourseId(event.target.value)} aria-label="Training course to assign">
+                          <option value="">Choose a training course</option>
+                          {trainingCourses.filter((course) => !course.is_archived && !(classCurriculum?.courses || []).some((assigned) => Number(assigned.courseId) === Number(course.id))).map((course) => <option key={course.id} value={course.id}>{course.stage_number ? `Stage ${course.stage_number}: ` : ''}{course.title}</option>)}
+                        </select>
+                        <button className="btn btn-primary" type="button" onClick={assignCourseToClass} disabled={!curriculumCourseId}>Assign course</button>
+                      </div>
+                    )}
+                    {!classCurriculum?.courses?.length && <p style={{ opacity: .7 }}>No training courses assigned to this class yet.</p>}
+                    {(classCurriculum?.courses || []).map((course) => (
+                      <div key={course.courseId} style={{ padding: 12, margin: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,.04)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                          <strong>{course.stageNumber ? `Stage ${course.stageNumber}: ` : ''}{course.title}</strong>
+                          {['org_admin', 'teacher'].includes(selected.role) && <button className="btn btn-secondary" type="button" onClick={() => unassignCourseFromClass(course.courseId)}>Remove</button>}
+                        </div>
+                        <small style={{ display: 'block', opacity: .72 }}>{course.stageFocus || course.description} · {course.totalLessons} lesson(s)</small>
+                        {selected.role === 'learner' ? (
+                          <>
+                            <small style={{ display: 'block', marginTop: 6, color: '#63cab7' }}>{course.progress?.passedLessons || 0}/{course.totalLessons} lessons passed</small>
+                            {course.progress?.completed && !course.certificate && <button className="btn btn-primary" type="button" style={{ marginTop: 8 }} onClick={() => issueCourseCertificate(course.courseId)}>Issue course certificate</button>}
+                            {course.certificate && <div style={{ marginTop: 8 }}><small style={{ display: 'block', color: '#63cab7' }}>Certificate issued: {course.certificate.certificateId}</small><Link className="btn btn-secondary" style={{ display: 'inline-block', marginTop: 6 }} to={`/verify/${encodeURIComponent(course.certificate.certificateId)}`}>View verification</Link></div>}
+                          </>
+                        ) : (
+                          <div style={{ marginTop: 8 }}>{(course.progress || []).map((learner) => <small key={learner.userId} style={{ display: 'block' }}>{learner.username}: {learner.passedLessons}/{learner.totalLessons} lessons passed · {learner.averageWpm} WPM / {learner.averageAccuracy}%</small>)}</div>
+                        )}
+                        <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/training?courseId=${encodeURIComponent(course.courseId)}`}>Open course lessons</Link>
+                      </div>
+                    ))}
+                  </section>
                   <h3>Learner progress</h3>
                   {selected.learners.length === 0 && <p>No learners have joined this class yet.</p>}
                   {selected.learners.map((learner) => (

@@ -1531,6 +1531,12 @@ export const removeSchoolOrganizationMember = (organizationId, userId) => school
 export const removeSchoolMember = (classId, userId) => schoolRequest(`/api/school/classes/${classId}/members/${userId}`, { method: 'DELETE' });
 export const createSchoolRace = (classId, payload = {}) => queueLiveRace({ ...payload, isPrivate: true, schoolClassId: classId, stakeAmount: 0 });
 export const fetchSchoolClass = (classId) => schoolRequest(`/api/school/classes/${classId}`);
+export const fetchSchoolClassCurriculum = (classId) => schoolRequest(`/api/school/classes/${classId}/curriculum`);
+export const assignSchoolCourse = (classId, courseId, dueAt = '') => schoolRequest(`/api/school/classes/${classId}/curriculum`, {
+  method: 'POST', body: JSON.stringify({ courseId, dueAt: dueAt || null }),
+});
+export const removeSchoolCourse = (classId, courseId) => schoolRequest(`/api/school/classes/${classId}/curriculum/${courseId}`, { method: 'DELETE' });
+export const issueSchoolCourseCertificate = (classId, courseId) => schoolRequest(`/api/school/classes/${classId}/curriculum/${courseId}/certificate`, { method: 'POST', body: JSON.stringify({}) });
 export const createSchoolAssignment = (classId, payload) => schoolRequest(`/api/school/classes/${classId}/assignments`, {
   method: 'POST', body: JSON.stringify(payload),
 });

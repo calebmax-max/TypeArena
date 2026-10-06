@@ -39,10 +39,12 @@ export default function TrainingPage() {
 
   useEffect(() => {
     if (lessons.length) {
-      const id = getCurrentLessonId(lessons);
+      const requestedCourseId = new URLSearchParams(window.location.search).get('courseId');
+      const requestedCourse = requestedCourseId && courses.find((course) => String(course.id) === String(requestedCourseId));
+      const id = requestedCourse?.lessons?.[0]?.id || getCurrentLessonId(lessons);
       setActiveLessonId(id);
     }
-  }, [lessons]);
+  }, [courses, lessons]);
 
   function refreshProgress() {
     setProgress(loadProgress());
