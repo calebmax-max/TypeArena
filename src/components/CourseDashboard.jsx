@@ -1,7 +1,8 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { getCourseSummary, isLessonPassed } from './trainingProgress';
 
-export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice }) {
+export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement }) {
   const summary = getCourseSummary(progress, lessons);
   const coursePathway = courses.map((course, index) => {
     const courseLessons = course.lessons || [];
@@ -31,6 +32,14 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
       <div className="training-course-dashboard__track" aria-hidden="true">
         <span style={{ width: `${summary.percentage}%` }} />
       </div>
+      <section className={`training-assessment-callout${summary.completed ? ' training-assessment-callout--ready' : ''}`} aria-labelledby="training-assessment-title">
+        <div>
+          <span className="training-eyebrow">Verified pathway</span>
+          <h2 id="training-assessment-title">{summary.completed ? 'Ready to prove your skills?' : 'Your verified assessment comes next'}</h2>
+          <p>{summary.completed ? 'Take the verified assessment and create evidence you can share with a school or employer.' : `${Math.max(0, summary.totalLessons - summary.passedLessons)} lesson(s) remain before the verified assessment.`}</p>
+        </div>
+        {summary.completed ? <Link className="training-button" to="/certification">Take assessment</Link> : <span className="training-assessment-callout__status">Keep practising</span>}
+      </section>
       <div className="training-pathway" aria-labelledby="training-pathway-title">
         <div className="training-pathway__heading">
           <div>
@@ -56,9 +65,12 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
       <div className="training-course-dashboard__meta">
         <span><strong>{summary.totalXp}</strong> XP earned</span>
         <span>Pass targets require both speed and accuracy</span>
-        <button type="button" className="training-button" onClick={() => onContinue(summary.currentLesson?.id)}>
-          {summary.completed ? 'Review final lesson' : 'Continue course'}
-        </button>
+        <div className="training-course-dashboard__actions">
+          <button type="button" className="training-button" onClick={() => onContinue(summary.currentLesson?.id)}>
+            {summary.completed ? 'Review final lesson' : 'Continue course'}
+          </button>
+          {onPlacement && <button type="button" className="training-button training-button--quiet" onClick={onPlacement}>Find my starting point</button>}
+        </div>
       </div>
       <details className="training-hand-guide">
         <summary>Beginner hand and posture guide</summary>

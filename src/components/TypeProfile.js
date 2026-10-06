@@ -29,6 +29,8 @@ import {
   addFundsToWallet,
   fetchCurrentUser,
   fetchRaceHistory,
+  fetchTrainingCourses,
+  fetchTrainingProgress,
   fetchSubscriptionPlans,
   fetchWalletConfig,
   fetchWalletHistory,
@@ -147,6 +149,7 @@ export default function TypeProfile() {
   const [resetToken,    setResetToken]    = useState('');
   const [formData,      setFormData]       = useState({ email: '', password: '', username: '', phoneNumber: '', accountType: 'player' });
   const [raceHistory,   setRaceHistory]    = useState([]);
+  const [trainingSnapshot, setTrainingSnapshot] = useState({ courses: [], progress: null });
   const [walletHistory, setWalletHistory]  = useState([]);
   const [walletConfig,  setWalletConfig]   = useState({ topUpMethods: [], withdrawMethods: [] });
   const [loading,       setLoading]        = useState(() => !getStoredUserSnapshot());
@@ -225,18 +228,22 @@ export default function TypeProfile() {
       setWalletConfig({ topUpMethods: [], withdrawMethods: [] });
       setRaceHistory([]);
       setWalletHistory([]);
+      setTrainingSnapshot({ courses: [], progress: null });
       return;
     }
     try {
-      const [cfg, history, wallet] = await Promise.all([
+      const [cfg, history, wallet, trainingCourses, trainingProgress] = await Promise.all([
         fetchWalletConfig(),
         fetchRaceHistory(user.id),
         fetchWalletHistory(),
+        fetchTrainingCourses().catch(() => ({ courses: [] })),
+        fetchTrainingProgress().catch(() => null),
       ]);
       if (requestId !== profileRequestRef.current) return;
       setWalletConfig(cfg || { topUpMethods: [], withdrawMethods: [] });
       setRaceHistory(history || []);
       setWalletHistory(wallet?.items || []);
+      setTrainingSnapshot({ courses: Array.isArray(trainingCourses?.courses) ? trainingCourses.courses : [], progress: trainingProgress });
     } catch (err) {
       if (requestId !== profileRequestRef.current) return;
       console.error('Failed to load wallet/race data:', err);
@@ -612,6 +619,20 @@ export default function TypeProfile() {
     [currentUser?.wins, currentUser?.totalRaces]
   );
 
+  const trainingSummary = useMemo(() => {
+    const courses = trainingSnapshot.courses || [];
+    const totalLessons = courses.reduce((sum, course) => sum + Number(course.progress?.totalLessons || course.lessons?.length || 0), 0);
+    const passedLessons = courses.reduce((sum, course) => sum + Number(course.progress?.passedLessons || 0), 0);
+    const nextCourse = courses.find((course) => !course.completed && !course.isLocked);
+    return {
+      totalLessons,
+      passedLessons,
+      percentage: totalLessons ? Math.round((passedLessons / totalLessons) * 100) : 0,
+      nextCourse,
+      totalXp: Number(trainingSnapshot.progress?.totalXp || 0),
+    };
+  }, [trainingSnapshot]);
+
   // ──────────────────────────────────────── Loading state ────────────────────────────────────────
   if (loading) {
     return (
@@ -799,6 +820,16 @@ export default function TypeProfile() {
           >
             Continue training
           </button>
+
+          <div className="tp-training-summary" aria-label="Training progress summary">
+            <div className="tp-training-summary__heading">
+              <strong>Learning progress</strong>
+              <span>{trainingSummary.percentage}%</span>
+            </div>
+            <div className="tp-training-summary__track" aria-hidden="true"><span style={{ width: `${trainingSummary.percentage}%` }} /></div>
+            <p>{trainingSummary.passedLessons}/{trainingSummary.totalLessons || 0} lessons passed{trainingSummary.totalXp ? ` · ${trainingSummary.totalXp} XP` : ''}</p>
+            <small>{trainingSummary.nextCourse ? `Next: ${trainingSummary.nextCourse.title}` : trainingSummary.totalLessons ? 'All available lessons completed.' : 'Start your first lesson to build your skills record.'}</small>
+          </div>
 
           {/* Equipped items */}
           <div className="tp-equipped">

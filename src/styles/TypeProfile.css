@@ -1526,3 +1526,17 @@
     box-shadow: 0 1px 4px rgba(0,0,0,0.35);
   }
   .tp-toggle--on .tp-toggle__knob { transform: translateX(20px); }
+.tp-training-summary {
+  margin-top: 1rem;
+  padding: .9rem;
+  border: 1px solid rgba(99, 202, 183, .2);
+  border-radius: 12px;
+  background: rgba(99, 202, 183, .06);
+}
+
+.tp-training-summary__heading { display: flex; justify-content: space-between; gap: .75rem; color: var(--tp-text, #f3f7f5); font-size: .85rem; }
+.tp-training-summary__heading span { color: var(--tp-accent, #63cab7); font-weight: 700; }
+.tp-training-summary__track { height: .35rem; margin: .65rem 0 .45rem; overflow: hidden; border-radius: 999px; background: rgba(255, 255, 255, .12); }
+.tp-training-summary__track span { display: block; height: 100%; border-radius: inherit; background: var(--tp-accent, #63cab7); transition: width .25s ease; }
+.tp-training-summary p, .tp-training-summary small { display: block; margin: 0; color: rgba(255, 255, 255, .68); font-size: .75rem; line-height: 1.45; }
+.tp-training-summary small { margin-top: .35rem; color: rgba(255, 255, 255, .52); }

@@ -25,9 +25,11 @@ export const PLACEMENT_SAMPLE_TEXT =
  * first lesson in the sequence.
  */
 export function findPlacementLesson(wpm, accuracy, lessonSequence) {
+  const eligibleLessons = lessonSequence.filter((lesson) => !lesson.courseLocked);
+  if (!eligibleLessons.length) return lessonSequence[0]?.id || null;
   let placementIndex = 0;
-  for (let i = 0; i < lessonSequence.length; i += 1) {
-    const lesson = lessonSequence[i];
+  for (let i = 0; i < eligibleLessons.length; i += 1) {
+    const lesson = eligibleLessons[i];
     if (wpm >= lesson.minWpm && accuracy >= lesson.minAccuracy) {
       placementIndex = i;
     } else {
@@ -37,9 +39,9 @@ export function findPlacementLesson(wpm, accuracy, lessonSequence) {
   // Never place someone straight into Pro Certification off one cold
   // sample - three separate passes are required there regardless, and
   // starting mid-lesson-sequence-but-at-the-end reads as a bug, not a win.
-  const lastNonCertIndex = lessonSequence.length - 2;
+  const lastNonCertIndex = eligibleLessons.length - 2;
   const clampedIndex = Math.min(placementIndex, Math.max(lastNonCertIndex, 0));
-  return lessonSequence[clampedIndex].id;
+  return eligibleLessons[clampedIndex].id;
 }
 
 /** Rough WPM/accuracy calculation shared with the lesson runner. */

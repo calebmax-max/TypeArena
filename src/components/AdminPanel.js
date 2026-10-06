@@ -133,7 +133,7 @@ export default function AdminPanel() {
   const [trainingProgress, setTrainingProgress] = useState([]);
   const [trainingImpact, setTrainingImpact] = useState(null);
   const [trainingCourseForm, setTrainingCourseForm] = useState({ id: null, title: '', description: '', stageNumber: '', stageFocus: '', gateWpm: 0, gateAccuracy: 90, isPro: false, prerequisiteCourseId: '', isArchived: false });
-  const [trainingLessonForm, setTrainingLessonForm] = useState({ id: null, courseId: '', unitTitle: 'Course lessons', lessonType: 'practice', title: '', content: '', targetWpm: 10, targetAccuracy: 90, durationSeconds: 120, orderNumber: 1, isArchived: false });
+  const [trainingLessonForm, setTrainingLessonForm] = useState({ id: null, courseId: '', unitTitle: 'Course lessons', lessonType: 'practice', objective: '', title: '', content: '', targetWpm: 10, targetAccuracy: 90, durationSeconds: 120, orderNumber: 1, isArchived: false });
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
   const [contentTypeTab, setContentTypeTab] = useState('practice');
   const [practiceModeTab, setPracticeModeTab] = useState('all');
@@ -412,7 +412,7 @@ export default function AdminPanel() {
     } catch (err) { showNotice(err.message || 'Could not save typing content.'); }
   };
 
-  const resetTrainingLessonForm = (courseId = '') => setTrainingLessonForm({ id: null, courseId, unitTitle: 'Course lessons', lessonType: 'practice', title: '', content: '', targetWpm: 10, targetAccuracy: 90, durationSeconds: 120, orderNumber: 1, isArchived: false });
+  const resetTrainingLessonForm = (courseId = '') => setTrainingLessonForm({ id: null, courseId, unitTitle: 'Course lessons', lessonType: 'practice', objective: '', title: '', content: '', targetWpm: 10, targetAccuracy: 90, durationSeconds: 120, orderNumber: 1, isArchived: false });
   const handleTrainingCourseSave = async (e) => {
     e.preventDefault();
     try {
@@ -1894,6 +1894,7 @@ export default function AdminPanel() {
                     </select>
                     <input className="ap-input" placeholder="Unit name" value={trainingLessonForm.unitTitle} onChange={(e) => setTrainingLessonForm((v) => ({ ...v, unitTitle: e.target.value }))} required />
                     <select className="ap-input" value={trainingLessonForm.lessonType} onChange={(e) => setTrainingLessonForm((v) => ({ ...v, lessonType: e.target.value }))}><option value="intro">Learn</option><option value="practice">Guided practice</option><option value="challenge">Challenge</option><option value="test">Assessment</option></select>
+                    <input className="ap-input" placeholder="Learning objective (what the learner should achieve)" value={trainingLessonForm.objective} onChange={(e) => setTrainingLessonForm((v) => ({ ...v, objective: e.target.value }))} maxLength={255} />
                     <input className="ap-input" placeholder="Lesson title" value={trainingLessonForm.title} onChange={(e) => setTrainingLessonForm((v) => ({ ...v, title: e.target.value }))} required />
                     <textarea className="ap-textarea" rows={5} placeholder="Testing content learners will type" value={trainingLessonForm.content} onChange={(e) => setTrainingLessonForm((v) => ({ ...v, content: e.target.value }))} required />
                     <input className="ap-input" type="number" min="0" placeholder="Target WPM" value={trainingLessonForm.targetWpm} onChange={(e) => setTrainingLessonForm((v) => ({ ...v, targetWpm: e.target.value }))} />
@@ -1911,7 +1912,7 @@ export default function AdminPanel() {
                       <div><button className="ap-btn ap-btn-sm" onClick={() => setTrainingCourseForm({ id: course.id, title: course.title, description: course.description || '', stageNumber: course.stage_number || '', stageFocus: course.stage_focus || '', gateWpm: course.gate_wpm || 0, gateAccuracy: course.gate_accuracy || 90, isPro: Boolean(course.is_pro), prerequisiteCourseId: course.prerequisite_course_id || '', isArchived: Boolean(course.is_archived) })}>Edit</button>{!course.is_archived && <button className="ap-btn ap-btn-sm" onClick={() => handleTrainingCourseArchive(course)}>Archive</button>}</div>
                     </div>
                     <table className="ap-table"><thead><tr><th>Order</th><th>Lesson</th><th>Target</th><th>Actions</th></tr></thead><tbody>
-                      {(course.lessons || []).filter((lesson) => !lesson.is_archived).map((lesson) => <tr key={lesson.id}><td>{lesson.order_number}</td><td>{lesson.unit_title}<small style={{ display: 'block' }}>{lesson.title} · {lesson.lesson_type}</small></td><td>{lesson.target_wpm} WPM / {lesson.target_accuracy}%</td><td><button className="ap-btn ap-btn-sm" onClick={() => setTrainingLessonForm({ id: lesson.id, courseId: String(course.id), unitTitle: lesson.unit_title || 'Course lessons', lessonType: lesson.lesson_type || 'practice', title: lesson.title, content: lesson.content, targetWpm: lesson.target_wpm, targetAccuracy: lesson.target_accuracy, durationSeconds: lesson.duration_seconds, orderNumber: lesson.order_number, isArchived: false })}>Edit</button><button className="ap-btn ap-btn-sm" onClick={() => handleTrainingLessonArchive(lesson)}>Delete</button></td></tr>)}
+                      {(course.lessons || []).filter((lesson) => !lesson.is_archived).map((lesson) => <tr key={lesson.id}><td>{lesson.order_number}</td><td>{lesson.unit_title}<small style={{ display: 'block' }}>{lesson.title} · {lesson.lesson_type}</small></td><td>{lesson.target_wpm} WPM / {lesson.target_accuracy}%</td><td><button className="ap-btn ap-btn-sm" onClick={() => setTrainingLessonForm({ id: lesson.id, courseId: String(course.id), unitTitle: lesson.unit_title || 'Course lessons', lessonType: lesson.lesson_type || 'practice', objective: lesson.objective || '', title: lesson.title, content: lesson.content, targetWpm: lesson.target_wpm, targetAccuracy: lesson.target_accuracy, durationSeconds: lesson.duration_seconds, orderNumber: lesson.order_number, isArchived: false })}>Edit</button><button className="ap-btn ap-btn-sm" onClick={() => handleTrainingLessonArchive(lesson)}>Delete</button></td></tr>)}
                     </tbody></table>
                   </div>
                 ))}

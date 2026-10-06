@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
+import PlacementTest from './PlacementTest';
 import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress } from '../utils/typingApi';
 import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
@@ -21,6 +22,7 @@ export default function TrainingPage() {
   const [progress, setProgress] = useState(loadProgress());
   const [activeLessonId, setActiveLessonId] = useState(null);
   const [justCertified, setJustCertified] = useState(false);
+  const [showPlacement, setShowPlacement] = useState(false);
 
   const lessons = useMemo(() => flattenLessons(courses), [courses]);
 
@@ -53,6 +55,14 @@ export default function TrainingPage() {
   function handleSelectLesson(lessonId) {
     setJustCertified(false);
     setActiveLessonId(lessonId);
+  }
+
+  function handlePlacementComplete(startLessonId) {
+    setCurrentLesson(startLessonId);
+    setShowPlacement(false);
+    setJustCertified(false);
+    setActiveLessonId(startLessonId);
+    refreshProgress();
   }
 
   function handleLessonPassed(lessonId) {
@@ -113,6 +123,7 @@ export default function TrainingPage() {
           problemKeys={problemKeys}
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
           onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); }}
+          onPlacement={() => { setJustCertified(false); setShowPlacement(true); }}
         />
       </div>
       <aside className="training-page__sidebar">
@@ -126,7 +137,9 @@ export default function TrainingPage() {
         />
       </aside>
       <main className="training-page__main">
-        {justCertified ? (
+        {showPlacement ? (
+          <PlacementTest lessons={lessons} onComplete={handlePlacementComplete} onCancel={() => setShowPlacement(false)} />
+        ) : justCertified ? (
           <div className="training-certified">
             <h2>Training complete</h2>
             <p>

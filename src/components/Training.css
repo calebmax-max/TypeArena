@@ -59,6 +59,11 @@
 .training-course-dashboard__progress span { color: var(--tp-muted); font-size: .8rem; }
 .training-course-dashboard__track { height: .55rem; margin: 1rem 0; overflow: hidden; border-radius: 999px; background: var(--tp-sage); }
 .training-course-dashboard__track span { display: block; height: 100%; border-radius: inherit; background: var(--tp-moss); transition: width .25s ease; }
+.training-assessment-callout { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: rgba(227, 240, 230, .36); }
+.training-assessment-callout--ready { border-color: var(--tp-moss); background: linear-gradient(135deg, var(--tp-sage), #fff); }
+.training-assessment-callout h2 { margin: .2rem 0; color: var(--tp-forest); font-size: 1rem; }
+.training-assessment-callout p { margin: 0; color: var(--tp-muted); font-size: .82rem; line-height: 1.45; }
+.training-assessment-callout__status { flex-shrink: 0; color: var(--tp-moss); font-size: .8rem; font-weight: 700; }
 .training-course-dashboard__meta { color: var(--tp-muted); font-size: .85rem; }
 .training-course-dashboard__meta strong { color: var(--tp-forest); }
 .training-pathway { margin: 1.25rem 0; padding: 1rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: rgba(227, 240, 230, .42); }
@@ -106,6 +111,16 @@
   flex-direction: column;
   gap: 0.75rem;
 }
+
+.training-placement h1, .training-placement h2 { margin: 0; color: var(--tp-forest); }
+.training-placement p { margin: .35rem 0 0; color: var(--tp-muted); line-height: 1.55; }
+.training-placement__instructions { display: flex; flex-direction: column; gap: .2rem; padding: .8rem 1rem; border-radius: var(--tp-radius); background: var(--tp-sage); color: var(--tp-muted); font-size: .85rem; }
+.training-placement__instructions strong { color: var(--tp-forest); }
+.training-placement__passage { max-width: none; }
+.training-placement__input { min-height: 110px; width: 100%; padding: .8rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); resize: vertical; font: inherit; line-height: 1.5; color: var(--tp-ink); background: #fff; }
+.training-placement__input:focus { outline: 2px solid var(--tp-moss); outline-offset: 2px; }
+.training-placement__actions, .training-course-dashboard__actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.training-placement__result { padding: 1.25rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: linear-gradient(135deg, #fff 0%, var(--tp-sage) 100%); }
 
 .training-placement__timer {
   font-variant-numeric: tabular-nums;
@@ -529,6 +544,7 @@
   .training-course-dashboard__intro,
   .training-course-dashboard__meta { align-items: flex-start; flex-direction: column; }
   .training-course-dashboard__progress { text-align: left; }
+  .training-assessment-callout { align-items: flex-start; flex-direction: column; }
   .training-lesson__objective { align-items: flex-start; flex-direction: column; }
   .training-lesson__objective p { max-width: none; text-align: left; }
   .training-pathway__heading { align-items: flex-start; flex-direction: column; }
@@ -679,6 +695,9 @@
     padding: 1.25rem;
   }
 }
+
+.training-button--quiet { background: transparent; border: 1px solid var(--tp-sage-border); color: var(--tp-forest); }
+.training-button--quiet:hover { background: var(--tp-sage); }
 
 .training-map__unit-subtitle {
   margin: .75rem 0 .35rem;

@@ -215,9 +215,9 @@ export function getCourseSummary(progress, lessonSequence) {
   return {
     totalLessons: availableLessons.length,
     passedLessons: passedLessons.length,
-    percentage: lessonSequence.length ? Math.round((passedLessons.length / lessonSequence.length) * 100) : 0,
+    percentage: availableLessons.length ? Math.round((passedLessons.length / availableLessons.length) * 100) : 0,
     currentLesson,
-    completed: lessonSequence.length > 0 && passedLessons.length === lessonSequence.length,
+    completed: availableLessons.length > 0 && passedLessons.length === availableLessons.length,
     totalXp: Number(progress.totalXp) || 0,
   };
 }

@@ -98,6 +98,8 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         if not cur.fetchone(): cur.execute("ALTER TABLE training_lessons ADD COLUMN unit_title VARCHAR(120) NULL AFTER course_id")
         cur.execute("SHOW COLUMNS FROM training_lessons LIKE 'lesson_type'")
         if not cur.fetchone(): cur.execute("ALTER TABLE training_lessons ADD COLUMN lesson_type VARCHAR(30) NOT NULL DEFAULT 'practice' AFTER unit_title")
+        cur.execute("SHOW COLUMNS FROM training_lessons LIKE 'objective'")
+        if not cur.fetchone(): cur.execute("ALTER TABLE training_lessons ADD COLUMN objective VARCHAR(255) NULL AFTER lesson_type")
         cur.execute("SELECT id FROM training_courses LIMIT 1")
         if cur.fetchone() is None:
             cur.execute("INSERT INTO training_courses (slug,title,description) VALUES ('beginner','Beginner Typing','Build touch-typing confidence from the home row to short sentences.')")
@@ -154,7 +156,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
-                    cur.execute('SELECT id,course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number FROM training_lessons WHERE course_id=%s AND is_archived=0 ORDER BY order_number,id', (course['id'],))
+                    cur.execute('SELECT id,course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number FROM training_lessons WHERE course_id=%s AND is_archived=0 ORDER BY order_number,id', (course['id'],))
                     course['lessons'] = cur.fetchall()
                     cur.execute('SELECT COUNT(*) total, SUM(CASE WHEN passed=1 THEN 1 ELSE 0 END) passed FROM training_attempts a JOIN training_lessons l ON CAST(a.lesson_id AS UNSIGNED)=l.id WHERE a.user_id=%s AND l.course_id=%s AND l.is_archived=0', (current_user['id'] if current_user else 0, course['id']))
                     stats = cur.fetchone() or {}
@@ -240,7 +242,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 cur.execute('SELECT id,slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,is_archived FROM training_courses ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 for course in courses:
-                    cur.execute('SELECT id,course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number,is_archived FROM training_lessons WHERE course_id=%s ORDER BY order_number,id', (course['id'],))
+                    cur.execute('SELECT id,course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number,is_archived FROM training_lessons WHERE course_id=%s ORDER BY order_number,id', (course['id'],))
                     course['lessons'] = cur.fetchall()
                 return jsonify({'courses': courses})
         finally: return_connection(conn)
@@ -306,12 +308,12 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 ensure_tables(cur)
                 if not admin_allowed(conn): return jsonify({'message': 'Admin access required.'}), 403
                 data = request.get_json(silent=True) or {}
-                values = (str(data.get('unitTitle') or 'Course lessons').strip(), str(data.get('lessonType') or 'practice').strip(), str(data.get('title') or '').strip(), str(data.get('content') or '').strip(), float(data.get('targetWpm') or 10), float(data.get('targetAccuracy') or 90), int(data.get('durationSeconds') or 120), int(data.get('orderNumber') or 1), int(bool(data.get('isArchived'))))
-                if not values[0] or not values[1]: return jsonify({'message': 'Lesson title and content are required.'}), 400
+                values = (str(data.get('unitTitle') or 'Course lessons').strip(), str(data.get('lessonType') or 'practice').strip(), str(data.get('objective') or '').strip()[:255], str(data.get('title') or '').strip(), str(data.get('content') or '').strip(), float(data.get('targetWpm') or 10), float(data.get('targetAccuracy') or 90), int(data.get('durationSeconds') or 120), int(data.get('orderNumber') or 1), int(bool(data.get('isArchived'))))
+                if not values[0] or not values[1] or not values[3] or not values[4]: return jsonify({'message': 'Lesson title and content are required.'}), 400
                 if lesson_id:
-                    cur.execute('UPDATE training_lessons SET unit_title=%s,lesson_type=%s,title=%s,content=%s,target_wpm=%s,target_accuracy=%s,duration_seconds=%s,order_number=%s,is_archived=%s WHERE id=%s', (*values, lesson_id))
+                    cur.execute('UPDATE training_lessons SET unit_title=%s,lesson_type=%s,objective=%s,title=%s,content=%s,target_wpm=%s,target_accuracy=%s,duration_seconds=%s,order_number=%s,is_archived=%s WHERE id=%s', (*values, lesson_id))
                 else:
-                    cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,title,content,target_wpm,target_accuracy,duration_seconds,order_number,is_archived) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (course_id, *values))
+                    cur.execute('INSERT INTO training_lessons (course_id,unit_title,lesson_type,objective,title,content,target_wpm,target_accuracy,duration_seconds,order_number,is_archived) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (course_id, *values))
                 conn.commit(); return jsonify({'saved': True})
         finally: return_connection(conn)
 
