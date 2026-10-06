@@ -1635,6 +1635,15 @@
 
 .tp-pro-card { background: rgba(25, 54, 41, .72); border-color: var(--tp-border); }
 
+/* Use the same deep forest surface across the profile workspace cards. */
+.tp-panel,
+.tp-pro-card,
+.tp-equipped,
+.tp-training-summary,
+.tp-count,
+.tp-audio-row,
+.tp-segment { background: #1f4d3b; }
+
 @media (max-width: 800px) {
   .tp-main { width: 100%; padding: 1rem; }
   .tp-sidebar { display: flex; flex-direction: column; gap: 1.25rem; }

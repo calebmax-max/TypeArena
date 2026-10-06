@@ -38,6 +38,7 @@
   max-width: 1100px;
   flex-wrap: wrap;
 }
+
 .training-page--loading { min-height: 18rem; justify-content: center; }
 .training-loading-card { width: min(100%, 34rem); padding: 2rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: #fff; box-shadow: 0 10px 30px rgba(22, 40, 31, .08); color: var(--tp-ink); }
 .training-loading-card h1 { margin: .3rem 0; color: var(--tp-forest-dark); font-size: 1.45rem; }
@@ -827,3 +828,27 @@
 @media (min-width: 821px) {
   .App--workspace main:has(.training-page) { background: #0c1512; }
 }
+
+/* Keep training cards consistent with the Stage complete card. */
+.training-certified,
+.training-course-dashboard,
+.training-course-outcome,
+.training-pathway,
+.training-stage-card,
+.training-lesson__objective,
+.training-beginner-guide,
+.training-placement__result,
+.training-state-card,
+.training-loading-card,
+.training-hand-guide,
+.training-map__panel { background: #1f4d3b; }
+
+.training-course-dashboard,
+.training-course-outcome,
+.training-pathway,
+.training-stage-card,
+.training-lesson__objective,
+.training-beginner-guide,
+.training-placement__result,
+.training-state-card,
+.training-loading-card { color: #edf8f2; }
