@@ -263,11 +263,20 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 title = str(data.get('title') or '').strip()
                 slug = str(data.get('slug') or title.lower().replace(' ', '-')).strip()
                 if not title or not slug: return jsonify({'message': 'Course title is required.'}), 400
-                values = (slug, title, str(data.get('description') or '').strip(), int(bool(data.get('isPro'))), int(data.get('prerequisiteCourseId') or 0) or None, int(bool(data.get('isArchived'))))
+                try:
+                    stage_number = int(data.get('stageNumber') or 0) or None
+                    gate_wpm = float(data.get('gateWpm') or 0)
+                    gate_accuracy = float(data.get('gateAccuracy') or 90)
+                except (TypeError, ValueError):
+                    return jsonify({'message': 'Stage and gate values must be valid numbers.'}), 400
+                if gate_wpm < 0 or gate_accuracy < 0 or gate_accuracy > 100:
+                    return jsonify({'message': 'Gate WPM must be non-negative and accuracy must be between 0 and 100.'}), 400
+                stage_focus = str(data.get('stageFocus') or '').strip()[:180]
+                values = (slug, title, str(data.get('description') or '').strip(), int(bool(data.get('isPro'))), int(data.get('prerequisiteCourseId') or 0) or None, stage_number, stage_focus, gate_wpm, gate_accuracy, int(bool(data.get('isArchived'))))
                 if course_id:
-                    cur.execute('UPDATE training_courses SET slug=%s,title=%s,description=%s,is_pro=%s,prerequisite_course_id=%s,is_archived=%s WHERE id=%s', (*values, course_id))
+                    cur.execute('UPDATE training_courses SET slug=%s,title=%s,description=%s,is_pro=%s,prerequisite_course_id=%s,stage_number=%s,stage_focus=%s,gate_wpm=%s,gate_accuracy=%s,is_archived=%s WHERE id=%s', (*values, course_id))
                 else:
-                    cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,prerequisite_course_id,is_archived) VALUES (%s,%s,%s,%s,%s,%s)', values)
+                    cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,is_archived) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', values)
                     course_id = cur.lastrowid
                 conn.commit(); return jsonify({'id': course_id})
         finally: return_connection(conn)

@@ -27,6 +27,17 @@ export default function CourseDashboard({ progress, lessons, problemKeys = [], o
           {summary.completed ? 'Review final lesson' : 'Continue course'}
         </button>
       </div>
+      <details className="training-hand-guide">
+        <summary>Beginner hand and posture guide</summary>
+        <div className="training-hand-guide__content">
+          <p>Rest your fingers lightly on the home row. Keep your wrists level, shoulders relaxed, and look at the screen instead of the keys.</p>
+          <div className="training-hand-guide__columns">
+            <div><strong>Left hand</strong><span>A → left pinky</span><span>S → left ring</span><span>D → left middle</span><span>F → left index</span></div>
+            <div><strong>Right hand</strong><span>J → right index</span><span>K → right middle</span><span>L → right ring</span><span>; → right pinky</span></div>
+          </div>
+          <small>Use both thumbs for the space bar. Move only the finger assigned to each key and return to the home row after every reach.</small>
+        </div>
+      </details>
       <div className="training-problem-keys">
         <div><strong>Problem-key practice</strong><span>{problemKeys.length ? `Focus on ${problemKeys.map((item) => item.key).join(', ')}` : 'Complete a lesson to discover your weakest keys.'}</span></div>
         {problemKeys.length > 0 && <button type="button" className="training-button training-button--quiet" onClick={onProblemPractice}>Practice weak keys</button>}

@@ -132,7 +132,7 @@ export default function AdminPanel() {
   const [trainingCourses, setTrainingCourses] = useState([]);
   const [trainingProgress, setTrainingProgress] = useState([]);
   const [trainingImpact, setTrainingImpact] = useState(null);
-  const [trainingCourseForm, setTrainingCourseForm] = useState({ id: null, title: '', description: '', isPro: false, prerequisiteCourseId: '', isArchived: false });
+  const [trainingCourseForm, setTrainingCourseForm] = useState({ id: null, title: '', description: '', stageNumber: '', stageFocus: '', gateWpm: 0, gateAccuracy: 90, isPro: false, prerequisiteCourseId: '', isArchived: false });
   const [trainingLessonForm, setTrainingLessonForm] = useState({ id: null, courseId: '', unitTitle: 'Course lessons', lessonType: 'practice', title: '', content: '', targetWpm: 10, targetAccuracy: 90, durationSeconds: 120, orderNumber: 1, isArchived: false });
   const [contentForm, setContentForm] = useState({ id: null, contentType: 'practice', mode: 'standard', language: 'english', passage: '', isActive: true });
   const [contentTypeTab, setContentTypeTab] = useState('practice');
@@ -420,7 +420,7 @@ export default function AdminPanel() {
       else await createAdminTrainingCourse(trainingCourseForm);
       const result = await fetchAdminTrainingCourses();
       setTrainingCourses(result.courses || []);
-      setTrainingCourseForm({ id: null, title: '', description: '', isPro: false, prerequisiteCourseId: '', isArchived: false });
+      setTrainingCourseForm({ id: null, title: '', description: '', stageNumber: '', stageFocus: '', gateWpm: 0, gateAccuracy: 90, isPro: false, prerequisiteCourseId: '', isArchived: false });
       showNotice('Course saved.');
     } catch (err) { showNotice(err.message || 'Could not save course.'); }
   };
@@ -1878,6 +1878,9 @@ export default function AdminPanel() {
                   <form onSubmit={handleTrainingCourseSave} className="ap-form-grid">
                     <input className="ap-input" placeholder="Course title" value={trainingCourseForm.title} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, title: e.target.value }))} required />
                     <input className="ap-input" placeholder="Description" value={trainingCourseForm.description} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, description: e.target.value }))} />
+                    <input className="ap-input" type="number" min="1" placeholder="Programme stage number" value={trainingCourseForm.stageNumber} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, stageNumber: e.target.value }))} />
+                    <input className="ap-input" placeholder="Stage focus / learner outcome" value={trainingCourseForm.stageFocus} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, stageFocus: e.target.value }))} maxLength={180} />
+                    <div className="ap-form-grid ap-form-grid--three"><input className="ap-input" type="number" min="0" placeholder="Gate WPM" value={trainingCourseForm.gateWpm} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, gateWpm: e.target.value }))} /><input className="ap-input" type="number" min="0" max="100" placeholder="Gate accuracy" value={trainingCourseForm.gateAccuracy} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, gateAccuracy: e.target.value }))} /></div>
                     <select className="ap-input" value={trainingCourseForm.prerequisiteCourseId} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, prerequisiteCourseId: e.target.value }))}><option value="">No prerequisite</option>{trainingCourses.filter((course) => course.id !== trainingCourseForm.id && !course.is_archived).map((course) => <option key={course.id} value={course.id}>After: {course.title}</option>)}</select>
                     <label className="ap-check"><input type="checkbox" checked={trainingCourseForm.isPro} onChange={(e) => setTrainingCourseForm((v) => ({ ...v, isPro: e.target.checked }))} /> Pro access</label>
                     <button className="ap-btn" type="submit">{trainingCourseForm.id ? 'Save course' : 'Add course'}</button>
@@ -1904,8 +1907,8 @@ export default function AdminPanel() {
                 {trainingCourses.map((course) => (
                   <div className="ap-card ap-course-card" key={course.id}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                      <div><p className="ap-card-title">{course.title} {course.is_pro ? '(Pro)' : '(Free)'}</p><small>{course.description}</small></div>
-                      <div><button className="ap-btn ap-btn-sm" onClick={() => setTrainingCourseForm({ id: course.id, title: course.title, description: course.description || '', isPro: Boolean(course.is_pro), prerequisiteCourseId: course.prerequisite_course_id || '', isArchived: Boolean(course.is_archived) })}>Edit</button>{!course.is_archived && <button className="ap-btn ap-btn-sm" onClick={() => handleTrainingCourseArchive(course)}>Archive</button>}</div>
+                      <div><p className="ap-card-title">{course.stage_number ? `Stage ${course.stage_number}: ` : ''}{course.title} {course.is_pro ? '(Pro)' : '(Free)'}</p><small>{course.stage_focus || course.description}</small><small style={{ display: 'block', marginTop: 4 }}>Gate: {course.gate_wpm || 0} WPM / {course.gate_accuracy || 90}% accuracy</small></div>
+                      <div><button className="ap-btn ap-btn-sm" onClick={() => setTrainingCourseForm({ id: course.id, title: course.title, description: course.description || '', stageNumber: course.stage_number || '', stageFocus: course.stage_focus || '', gateWpm: course.gate_wpm || 0, gateAccuracy: course.gate_accuracy || 90, isPro: Boolean(course.is_pro), prerequisiteCourseId: course.prerequisite_course_id || '', isArchived: Boolean(course.is_archived) })}>Edit</button>{!course.is_archived && <button className="ap-btn ap-btn-sm" onClick={() => handleTrainingCourseArchive(course)}>Archive</button>}</div>
                     </div>
                     <table className="ap-table"><thead><tr><th>Order</th><th>Lesson</th><th>Target</th><th>Actions</th></tr></thead><tbody>
                       {(course.lessons || []).filter((lesson) => !lesson.is_archived).map((lesson) => <tr key={lesson.id}><td>{lesson.order_number}</td><td>{lesson.unit_title}<small style={{ display: 'block' }}>{lesson.title} · {lesson.lesson_type}</small></td><td>{lesson.target_wpm} WPM / {lesson.target_accuracy}%</td><td><button className="ap-btn ap-btn-sm" onClick={() => setTrainingLessonForm({ id: lesson.id, courseId: String(course.id), unitTitle: lesson.unit_title || 'Course lessons', lessonType: lesson.lesson_type || 'practice', title: lesson.title, content: lesson.content, targetWpm: lesson.target_wpm, targetAccuracy: lesson.target_accuracy, durationSeconds: lesson.duration_seconds, orderNumber: lesson.order_number, isArchived: false })}>Edit</button><button className="ap-btn ap-btn-sm" onClick={() => handleTrainingLessonArchive(lesson)}>Delete</button></td></tr>)}

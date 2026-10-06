@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import hmac
 import io
 import json
 import re
@@ -112,6 +114,9 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 race_id VARCHAR(120) NULL,
                 wpm DECIMAL(7,2) NOT NULL DEFAULT 0,
                 accuracy DECIMAL(6,2) NOT NULL DEFAULT 0,
+                passed TINYINT(1) NOT NULL DEFAULT 0,
+                status ENUM('passed','failed','under_review') NOT NULL DEFAULT 'failed',
+                verification_method VARCHAR(24) NOT NULL DEFAULT 'legacy',
                 submitted_at DATETIME NOT NULL,
                 UNIQUE KEY uniq_assignment_submission (assignment_id, user_id),
                 INDEX idx_submission_user (user_id)
@@ -127,6 +132,7 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 race_id VARCHAR(120) NULL,
                 wpm DECIMAL(7,2) NOT NULL DEFAULT 0,
                 accuracy DECIMAL(6,2) NOT NULL DEFAULT 0,
+                verification_method VARCHAR(24) NOT NULL DEFAULT 'legacy',
                 submitted_at DATETIME NOT NULL,
                 INDEX idx_assignment_attempts_user (assignment_id,user_id,submitted_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -174,6 +180,16 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
         cur.execute("SHOW COLUMNS FROM assignments LIKE 'passage'")
         if not cur.fetchone():
             cur.execute('ALTER TABLE assignments ADD COLUMN passage MEDIUMTEXT NULL AFTER instructions')
+        for statement in (
+            "ALTER TABLE assignment_attempts ADD COLUMN verification_method VARCHAR(24) NOT NULL DEFAULT 'legacy' AFTER accuracy",
+            "ALTER TABLE assignment_submissions ADD COLUMN passed TINYINT(1) NOT NULL DEFAULT 0 AFTER accuracy",
+            "ALTER TABLE assignment_submissions ADD COLUMN status ENUM('passed','failed','under_review') NOT NULL DEFAULT 'failed' AFTER passed",
+            "ALTER TABLE assignment_submissions ADD COLUMN verification_method VARCHAR(24) NOT NULL DEFAULT 'legacy' AFTER status",
+        ):
+            try:
+                cur.execute(statement)
+            except Exception:
+                pass
 
     def current_user(conn):
         return get_user(conn)
@@ -361,8 +377,8 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 for r in cur.fetchall():
                     submission_filter = '' if role in ('org_admin', 'teacher') else ' AND s.user_id=%s'
                     submission_params = (r['id'],) if not submission_filter else (r['id'], user['id'])
-                    cur.execute(f"SELECT s.user_id,s.wpm,s.accuracy,s.race_id,s.submitted_at,u.username FROM assignment_submissions s JOIN users u ON u.id=s.user_id WHERE s.assignment_id=%s{submission_filter} ORDER BY s.submitted_at DESC", submission_params)
-                    submissions = [{'userId': x['user_id'], 'username': x['username'], 'wpm': float(x['wpm'] or 0), 'accuracy': float(x['accuracy'] or 0), 'raceId': x.get('race_id'), 'submittedAt': x['submitted_at'].isoformat() if x.get('submitted_at') else None} for x in cur.fetchall()]
+                    cur.execute(f"SELECT s.user_id,s.wpm,s.accuracy,s.passed,s.status,s.verification_method,s.race_id,s.submitted_at,u.username FROM assignment_submissions s JOIN users u ON u.id=s.user_id WHERE s.assignment_id=%s{submission_filter} ORDER BY s.submitted_at DESC", submission_params)
+                    submissions = [{'userId': x['user_id'], 'username': x['username'], 'wpm': float(x['wpm'] or 0), 'accuracy': float(x['accuracy'] or 0), 'passed': bool(x.get('passed')), 'status': x.get('status') or 'failed', 'verificationMethod': x.get('verification_method') or 'legacy', 'raceId': x.get('race_id'), 'submittedAt': x['submitted_at'].isoformat() if x.get('submitted_at') else None} for x in cur.fetchall()]
                     assignments.append({'id': r['id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'passage': r.get('passage') or '', 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'mode': r['mode'], 'status': r.get('status') or 'published', 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'submissions': submissions if role in ('org_admin', 'teacher') else [], 'mySubmission': submissions[0] if role not in ('org_admin', 'teacher') and submissions else None, 'completionCount': len(submissions) if role in ('org_admin', 'teacher') else int(bool(submissions))})
             active_learners = [learner for learner in learners if learner['status'] == 'active']
             return jsonify({
@@ -466,10 +482,44 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 if error: return jsonify({'message': error[0]}), error[1]
                 cur.execute("SELECT id FROM class_members WHERE class_id=%s AND user_id=%s AND status='active'", (assignment['class_id'], user['id']))
                 if not cur.fetchone(): return jsonify({'message': 'Join the class before submitting.'}), 403
-                submission_values = (assignment_id, user['id'], payload.get('raceId'), float(payload.get('wpm') or 0), float(payload.get('accuracy') or 0), now_db())
-                cur.execute('INSERT INTO assignment_attempts (assignment_id,user_id,race_id,wpm,accuracy,submitted_at) VALUES (%s,%s,%s,%s,%s,%s)', submission_values)
-                cur.execute('INSERT INTO assignment_submissions (assignment_id,user_id,race_id,wpm,accuracy,submitted_at) VALUES (%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE race_id=VALUES(race_id),wpm=VALUES(wpm),accuracy=VALUES(accuracy),submitted_at=VALUES(submitted_at)', submission_values)
-            conn.commit(); return jsonify({'message': 'Assignment submitted.'})
+                race_id = str(payload.get('raceId') or '').strip()[:120]
+                if not race_id:
+                    return jsonify({'message': 'A server-verified race is required for this assignment.'}), 400
+                cur.execute('''SELECT wpm,accuracy,verification_method,anti_cheat_flags,passage_hash
+                    FROM race_history
+                    WHERE user_id=%s AND (race_code=%s OR race_code=%s)
+                    LIMIT 1''', (user['id'], race_id, f'live_{race_id}_{user["id"]}'))
+                race = cur.fetchone()
+                if not race:
+                    return jsonify({'message': 'The referenced race result could not be found.'}), 409
+                if str(race.get('verification_method') or '') != 'server_verified':
+                    return jsonify({'message': 'This race result is not eligible for a verified school submission.'}), 409
+                try:
+                    race_flags = json.loads(race.get('anti_cheat_flags') or '[]')
+                except (TypeError, ValueError):
+                    race_flags = ['unreadable_anti_cheat_flags']
+                if race_flags:
+                    return jsonify({'message': 'This race is under review and cannot be submitted yet.'}), 409
+                expected_passage_hash = hashlib.sha256(str(assignment.get('passage') or '').strip().encode('utf-8')).hexdigest()
+                if not race.get('passage_hash') or not hmac.compare_digest(str(race.get('passage_hash')), expected_passage_hash):
+                    return jsonify({'message': 'This race was not completed with the assigned passage. Start the assignment again.'}), 409
+                cur.execute('SELECT id FROM assignment_attempts WHERE assignment_id=%s AND user_id=%s AND race_id=%s LIMIT 1', (assignment_id, user['id'], race_id))
+                if cur.fetchone():
+                    return jsonify({'message': 'This race has already been submitted for the assignment.'}), 409
+                wpm = float(race.get('wpm') or 0)
+                accuracy = float(race.get('accuracy') or 0)
+                passed = int(wpm >= float(assignment.get('target_wpm') or 0) and accuracy >= float(assignment.get('target_accuracy') or 0))
+                status = 'passed' if passed else 'failed'
+                submission_values = (assignment_id, user['id'], race_id, wpm, accuracy, passed, status, 'server_verified', now_db())
+                cur.execute('''INSERT INTO assignment_attempts
+                    (assignment_id,user_id,race_id,wpm,accuracy,verification_method,submitted_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)''',
+                    (assignment_id, user['id'], race_id, wpm, accuracy, 'server_verified', now_db()))
+                cur.execute('''INSERT INTO assignment_submissions
+                    (assignment_id,user_id,race_id,wpm,accuracy,passed,status,verification_method,submitted_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE race_id=VALUES(race_id),wpm=VALUES(wpm),accuracy=VALUES(accuracy),passed=VALUES(passed),status=VALUES(status),verification_method=VALUES(verification_method),submitted_at=VALUES(submitted_at)''', submission_values)
+            conn.commit(); return jsonify({'message': 'Assignment submitted.', 'wpm': wpm, 'accuracy': accuracy, 'passed': bool(passed), 'status': status, 'verificationMethod': 'server_verified'})
         finally: return_connection(conn)
 
     @app.post('/api/school/classes/<int:class_id>/invitations')
@@ -612,22 +662,25 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             if not user: return jsonify({'message': 'Unauthorized'}), 401
             with conn.cursor() as cur:
                 ensure_tables(cur)
-                cur.execute("""SELECT a.*,c.name class_name,o.name organization_name,s.wpm submitted_wpm,s.accuracy submitted_accuracy,s.race_id,s.submitted_at
+                cur.execute("""SELECT a.*,c.name class_name,o.name organization_name,s.wpm submitted_wpm,s.accuracy submitted_accuracy,s.passed submitted_passed,s.status submitted_status,s.verification_method submitted_verification_method,s.race_id,s.submitted_at
                     FROM assignments a JOIN classes c ON c.id=a.class_id JOIN organizations o ON o.id=c.organization_id
                     JOIN class_members cm ON cm.class_id=c.id AND cm.user_id=%s AND cm.status='active'
                     LEFT JOIN assignment_submissions s ON s.assignment_id=a.id AND s.user_id=%s
                     WHERE COALESCE(a.status,'published') <> 'archived' ORDER BY a.due_at IS NULL,a.due_at,a.created_at DESC""", (user['id'], user['id']))
                 items = []
                 for r in cur.fetchall():
-                    cur.execute("""SELECT wpm,accuracy,race_id,submitted_at FROM assignment_attempts
+                    cur.execute("""SELECT wpm,accuracy,verification_method,race_id,submitted_at FROM assignment_attempts
                         WHERE assignment_id=%s AND user_id=%s ORDER BY submitted_at DESC""", (r['id'], user['id']))
                     history = [{
                         'wpm': float(attempt['wpm'] or 0),
                         'accuracy': float(attempt['accuracy'] or 0),
+                        'verificationMethod': attempt.get('verification_method') or 'legacy',
                         'raceId': attempt.get('race_id'),
                         'submittedAt': attempt['submitted_at'].isoformat() if attempt.get('submitted_at') else None,
                     } for attempt in cur.fetchall()]
-                    items.append({'id': r['id'], 'classId': r['class_id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'className': r['class_name'], 'organizationName': r['organization_name'], 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'status': 'completed' if r.get('submitted_at') else 'pending', 'wpm': float(r['submitted_wpm'] or 0) if r.get('submitted_at') else None, 'accuracy': float(r['submitted_accuracy'] or 0) if r.get('submitted_at') else None, 'raceId': r.get('race_id'), 'submittedAt': r['submitted_at'].isoformat() if r.get('submitted_at') else None, 'history': history})
+                    submitted_status = r.get('submitted_status')
+                    learner_status = 'passed' if submitted_status == 'passed' else ('submitted' if r.get('submitted_at') else 'pending')
+                    items.append({'id': r['id'], 'classId': r['class_id'], 'title': r['title'], 'instructions': r.get('instructions') or '', 'className': r['class_name'], 'organizationName': r['organization_name'], 'targetWpm': float(r['target_wpm'] or 0), 'targetAccuracy': float(r['target_accuracy'] or 0), 'dueAt': r['due_at'].isoformat() if r.get('due_at') else None, 'status': learner_status, 'passed': bool(r.get('submitted_passed')), 'verificationMethod': r.get('submitted_verification_method') or 'legacy', 'wpm': float(r['submitted_wpm'] or 0) if r.get('submitted_at') else None, 'accuracy': float(r['submitted_accuracy'] or 0) if r.get('submitted_at') else None, 'raceId': r.get('race_id'), 'submittedAt': r['submitted_at'].isoformat() if r.get('submitted_at') else None, 'history': history})
             return jsonify({'assignments': items})
         finally: return_connection(conn)
 

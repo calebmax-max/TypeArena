@@ -64,6 +64,12 @@
 .training-problem-keys { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--tp-sage-border); }
 .training-problem-keys div { display: flex; flex-direction: column; gap: .2rem; }
 .training-problem-keys span { color: var(--tp-muted); font-size: .85rem; }
+.training-hand-guide { margin-top: 1rem; padding: 1rem; border: 1px solid var(--tp-sage-border); border-radius: 12px; background: rgba(255,255,255,.04); }
+.training-hand-guide summary { cursor: pointer; font-weight: 700; color: var(--tp-forest); }
+.training-hand-guide__content { color: var(--tp-muted); font-size: .9rem; line-height: 1.55; }
+.training-hand-guide__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: .8rem 0; }
+.training-hand-guide__columns div { display: flex; flex-direction: column; gap: .2rem; padding: .75rem; border-radius: 8px; background: rgba(255,255,255,.04); }
+.training-hand-guide__columns strong { color: var(--tp-forest); }
 .training-button--quiet { padding: .45rem .75rem; font-size: .8rem; }
 
 .training-page__sidebar {

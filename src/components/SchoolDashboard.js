@@ -12,6 +12,7 @@ import {
   fetchSchoolInvitationsForMe,
   fetchSchoolOrganizationMembers,
   fetchSchoolOverview,
+  fetchTrainingCourses,
   importSchoolLearners,
   inviteSchoolTeacher,
   joinSchoolClass,
@@ -57,6 +58,7 @@ export default function SchoolDashboard({ currentUser }) {
   const [joinCode, setJoinCode] = useState('');
   const [assignment, setAssignment] = useState({ title: '', instructions: '', passage: '', targetWpm: '', targetAccuracy: '' });
   const [learnerAssignments, setLearnerAssignments] = useState([]);
+  const [trainingCourses, setTrainingCourses] = useState([]);
   const [teacherEmail, setTeacherEmail] = useState('');
   const [teacherInvite, setTeacherInvite] = useState('');
   const [schoolRoom, setSchoolRoom] = useState(null);
@@ -72,14 +74,16 @@ export default function SchoolDashboard({ currentUser }) {
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
     try {
-      const [overviewData, assignmentData, invitationData] = await Promise.all([
+      const [overviewData, assignmentData, invitationData, trainingData] = await Promise.all([
         fetchSchoolOverview(),
         fetchSchoolAssignments(),
         fetchSchoolInvitationsForMe(),
+        fetchTrainingCourses().catch(() => ({ courses: [] })),
       ]);
       setOverview(overviewData);
       setLearnerAssignments(assignmentData.assignments || []);
       setInvitations(invitationData.invitations || []);
+      setTrainingCourses(Array.isArray(trainingData?.courses) ? trainingData.courses : []);
       setSelectedOrganizationId((current) => {
         if ((overviewData.organizations || []).some((organization) => String(organization.id) === String(current))) return current;
         return overviewData.organizations?.[0] ? String(overviewData.organizations[0].id) : '';
@@ -88,6 +92,8 @@ export default function SchoolDashboard({ currentUser }) {
       setNotice(error.message);
     }
   }, [currentUser?.id]);
+
+  const pathwayCourses = trainingCourses.filter((course) => !course.is_archived).slice(0, 6);
 
   useEffect(() => { load(); }, [load]);
 
@@ -186,11 +192,31 @@ export default function SchoolDashboard({ currentUser }) {
   return (
     <div className="profile-container" style={{ maxWidth: 1180, margin: '0 auto', padding: '42px 18px' }}>
       <section className="profile-hero" style={{ marginBottom: 24 }}>
-        <span className="eyebrow">Organisation mode</span>
-        <h1>Classes, assignments, progress.</h1>
-        <p>Keep school racing private, measurable, and free of stakes or withdrawals.</p>
+        <span className="eyebrow">TypeArena School</span>
+        <h1>Learn. Practise. Demonstrate.</h1>
+        <p>A structured pathway for keyboard fluency, computer skills, and verified learner progress.</p>
       </section>
       {notice && <div className="auth-notice" role="status" style={{ marginBottom: 18 }}>{notice}</div>}
+
+      <section style={{ ...cardStyle, marginBottom: 18 }}>
+        <span className="eyebrow">Learning pathway</span>
+        <h2 style={{ marginTop: 6 }}>Build skills in the right order</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 10 }}>
+          {(pathwayCourses.length ? pathwayCourses : [
+            { id: 'placeholder-1', stage_number: 1, title: 'Keyboard Foundations', stage_focus: 'Posture, home row, accuracy, and touch-typing confidence.' },
+            { id: 'placeholder-2', stage_number: 2, title: 'Computer Essentials', stage_focus: 'Files, devices, internet basics, and digital safety.' },
+            { id: 'placeholder-3', stage_number: 3, title: 'Productivity Skills', stage_focus: 'Documents, spreadsheets, communication, and practical tasks.' },
+          ]).map((course, index) => (
+            <div key={course.id} style={{ padding: 14, borderRadius: 12, background: 'rgba(255,255,255,.045)', border: '1px solid rgba(255,255,255,.08)' }}>
+              <small style={{ color: '#63cab7', fontWeight: 700 }}>{String(course.stage_number || index + 1).padStart(2, '0')}</small>
+              <strong style={{ display: 'block', margin: '6px 0' }}>{course.title}</strong>
+              <small style={{ display: 'block', opacity: .72, lineHeight: 1.5 }}>{course.stage_focus || course.description || 'Structured training programme.'}</small>
+              {course.lessons?.length > 0 && <small style={{ display: 'block', marginTop: 8, color: '#63cab7' }}>{course.progress?.passedLessons || 0}/{course.progress?.totalLessons || course.lessons.length} lessons passed</small>}
+            </div>
+          ))}
+        </div>
+        <Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 14 }} to="/training">Open training curriculum</Link>
+      </section>
 
       {invitations.length > 0 && (
         <section style={{ ...cardStyle, marginBottom: 18 }}>
@@ -467,7 +493,8 @@ export default function SchoolDashboard({ currentUser }) {
                   {selected.role === 'learner' && learnerAssignments.filter((item) => Number(item.classId) === Number(selected.class.id)).map((item) => (
                     <div key={item.id} style={{ padding: 12, margin: '8px 0', borderRadius: 10, background: 'rgba(255,255,255,.04)' }}>
                       <strong>{item.title}</strong>
-                      <div>{item.status === 'completed' ? `Completed · ${item.wpm} WPM · ${item.accuracy}% accuracy` : 'Pending'}</div>
+                      <small style={{ display: 'block', color: item.status === 'passed' ? '#63cab7' : 'inherit', opacity: .8 }}>{item.status === 'passed' ? 'Verified pass' : item.status === 'submitted' ? 'Needs more practice' : 'Not started'}</small>
+                      <div>{item.status === 'passed' ? `Passed · ${item.wpm} WPM · ${item.accuracy}% accuracy` : item.status === 'submitted' ? `Submitted · ${item.wpm} WPM · ${item.accuracy}% accuracy` : 'Not started'}</div>
                       {item.submittedAt && <small>Submitted {new Date(item.submittedAt).toLocaleString()}</small>}
                       {item.history?.length > 0 && (
                         <details style={{ marginTop: 8 }}>
@@ -475,7 +502,7 @@ export default function SchoolDashboard({ currentUser }) {
                           {item.history.map((attempt, index) => <small key={`${attempt.raceId || 'attempt'}-${attempt.submittedAt || index}`} style={{ display: 'block' }}>Attempt {item.history.length - index}: {attempt.wpm} WPM · {attempt.accuracy}% · {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : 'time unavailable'}</small>)}
                         </details>
                       )}
-                      {item.status !== 'completed' && <div><Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/practice?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>Start assignment</Link></div>}
+                      {item.status !== 'passed' && <div><Link className="btn btn-primary" style={{ display: 'inline-block', marginTop: 8 }} to={`/practice?schoolClassId=${selected.class.id}&assignmentId=${item.id}`}>{item.status === 'submitted' ? 'Try again' : 'Start assignment'}</Link></div>}
                     </div>
                   ))}
                   {(selected.assignments || []).map((item) => (

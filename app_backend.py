@@ -4019,6 +4019,7 @@ def _apply_user_performance_update(
     verification_method: str = 'legacy',
     anti_cheat_flags: Optional[list] = None,
     key_errors: Optional[Dict[str, int]] = None,
+    passage_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     now_dt = datetime.utcnow()
 
@@ -4054,8 +4055,8 @@ def _apply_user_performance_update(
     cur.execute(
         '''
         INSERT INTO race_history
-        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta, verification_method, anti_cheat_flags, key_errors)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        (race_code, user_id, username, wpm, accuracy, duration, place_position, earnings, race_timestamp, race_category, points_delta, verification_method, anti_cheat_flags, key_errors, passage_hash)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             username = VALUES(username),
             wpm = VALUES(wpm),
@@ -4068,12 +4069,13 @@ def _apply_user_performance_update(
             points_delta = VALUES(points_delta),
             verification_method = VALUES(verification_method),
             anti_cheat_flags = VALUES(anti_cheat_flags),
-            key_errors = VALUES(key_errors)
+            key_errors = VALUES(key_errors),
+            passage_hash = VALUES(passage_hash)
         ''',
         (
             race_code, user_id, username, round(wpm, 1), round(accuracy, 1), duration,
             1 if did_win else 2, earnings, now_dt, race_category, points_delta,
-            verification_method, flags_json, key_errors_json,
+            verification_method, flags_json, key_errors_json, passage_hash,
         ),
     )
     progression = award_race_progress(
@@ -4411,6 +4413,11 @@ def _ensure_anti_cheat_columns(cur) -> None:
         cur.execute(
             "ALTER TABLE race_history ADD COLUMN anti_cheat_flags TEXT NULL AFTER verification_method"
         )
+    cur.execute("SHOW COLUMNS FROM race_history LIKE 'passage_hash'")
+    if not cur.fetchone():
+        cur.execute(
+            "ALTER TABLE race_history ADD COLUMN passage_hash CHAR(64) NULL AFTER anti_cheat_flags"
+        )
 
 
 def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
@@ -4473,6 +4480,7 @@ def _persist_completed_live_race(room: Dict[str, Any], conn=None) -> None:
                     verification_method=str(result.get('verificationMethod') or 'legacy'),
                     anti_cheat_flags=result.get('antiCheatFlags') or [],
                     key_errors=result.get('keyErrors') or {},
+                    passage_hash=hashlib.sha256(str(room.get('text') or '').encode('utf-8')).hexdigest() if room.get('text') else None,
                 )
                 # Stamp the authoritative points onto this player's result so
                 # _serialize_live_room hands it straight to the client - the
@@ -10726,6 +10734,7 @@ def submit_race():
                 verification_method=verification_method,
                 anti_cheat_flags=anti_cheat_flags,
                 key_errors=key_errors,
+                passage_hash=hashlib.sha256(target_text.encode('utf-8')).hexdigest() if race_token else None,
             )
             if race_token:
                 sponsored_event_attempt_qualified = complete_sponsored_event_attempt(

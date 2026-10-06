@@ -1995,7 +1995,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
                       <p style={{ whiteSpace: 'pre-wrap' }}>{schoolAssignment.passage}</p>
                     </details>
                   ) : (
-                    <p>This older assignment has no saved passage; a standard practice passage will be used.</p>
+                    <p>This older assignment has no saved passage and cannot produce a verified school result. Ask your teacher to recreate it with an assigned passage.</p>
                   )}
                 </>
               ) : null}
