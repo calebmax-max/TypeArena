@@ -35,6 +35,8 @@ import {
   sendAdminWalletTransfer,
   fetchAdminImpersonationLog,
   fetchAdminSchoolOrganizations,
+  fetchAdminSchoolBilling,
+  updateAdminSchoolBilling,
   fetchAdminSchoolOrganization,
   fetchAdminTrainingCourses,
   createAdminTrainingCourse,
@@ -158,6 +160,7 @@ export default function AdminPanel() {
   const [certificationPassageSaving, setCertificationPassageSaving] = useState(false);
   const [adminWallet, setAdminWallet] = useState({ adminEmail: '', adminUsername: 'Admin', balance: 0, marketplaceRevenueTotal: 0, history: { items: [] } });
   const [schoolOrganizations, setSchoolOrganizations] = useState([]);
+  const [schoolPricePerStudent, setSchoolPricePerStudent] = useState(100);
   const [selectedSchoolOrganization, setSelectedSchoolOrganization] = useState(null);
   const [walletForm, setWalletForm] = useState({ topupAmount: '', topupNote: '', withdrawAmount: '', withdrawNote: '' });
   // Send money from the admin wallet to a user's wallet
@@ -260,8 +263,8 @@ export default function AdminPanel() {
   };
 
   const loadAdminData = React.useCallback(async () => {
-    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, leaderboardData, marketplaceData, schoolsData] = await Promise.all([
-      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(), fetchAdminSchoolOrganizations(),
+    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, leaderboardData, marketplaceData, schoolsData, schoolBillingData] = await Promise.all([
+      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(), fetchAdminSchoolOrganizations(), fetchAdminSchoolBilling(),
     ]);
     setAnalytics(analyticsData);
     setTournaments(normalizeTournamentList(tournamentData));
@@ -271,6 +274,7 @@ export default function AdminPanel() {
     setAdminContent(Array.isArray(contentData) ? contentData : []);
     setMarketplaceItems(Array.isArray(marketplaceData?.items) ? marketplaceData.items : []);
     setSchoolOrganizations(Array.isArray(schoolsData?.organizations) ? schoolsData.organizations : []);
+    setSchoolPricePerStudent(Number(schoolBillingData?.pricePerStudent) || 100);
     if (leaderboardData?.tiers) setLeaderboardTiers({ ...DEFAULT_LEADERBOARD_TIERS, ...leaderboardData.tiers });
   }, []);
 
@@ -1466,13 +1470,22 @@ export default function AdminPanel() {
             {activeSection === 'schools' && (
               <section>
                 <div className="ap-section-header"><h1 className="ap-section-title">Schools</h1><p className="ap-section-sub">Organisation and class activity across School mode.</p></div>
+                <div className="ap-card" style={{ marginBottom: 16 }}>
+                  <p className="ap-card-title">School organisation pricing</p>
+                  <p className="ap-muted">New organisations are charged once based on their declared student count. Existing organisations keep the price they paid.</p>
+                  <form className="ap-btn-row" onSubmit={async (event) => { event.preventDefault(); try { await updateAdminSchoolBilling(Number(schoolPricePerStudent)); showNotice('School price per student updated.'); } catch (error) { showNotice(error.message || 'Could not update school pricing.'); } }}>
+                    <label className="ap-label" htmlFor="school-price-per-student">Price per student (KES)</label>
+                    <input id="school-price-per-student" className="ap-input" style={{ maxWidth: 220 }} type="number" min="0" step="1" value={schoolPricePerStudent} onChange={(event) => setSchoolPricePerStudent(event.target.value)} />
+                    <button className="ap-btn" type="submit">Save price</button>
+                  </form>
+                </div>
                 <div className="ap-card">
                   <div className="ap-table-wrap">
                     <table className="ap-table">
-                      <thead><tr><th>Organisation</th><th>Members</th><th>Classes</th><th>Status</th><th>Created</th><th>Manage</th></tr></thead>
+                      <thead><tr><th>Organisation</th><th>Students</th><th>Paid</th><th>Members</th><th>Classes</th><th>Status</th><th>Created</th><th>Manage</th></tr></thead>
                       <tbody>{schoolOrganizations.map((org) => <tr key={org.id}>
                         <td><strong>{org.name}</strong><div className="ap-muted">{org.slug}</div></td>
-                        <td>{org.members}</td><td>{org.classes}</td><td>{org.active ? 'Active' : 'Disabled'}</td>
+                        <td>{org.studentCount || 0}</td><td>KES {Number(org.amountPaid || 0).toLocaleString()}</td><td>{org.members}</td><td>{org.classes}</td><td>{org.active ? 'Active' : 'Disabled'}</td>
                         <td>{org.createdAt ? new Date(org.createdAt).toLocaleDateString() : '—'}</td>
                         <td style={{ display: 'flex', gap: 8 }}>
                           <button className="btn btn-secondary" onClick={async () => {

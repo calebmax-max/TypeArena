@@ -28,7 +28,7 @@ def _normalize_assignment_passage(value):
     return passage
 
 
-def register_school_routes(app, *, get_connection, return_connection, get_user, now_db, now_iso, is_admin_email, admin_email):
+def register_school_routes(app, *, get_connection, return_connection, get_user, now_db, now_iso, is_admin_email, admin_email, mpesa_stk_push=None, normalize_mpesa_phone=None):
     """Register the first TypeArena school-product slice on the main Flask app."""
 
     def ensure_tables(cur):
@@ -41,10 +41,37 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
                 created_by INT NOT NULL,
                 created_at DATETIME NOT NULL,
                 active TINYINT(1) NOT NULL DEFAULT 1,
+                student_count INT NOT NULL DEFAULT 0,
+                price_per_student DECIMAL(10,2) NOT NULL DEFAULT 100,
+                amount_paid DECIMAL(12,2) NOT NULL DEFAULT 0,
+                payment_status VARCHAR(24) NOT NULL DEFAULT 'paid',
                 INDEX idx_org_created_by (created_by)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
+        cur.execute('''CREATE TABLE IF NOT EXISTS school_billing_settings (
+            id TINYINT PRIMARY KEY,
+            price_per_student DECIMAL(10,2) NOT NULL DEFAULT 100,
+            updated_at DATETIME NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4''')
+        cur.execute('SELECT id FROM school_billing_settings WHERE id=1')
+        if not cur.fetchone(): cur.execute('INSERT INTO school_billing_settings (id,price_per_student,updated_at) VALUES (1,100,%s)', (now_db(),))
+        cur.execute('''CREATE TABLE IF NOT EXISTS school_organization_checkouts (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            name VARCHAR(160) NOT NULL,
+            slug VARCHAR(180) NOT NULL,
+            student_count INT NOT NULL,
+            price_per_student DECIMAL(10,2) NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            phone_number VARCHAR(32) NOT NULL,
+            checkout_request_id VARCHAR(120) NOT NULL UNIQUE,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            organization_id INT NULL,
+            created_at DATETIME NOT NULL,
+            completed_at DATETIME NULL,
+            INDEX idx_school_checkout_user (user_id,status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4''')
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS organization_members (
@@ -206,6 +233,10 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
         for statement in (
             "ALTER TABLE organizations ADD COLUMN settings_json TEXT NULL",
             "ALTER TABLE organizations ADD COLUMN active TINYINT(1) NOT NULL DEFAULT 1",
+            "ALTER TABLE organizations ADD COLUMN student_count INT NOT NULL DEFAULT 0",
+            "ALTER TABLE organizations ADD COLUMN price_per_student DECIMAL(10,2) NOT NULL DEFAULT 100",
+            "ALTER TABLE organizations ADD COLUMN amount_paid DECIMAL(12,2) NOT NULL DEFAULT 0",
+            "ALTER TABLE organizations ADD COLUMN payment_status VARCHAR(24) NOT NULL DEFAULT 'paid'",
             "ALTER TABLE assignments ADD COLUMN status ENUM('draft','published','archived') NOT NULL DEFAULT 'published'",
             "ALTER TABLE class_members MODIFY status ENUM('active','pending','suspended','removed') NOT NULL DEFAULT 'active'",
         ):
@@ -253,6 +284,10 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
         return {
             'id': int(row['id']), 'name': row['name'], 'slug': row['slug'],
             'role': role or row.get('role'), 'createdAt': row.get('created_at').isoformat() if row.get('created_at') else None,
+            'studentCount': int(row.get('student_count') or 0),
+            'pricePerStudent': float(row.get('price_per_student') or 0),
+            'amountPaid': float(row.get('amount_paid') or 0),
+            'paymentStatus': row.get('payment_status') or 'paid',
             'settings': settings,
         }
 
@@ -322,6 +357,13 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
     def create_organization():
         payload = request.get_json(silent=True) or {}
         name = str(payload.get('name') or '').strip()
+        try:
+            student_count = int(payload.get('studentCount') or payload.get('numberOfStudents') or 0)
+        except (TypeError, ValueError):
+            student_count = 0
+        if student_count < 1 or student_count > 100000:
+            return jsonify({'message': 'Enter a student count between 1 and 100,000.'}), 400
+        raw_phone = str(payload.get('phoneNumber') or payload.get('phone') or '').strip()
         if len(name) < 2 or len(name) > 160:
             return jsonify({'message': 'Organisation name must be between 2 and 160 characters.'}), 400
         slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-') or 'organisation'
@@ -331,16 +373,65 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             if not user: return jsonify({'message': 'Unauthorized'}), 401
             with conn.cursor() as cur:
                 ensure_tables(cur)
+                cur.execute('SELECT price_per_student FROM school_billing_settings WHERE id=1')
+                price_per_student = float((cur.fetchone() or {}).get('price_per_student') or 100)
+                total_amount = round(student_count * price_per_student, 2)
+                if not mpesa_stk_push or not normalize_mpesa_phone:
+                    return jsonify({'message': 'M-Pesa STK Push is not configured yet.'}), 503
+                phone_number = normalize_mpesa_phone(raw_phone or user.get('phone_number') or '')
+                if not phone_number:
+                    return jsonify({'message': 'Enter a valid M-Pesa phone number for the STK Push.'}), 400
                 base, suffix = slug, 1
                 while True:
                     cur.execute('SELECT id FROM organizations WHERE slug=%s', (slug,))
                     if not cur.fetchone(): break
                     suffix += 1; slug = f'{base}-{suffix}'
-                cur.execute('INSERT INTO organizations (name, slug, created_by, created_at) VALUES (%s,%s,%s,%s)', (name, slug, user['id'], now_db()))
-                org_id = cur.lastrowid
-                cur.execute("INSERT INTO organization_members (organization_id,user_id,role,status,joined_at) VALUES (%s,%s,'org_admin','active',%s)", (org_id, user['id'], now_db()))
+                payment_ref = f'school_org_{user["id"]}_{secrets.token_hex(8)}'
+                try:
+                    stk_response = mpesa_stk_push(phone_number=phone_number, amount=total_amount, account_reference=payment_ref[:80], description='TypeArena school organisation')
+                except ValueError as exc:
+                    return jsonify({'message': str(exc)}), 400
+                if str(stk_response.get('ResponseCode')) != '0':
+                    return jsonify({'message': stk_response.get('errorMessage') or stk_response.get('ResponseDescription') or 'M-Pesa STK Push failed.'}), 400
+                checkout_request_id = str(stk_response.get('CheckoutRequestID') or '')
+                if not checkout_request_id:
+                    return jsonify({'message': 'M-Pesa did not return a checkout reference.'}), 502
+                cur.execute('''INSERT INTO school_organization_checkouts
+                    (user_id,name,slug,student_count,price_per_student,amount,phone_number,checkout_request_id,status,created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s)''', (user['id'], name, slug, student_count, price_per_student, total_amount, phone_number, checkout_request_id, now_db()))
+                cur.execute('''INSERT INTO mpesa_transactions
+                    (tx_code,user_id,phone_number,amount,status,mode,checkout_request_id,merchant_request_id,created_at)
+                    VALUES (%s,%s,%s,%s,'pending','live',%s,%s,%s)''', (payment_ref, user['id'], phone_number, total_amount, checkout_request_id, stk_response.get('MerchantRequestID'), now_db()))
             conn.commit()
-            return jsonify({'organization': {'id': org_id, 'name': name, 'slug': slug, 'role': 'org_admin'}}), 201
+            return jsonify({'status': 'pending', 'message': 'STK Push sent. Complete payment on your phone to create the organisation.', 'checkoutRequestId': checkout_request_id, 'amount': total_amount, 'pricePerStudent': price_per_student, 'mpesa': stk_response}), 202
+        finally: return_connection(conn)
+
+    @app.get('/api/school/organizations/checkout-status')
+    def school_organization_checkout_status():
+        checkout_request_id = str(request.args.get('checkoutRequestId') or '').strip()
+        conn = get_connection()
+        try:
+            user = auth(conn)
+            if not user: return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                cur.execute('''SELECT s.*,m.status payment_status FROM school_organization_checkouts s
+                    LEFT JOIN mpesa_transactions m ON m.checkout_request_id=s.checkout_request_id
+                    WHERE s.checkout_request_id=%s AND s.user_id=%s FOR UPDATE''', (checkout_request_id, user['id']))
+                checkout = cur.fetchone()
+                if not checkout: return jsonify({'message': 'School payment checkout not found.'}), 404
+                payment_status = str(checkout.get('payment_status') or checkout.get('status') or 'pending').lower()
+                if payment_status == 'completed' and not checkout.get('organization_id'):
+                    cur.execute('''INSERT INTO organizations (name,slug,created_by,created_at,student_count,price_per_student,amount_paid,payment_status)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,'paid')''', (checkout['name'], checkout['slug'], user['id'], now_db(), checkout['student_count'], checkout['price_per_student'], checkout['amount']))
+                    organization_id = cur.lastrowid
+                    cur.execute("INSERT INTO organization_members (organization_id,user_id,role,status,joined_at) VALUES (%s,%s,'org_admin','active',%s)", (organization_id, user['id'], now_db()))
+                    cur.execute("UPDATE school_organization_checkouts SET status='completed',organization_id=%s,completed_at=%s WHERE id=%s", (organization_id, now_db(), checkout['id']))
+                    checkout['organization_id'] = organization_id
+                    conn.commit()
+                elif payment_status == 'failed':
+                    cur.execute("UPDATE school_organization_checkouts SET status='failed' WHERE id=%s", (checkout['id'],)); conn.commit()
+                return jsonify({'status': payment_status, 'amount': float(checkout['amount']), 'organizationId': checkout.get('organization_id'), 'organization': {'id': checkout.get('organization_id'), 'name': checkout['name'], 'slug': checkout['slug'], 'role': 'org_admin'} if checkout.get('organization_id') else None})
         finally: return_connection(conn)
 
     @app.post('/api/school/organizations/<int:organization_id>/classes')
@@ -671,6 +762,16 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             return jsonify({'assignment': result})
         finally:
             return_connection(conn)
+
+    @app.get('/api/school/billing')
+    def school_billing():
+        conn = get_connection()
+        try:
+            if not auth(conn): return jsonify({'message': 'Unauthorized'}), 401
+            with conn.cursor() as cur:
+                ensure_tables(cur); cur.execute('SELECT price_per_student FROM school_billing_settings WHERE id=1')
+                return jsonify({'pricePerStudent': float((cur.fetchone() or {}).get('price_per_student') or 100)})
+        finally: return_connection(conn)
 
     @app.post('/api/school/assignments/<int:assignment_id>/submit')
     def submit_assignment(assignment_id):
@@ -1039,8 +1140,35 @@ def register_school_routes(app, *, get_connection, return_connection, get_user, 
             user = auth(conn)
             if not (user and admin_email and is_admin_email(user.get('email') or '')): return jsonify({'message': 'Forbidden'}), 403
             with conn.cursor() as cur:
-                ensure_tables(cur); cur.execute("""SELECT o.id,o.name,o.slug,o.created_at,o.active,COUNT(DISTINCT CASE WHEN om.status='active' THEN om.user_id END) members,COUNT(DISTINCT CASE WHEN c.active=1 THEN c.id END) classes FROM organizations o LEFT JOIN organization_members om ON om.organization_id=o.id LEFT JOIN classes c ON c.organization_id=o.id GROUP BY o.id ORDER BY o.name""")
-                return jsonify({'organizations': [{'id': r['id'], 'name': r['name'], 'slug': r['slug'], 'members': int(r['members'] or 0), 'classes': int(r['classes'] or 0), 'active': bool(r.get('active', 1)), 'createdAt': r['created_at'].isoformat() if r.get('created_at') else None} for r in cur.fetchall()]})
+                ensure_tables(cur); cur.execute("""SELECT o.id,o.name,o.slug,o.created_at,o.active,o.student_count,o.price_per_student,o.amount_paid,o.payment_status,COUNT(DISTINCT CASE WHEN om.status='active' THEN om.user_id END) members,COUNT(DISTINCT CASE WHEN c.active=1 THEN c.id END) classes FROM organizations o LEFT JOIN organization_members om ON om.organization_id=o.id LEFT JOIN classes c ON c.organization_id=o.id GROUP BY o.id ORDER BY o.name""")
+                return jsonify({'organizations': [{'id': r['id'], 'name': r['name'], 'slug': r['slug'], 'members': int(r['members'] or 0), 'classes': int(r['classes'] or 0), 'studentCount': int(r.get('student_count') or 0), 'pricePerStudent': float(r.get('price_per_student') or 0), 'amountPaid': float(r.get('amount_paid') or 0), 'paymentStatus': r.get('payment_status') or 'paid', 'active': bool(r.get('active', 1)), 'createdAt': r['created_at'].isoformat() if r.get('created_at') else None} for r in cur.fetchall()]})
+        finally: return_connection(conn)
+
+    @app.get('/api/admin/school/billing')
+    def admin_school_billing():
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                ensure_tables(cur)
+                if not is_admin_email((get_user(conn) or {}).get('email') or ''): return jsonify({'message': 'Admin access required.'}), 403
+                cur.execute('SELECT price_per_student,updated_at FROM school_billing_settings WHERE id=1')
+                row = cur.fetchone() or {}
+                return jsonify({'pricePerStudent': float(row.get('price_per_student') or 100), 'updatedAt': row.get('updated_at').isoformat() if row.get('updated_at') else None})
+        finally: return_connection(conn)
+
+    @app.patch('/api/admin/school/billing')
+    def update_admin_school_billing():
+        conn = get_connection()
+        try:
+            user = get_user(conn)
+            if not user or not is_admin_email(user.get('email') or ''): return jsonify({'message': 'Admin access required.'}), 403
+            payload = request.get_json(silent=True) or {}
+            try: price = round(float(payload.get('pricePerStudent')), 2)
+            except (TypeError, ValueError): return jsonify({'message': 'Price per student must be a valid number.'}), 400
+            if price < 0 or price > 1000000: return jsonify({'message': 'Price must be between KES 0 and KES 1,000,000.'}), 400
+            with conn.cursor() as cur:
+                ensure_tables(cur); cur.execute('UPDATE school_billing_settings SET price_per_student=%s,updated_at=%s WHERE id=1', (price, now_db())); conn.commit()
+                return jsonify({'pricePerStudent': price})
         finally: return_connection(conn)
 
     @app.get('/api/admin/school/organizations/<int:organization_id>')

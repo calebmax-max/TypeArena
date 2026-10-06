@@ -1519,9 +1519,11 @@ const schoolRequest = async (path, options = {}) => {
 };
 
 export const fetchSchoolOverview = () => schoolRequest('/api/school/overview');
-export const createSchoolOrganisation = (name) => schoolRequest('/api/school/organizations', {
-  method: 'POST', body: JSON.stringify({ name }),
+export const fetchSchoolBilling = () => schoolRequest('/api/school/billing');
+export const createSchoolOrganisation = (name, studentCount, phoneNumber) => schoolRequest('/api/school/organizations', {
+  method: 'POST', body: JSON.stringify({ name, studentCount, phoneNumber }),
 });
+export const fetchSchoolOrganisationCheckoutStatus = (checkoutRequestId) => schoolRequest(`/api/school/organizations/checkout-status?checkoutRequestId=${encodeURIComponent(checkoutRequestId)}`);
 export const createSchoolClass = (organizationId, name) => schoolRequest(`/api/school/organizations/${organizationId}/classes`, {
   method: 'POST', body: JSON.stringify({ name }),
 });
@@ -1561,6 +1563,8 @@ export const fetchSchoolInvitationsForMe = () => schoolRequest('/api/school/invi
 export const acceptSchoolInvitation = (token) => schoolRequest('/api/school/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) });
 export const regenerateSchoolJoinCode = (classId) => schoolRequest(`/api/school/classes/${classId}/regenerate-code`, { method: 'POST' });
 export const fetchAdminSchoolOrganizations = () => schoolRequest('/api/admin/school/organizations');
+export const fetchAdminSchoolBilling = () => schoolRequest('/api/admin/school/billing');
+export const updateAdminSchoolBilling = (pricePerStudent) => schoolRequest('/api/admin/school/billing', { method: 'PATCH', body: JSON.stringify({ pricePerStudent }) });
 export const fetchAdminSchoolOrganization = (organizationId) => schoolRequest(`/api/admin/school/organizations/${organizationId}`);
 export const setAdminSchoolOrganizationActive = (organizationId, active) => schoolRequest(`/api/admin/school/organizations/${organizationId}`, { method: 'PATCH', body: JSON.stringify({ active }) });
 export const setAdminSchoolClassActive = (classId, active) => schoolRequest(`/api/admin/school/classes/${classId}`, { method: 'PATCH', body: JSON.stringify({ active }) });

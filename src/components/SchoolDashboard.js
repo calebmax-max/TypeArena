@@ -14,6 +14,8 @@ import {
   fetchSchoolInvitationsForMe,
   fetchSchoolOrganizationMembers,
   fetchSchoolOverview,
+  fetchSchoolBilling,
+  fetchSchoolOrganisationCheckoutStatus,
   fetchTrainingCourses,
   importSchoolLearners,
   issueSchoolCourseCertificate,
@@ -58,6 +60,10 @@ export default function SchoolDashboard({ currentUser }) {
   const [invitations, setInvitations] = useState([]);
   const [notice, setNotice] = useState('');
   const [orgName, setOrgName] = useState('');
+  const [studentCount, setStudentCount] = useState('');
+  const [schoolPhone, setSchoolPhone] = useState(currentUser?.phone_number || currentUser?.phoneNumber || '');
+  const [pendingCheckout, setPendingCheckout] = useState(null);
+  const [pricePerStudent, setPricePerStudent] = useState(100);
   const [className, setClassName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [assignment, setAssignment] = useState({ title: '', instructions: '', passage: '', targetWpm: '', targetAccuracy: '' });
@@ -89,16 +95,18 @@ export default function SchoolDashboard({ currentUser }) {
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
     try {
-      const [overviewData, assignmentData, invitationData, trainingData] = await Promise.all([
+      const [overviewData, assignmentData, invitationData, trainingData, billingData] = await Promise.all([
         fetchSchoolOverview(),
         fetchSchoolAssignments(),
         fetchSchoolInvitationsForMe(),
         fetchTrainingCourses().catch(() => ({ courses: [] })),
+        fetchSchoolBilling(),
       ]);
       setOverview(overviewData);
       setLearnerAssignments(assignmentData.assignments || []);
       setInvitations(invitationData.invitations || []);
       setTrainingCourses(Array.isArray(trainingData?.courses) ? trainingData.courses : []);
+      setPricePerStudent(Number(billingData?.pricePerStudent) || 100);
       setSelectedOrganizationId((current) => {
         if ((overviewData.organizations || []).some((organization) => String(organization.id) === String(current))) return current;
         return overviewData.organizations?.[0] ? String(overviewData.organizations[0].id) : '';
@@ -111,6 +119,29 @@ export default function SchoolDashboard({ currentUser }) {
   const pathwayCourses = trainingCourses.filter((course) => !course.is_archived).slice(0, 6);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!pendingCheckout) return undefined;
+    let active = true;
+    const poll = async () => {
+      try {
+        const result = await fetchSchoolOrganisationCheckoutStatus(pendingCheckout);
+        if (!active) return;
+        if (result.status === 'completed') {
+          setPendingCheckout(null);
+          setNotice('Payment confirmed. Your organisation is ready.');
+          await load();
+          if (result.organizationId) setSelectedOrganizationId(String(result.organizationId));
+        } else if (result.status === 'failed') {
+          setPendingCheckout(null);
+          setNotice('M-Pesa payment was not completed. You can try again.');
+        }
+      } catch (error) { if (active) setNotice(error.message); }
+    };
+    poll();
+    const timer = window.setInterval(poll, 4000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [pendingCheckout, load]);
 
   useEffect(() => {
     setRequireLearnerApproval(Boolean(selectedOrganization?.settings?.requireLearnerApproval));
@@ -292,16 +323,24 @@ export default function SchoolDashboard({ currentUser }) {
         <form style={cardStyle} onSubmit={(event) => {
           event.preventDefault();
           run(async () => {
-            const result = await createSchoolOrganisation(orgName);
+            const result = await createSchoolOrganisation(orgName, Number(studentCount), schoolPhone);
             setOrgName('');
+            setStudentCount('');
+            if (result?.checkoutRequestId) {
+              setPendingCheckout(result.checkoutRequestId);
+              setNotice(`STK Push sent for KES ${Number(result.amount || 0).toLocaleString()}. Complete it on your phone.`);
+            }
             await load();
             if (result?.organization?.id) setSelectedOrganizationId(String(result.organization.id));
-          }, 'Organisation created. Select it to create your first class.');
+          }, (result) => result?.checkoutRequestId ? `STK Push sent for KES ${Number(result.amount || 0).toLocaleString()}. Complete it on your phone.` : 'Organisation created. Select it to create your first class.');
         }}>
           <h2>Create an organisation</h2>
-          <p>Start a school or training-centre workspace.</p>
+          <p>Start a school or training-centre workspace. Current price: <strong>KES {pricePerStudent.toLocaleString()} per student.</strong></p>
           <input style={inputStyle} value={orgName} onChange={(event) => setOrgName(event.target.value)} placeholder="Organisation name" required minLength={2} maxLength={160} />
-          <button className="btn btn-primary" type="submit">Create organisation</button>
+          <input style={inputStyle} type="number" min="1" max="100000" value={studentCount} onChange={(event) => setStudentCount(event.target.value)} placeholder="Number of students" required />
+          <input style={inputStyle} type="tel" value={schoolPhone} onChange={(event) => setSchoolPhone(event.target.value)} placeholder="M-Pesa phone number" required />
+          {Number(studentCount) > 0 && <small style={{ display: 'block', marginBottom: 10, opacity: .72 }}>Total: KES {(Number(studentCount) * pricePerStudent).toLocaleString()}</small>}
+          <button className="btn btn-primary" type="submit" disabled={Boolean(pendingCheckout)}>{pendingCheckout ? 'Waiting for payment...' : 'Pay and create organisation'}</button>
         </form>
         <form style={cardStyle} onSubmit={(event) => {
           event.preventDefault();

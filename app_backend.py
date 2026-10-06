@@ -7506,9 +7506,11 @@ def mpesa_topup_callback():
             if not tx:
                 return jsonify({'ResultCode': 0, 'ResultDesc': 'Ignored: unknown checkout request.'})
 
+            is_school_organization_payment = str(tx.get('tx_code') or '').startswith('school_org_')
             if int(result_code or 1) == 0:
                 amount_value = float(callback_values.get('Amount', tx.get('amount', 0) or 0))
-                cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, tx['user_id']))
+                if not is_school_organization_payment:
+                    cur.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount_value, tx['user_id']))
                 cur.execute(
                     '''
                     UPDATE mpesa_transactions
@@ -10979,6 +10981,8 @@ _ensure_school_tables = register_school_routes(
     now_iso=lambda: _now_iso(),
     is_admin_email=lambda email: _is_admin_email(email),
     admin_email=ADMIN_EMAIL,
+    mpesa_stk_push=lambda **kwargs: _mpesa_stk_push(**kwargs),
+    normalize_mpesa_phone=lambda phone: _normalize_mpesa_phone(phone),
 )
 
 _ensure_foundation_tables = register_foundation_routes(
