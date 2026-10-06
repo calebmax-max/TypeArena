@@ -680,17 +680,17 @@ export default function AdminPanel() {
     <>
       <style>{`
         :root {
-          --ap-bg:        #f5f7fb;
-          --ap-surface:   #ffffff;
-          --ap-surface2:  #f8fafc;
-          --ap-border:    #e7ebf2;
-          --ap-border2:   #d7dee9;
-          --ap-accent:    #147d6e;
-          --ap-accent2:   #5263a8;
-          --ap-warn:      #c65b4d;
-          --ap-gold:      #a97818;
-          --ap-text:      #17202e;
-          --ap-muted:     #718096;
+          --ap-bg:        #080d14;
+          --ap-surface:   #111a26;
+          --ap-surface2:  #162333;
+          --ap-border:    rgba(207,224,239,0.10);
+          --ap-border2:   rgba(207,224,239,0.18);
+          --ap-accent:    #61d1b1;
+          --ap-accent2:   #8f9bff;
+          --ap-warn:      #ed8a70;
+          --ap-gold:      #d9b65d;
+          --ap-text:      #e8eef6;
+          --ap-muted:     #8d9bad;
           --ap-sidebar:   244px;
           --ap-font-head: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           --ap-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -821,8 +821,15 @@ export default function AdminPanel() {
         .ap-topbar-subtitle { margin: 5px 0 0; color: var(--ap-muted); font-size: .72rem; }
         .ap-topbar-kicker { color: var(--ap-accent); font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
         .ap-topbar-actions { display: flex; align-items: center; gap: 13px; }
-        .ap-system-status { display: inline-flex; align-items: center; gap: 7px; color: #567064; font-size: .68rem; white-space: nowrap; }
+        .ap-system-status { display: inline-flex; align-items: center; gap: 7px; color: #9bb3ad; font-size: .68rem; white-space: nowrap; }
         .ap-system-status i { width: 7px; height: 7px; border-radius: 50%; background: #3eb88d; box-shadow: 0 0 0 3px rgba(62,184,141,.13); }
+        .ap-training-layout { display: grid; grid-template-columns: minmax(290px, .72fr) minmax(0, 1.55fr); gap: 18px; align-items: start; }
+        .ap-training-forms, .ap-training-catalog { min-width: 0; }
+        .ap-training-forms { position: sticky; top: 22px; }
+        .ap-course-card { padding: 20px; }
+        .ap-course-card .ap-card-title { margin-bottom: 6px; color: var(--ap-text); text-transform: none; letter-spacing: -.01em; font-size: 1rem; }
+        .ap-course-card > div:first-child small { color: var(--ap-muted); line-height: 1.45; }
+        .ap-course-card .ap-table { margin-top: 18px; }
 
         /* ---- Section header ---- */
         .ap-section-header {
@@ -1309,6 +1316,8 @@ export default function AdminPanel() {
           .ap-topbar { align-items: flex-start; flex-direction: column; gap: 14px; margin-bottom: 22px; padding-bottom: 18px; }
           .ap-topbar-actions { width: 100%; justify-content: space-between; }
           .ap-two-col, .ap-three-col { grid-template-columns: 1fr; }
+          .ap-training-layout { grid-template-columns: 1fr; }
+          .ap-training-forms { position: static; }
           .ap-wallet-row { flex-direction: column; }
         }
       `}</style>
@@ -1862,6 +1871,8 @@ export default function AdminPanel() {
                   <h1 className="ap-section-title">Training Courses</h1>
                   <p className="ap-section-sub">Manage learner-facing courses, lessons, access, and testing content.</p>
                 </div>
+                <div className="ap-training-layout">
+                  <div className="ap-training-forms">
                 <div className="ap-card">
                   <p className="ap-card-title">{trainingCourseForm.id ? 'Edit course' : 'Create course'}</p>
                   <form onSubmit={handleTrainingCourseSave} className="ap-form-grid">
@@ -1888,8 +1899,10 @@ export default function AdminPanel() {
                     <button className="ap-btn" type="submit">{trainingLessonForm.id ? 'Save lesson' : 'Add lesson'}</button>
                   </form>
                 </div>
+                  </div>
+                  <div className="ap-training-catalog">
                 {trainingCourses.map((course) => (
-                  <div className="ap-card" key={course.id}>
+                  <div className="ap-card ap-course-card" key={course.id}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                       <div><p className="ap-card-title">{course.title} {course.is_pro ? '(Pro)' : '(Free)'}</p><small>{course.description}</small></div>
                       <div><button className="ap-btn ap-btn-sm" onClick={() => setTrainingCourseForm({ id: course.id, title: course.title, description: course.description || '', isPro: Boolean(course.is_pro), prerequisiteCourseId: course.prerequisite_course_id || '', isArchived: Boolean(course.is_archived) })}>Edit</button>{!course.is_archived && <button className="ap-btn ap-btn-sm" onClick={() => handleTrainingCourseArchive(course)}>Archive</button>}</div>
@@ -1901,6 +1914,8 @@ export default function AdminPanel() {
                 ))}
                 {trainingImpact && <div className="ap-card"><p className="ap-card-title">Training impact</p><div className="ap-metrics-secondary"><span>Learners: <strong>{trainingImpact.learners}</strong></span><span>Attempts: <strong>{trainingImpact.attempts}</strong></span><span>Pass rate: <strong>{Math.round(Number(trainingImpact.passRate || 0) * 100)}%</strong></span><span>Active 30d: <strong>{trainingImpact.activeLearners30d}</strong></span><span>Average: <strong>{trainingImpact.averageWpm} WPM / {trainingImpact.averageAccuracy}%</strong></span></div></div>}
                 <div className="ap-card"><p className="ap-card-title">Learner testing progress</p><table className="ap-table"><thead><tr><th>Lesson</th><th>Attempts</th><th>Passes</th><th>Average</th></tr></thead><tbody>{trainingProgress.map((row) => <tr key={row.lesson_id}><td>{row.lesson_id}</td><td>{row.attempts}</td><td>{row.passes || 0}</td><td>{row.average_wpm || 0} WPM / {row.average_accuracy || 0}%</td></tr>)}</tbody></table></div>
+                  </div>
+                </div>
               </>
             )}
 
