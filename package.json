@@ -23,7 +23,7 @@
     "start:api": "python wsgi.py",
     "start:dev": "DANGEROUSLY_DISABLE_HOST_CHECK=true DISABLE_ESLINT_PLUGIN=true PORT=3000 react-scripts start",
     "start:web": "DANGEROUSLY_DISABLE_HOST_CHECK=true DISABLE_ESLINT_PLUGIN=true PORT=3000 react-scripts start",
-    "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
+    "build": "node scripts/build.js",
     "postbuild": "node scripts/stamp-sw.js",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

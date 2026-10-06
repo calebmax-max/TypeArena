@@ -72,6 +72,15 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
 
   const fullyPassed = outcome && outcome.passCount >= required;
   const lessonTypeLabel = lesson.lessonType === 'intro' ? 'Learn' : lesson.lessonType === 'test' ? 'Assessment' : lesson.lessonType === 'challenge' ? 'TypeArena Challenge' : 'Guided Practice';
+  const lessonObjective = lesson.objective || (
+    lesson.lessonType === 'intro'
+      ? 'Learn the technique before increasing your speed.'
+      : lesson.lessonType === 'test'
+        ? 'Demonstrate accurate, consistent typing under a clear standard.'
+        : lesson.lessonType === 'challenge'
+          ? 'Apply your keyboard control when the exercise becomes more demanding.'
+          : 'Build accuracy and rhythm through one focused practice exercise.'
+  );
 
   return (
     <div className="training-lesson">
@@ -82,6 +91,8 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
           <span className="training-lesson__bar-stat">{lesson.minWpm} WPM</span>
           <span className="training-lesson__bar-divider" aria-hidden="true" />
           <span className="training-lesson__bar-stat">{lesson.minAccuracy}% accuracy</span>
+          <span className="training-lesson__bar-divider" aria-hidden="true" />
+          <span className="training-lesson__bar-stat">{Math.max(1, Math.round((Number(lesson.duration) || 60) / 60))} min</span>
         </div>
 
         {required > 1 && (
@@ -105,6 +116,14 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
           </div>
         )}
       </div>
+
+      <section className="training-lesson__objective" aria-labelledby="lesson-objective-title">
+        <div>
+          <span className="training-eyebrow">Lesson objective</span>
+          <h3 id="lesson-objective-title">{lessonObjective}</h3>
+        </div>
+        <p>Pass this lesson by reaching at least <strong>{lesson.minWpm} WPM</strong> and <strong>{lesson.minAccuracy}% accuracy</strong>.</p>
+      </section>
 
       {lesson.lessonType === 'intro' && (
         <section className="training-beginner-guide" aria-labelledby="beginner-guide-title">
@@ -130,6 +149,9 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
             </p>
           )}
           {attemptError && <p className="training-lesson__error" role="alert">{attemptError}</p>}
+          {lesson.id !== 'problem-keys' && !attempt && !attemptError && (
+            <p className="training-lesson__preparing" role="status">Preparing your secure lesson attempt...</p>
+          )}
           <TypingBox
             targetText={targetText}
             typedText={typedText}

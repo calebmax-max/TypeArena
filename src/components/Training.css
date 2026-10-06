@@ -225,6 +225,35 @@
   text-transform: uppercase;
 }
 
+.training-lesson__objective {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--tp-sage-border);
+  border-radius: var(--tp-radius);
+  background: linear-gradient(135deg, #fff 0%, var(--tp-paper) 100%);
+}
+
+.training-lesson__objective h3 {
+  margin: .25rem 0 0;
+  color: var(--tp-forest);
+  font-size: 1rem;
+}
+
+.training-lesson__objective p {
+  max-width: 28ch;
+  margin: 0;
+  color: var(--tp-muted);
+  font-size: .82rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.training-lesson__objective p strong { color: var(--tp-forest); }
+.training-lesson__preparing { margin: 0; color: var(--tp-muted); font-size: .85rem; }
+
 .training-beginner-guide {
   display: flex;
   flex-direction: column;
@@ -500,6 +529,8 @@
   .training-course-dashboard__intro,
   .training-course-dashboard__meta { align-items: flex-start; flex-direction: column; }
   .training-course-dashboard__progress { text-align: left; }
+  .training-lesson__objective { align-items: flex-start; flex-direction: column; }
+  .training-lesson__objective p { max-width: none; text-align: left; }
   .training-pathway__heading { align-items: flex-start; flex-direction: column; }
   .training-problem-keys { align-items: flex-start; flex-direction: column; }
 

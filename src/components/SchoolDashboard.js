@@ -70,12 +70,21 @@ export default function SchoolDashboard({ currentUser }) {
   const [schoolRoom, setSchoolRoom] = useState(null);
   const [creatingSchoolRoom, setCreatingSchoolRoom] = useState(false);
   const [activeView, setActiveView] = useState('overview');
+  const [learnerFilter, setLearnerFilter] = useState('all');
   const [requireLearnerApproval, setRequireLearnerApproval] = useState(false);
   const fileRef = useRef(null);
 
   const selectedOrganization = (overview?.organizations || []).find(
     (organization) => String(organization.id) === String(selectedOrganizationId)
   );
+  const activeClassLearners = (selected?.learners || []).filter((learner) => learner.status === 'active');
+  const learnersNeedingSupport = activeClassLearners.filter((learner) => Number(learner.accuracy) < 90 || Number(learner.wpm) <= 0);
+  const learnersReadyForReview = activeClassLearners.filter((learner) => Number(learner.accuracy) >= 90 && Number(learner.wpm) > 0);
+  const visibleLearners = learnerFilter === 'support'
+    ? learnersNeedingSupport
+    : learnerFilter === 'ready'
+      ? learnersReadyForReview
+      : selected?.learners || [];
 
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -112,6 +121,7 @@ export default function SchoolDashboard({ currentUser }) {
       const [classData, curriculumData] = await Promise.all([fetchSchoolClass(id), fetchSchoolClassCurriculum(id)]);
       setSelected(classData);
       setClassCurriculum(curriculumData);
+      setLearnerFilter('all');
       setActiveView('overview');
       setNotice('');
     } catch (error) {
@@ -442,6 +452,27 @@ export default function SchoolDashboard({ currentUser }) {
                 ))}
               </nav>
 
+              <section aria-labelledby="class-workflow-title" style={{ marginBottom: 22, padding: 14, borderRadius: 14, border: '1px solid rgba(99,202,183,.22)', background: 'rgba(99,202,183,.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <h3 id="class-workflow-title" style={{ margin: 0 }}>Class learning workflow</h3>
+                  <small style={{ opacity: .72 }}>A simple path from assignment to evidence</small>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(145px,1fr))', gap: 8, marginTop: 12 }}>
+                  {[
+                    { number: '01', title: 'Assign a course', detail: classCurriculum?.courses?.length ? `${classCurriculum.courses.length} course(s) assigned` : 'Choose a stage', view: 'overview' },
+                    { number: '02', title: 'Learners practise', detail: selected.learners.length ? `${selected.learners.length} learner(s) enrolled` : 'Invite learners', view: 'members' },
+                    { number: '03', title: 'Review results', detail: selected.analytics?.completionCount ? `${selected.analytics.completionCount} completion(s)` : 'No results yet', view: 'assignments' },
+                    { number: '04', title: 'Issue evidence', detail: 'Certificates and reports', view: 'overview' },
+                  ].map((step) => (
+                    <button key={step.number} type="button" onClick={() => setActiveView(step.view)} style={{ minHeight: 86, padding: 10, textAlign: 'left', borderRadius: 10, border: activeView === step.view ? '1px solid #63cab7' : '1px solid rgba(255,255,255,.1)', background: activeView === step.view ? 'rgba(99,202,183,.14)' : 'rgba(255,255,255,.03)', color: 'inherit', cursor: 'pointer' }}>
+                      <small style={{ color: '#63cab7', fontWeight: 700 }}>{step.number}</small>
+                      <strong style={{ display: 'block', margin: '5px 0 3px', fontSize: 13 }}>{step.title}</strong>
+                      <small style={{ opacity: .68 }}>{step.detail}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
               {activeView === 'overview' && (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 10, marginBottom: 20 }}>
@@ -449,7 +480,20 @@ export default function SchoolDashboard({ currentUser }) {
                     <div style={cardStyle}><small>Pending approvals</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.pendingCount ?? 0}</strong></div>
                     <div style={cardStyle}><small>Average WPM</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.averageWpm ?? 0}</strong></div>
                     <div style={cardStyle}><small>Completed assignments</small><strong style={{ display: 'block', fontSize: 24 }}>{selected.analytics?.completionCount ?? 0}</strong></div>
+                    <div style={cardStyle}><small>Ready for review</small><strong style={{ display: 'block', fontSize: 24 }}>{learnersReadyForReview.length}</strong></div>
+                    <div style={{ ...cardStyle, borderColor: learnersNeedingSupport.length ? 'rgba(245,158,11,.45)' : 'rgba(99,202,183,.22)' }}><small>Needs attention</small><strong style={{ display: 'block', fontSize: 24 }}>{learnersNeedingSupport.length}</strong></div>
                   </div>
+                  {['org_admin', 'teacher'].includes(selected.role) && (
+                    <section aria-labelledby="support-learners-title" style={{ marginBottom: 20, padding: 14, borderRadius: 12, background: learnersNeedingSupport.length ? 'rgba(245,158,11,.08)' : 'rgba(99,202,183,.06)', border: `1px solid ${learnersNeedingSupport.length ? 'rgba(245,158,11,.28)' : 'rgba(99,202,183,.2)'}` }}>
+                      <strong id="support-learners-title">Teaching signal</strong>
+                      <p style={{ margin: '5px 0 0', opacity: .78 }}>
+                        {learnersNeedingSupport.length
+                          ? `${learnersNeedingSupport.length} learner(s) have no recorded result or are below 90% accuracy. Consider assigning a focused practice lesson before assessment.`
+                          : 'Every active learner has a recorded result at or above 90% accuracy. Review the detailed results before issuing certificates.'}
+                      </p>
+                      {learnersNeedingSupport.length > 0 && <small style={{ display: 'block', marginTop: 8, opacity: .72 }}>Learners: {learnersNeedingSupport.map((learner) => learner.username).join(', ')}</small>}
+                    </section>
+                  )}
                   {['org_admin', 'teacher'].includes(selected.role) && (
                     <div style={{ marginBottom: 20 }}>
                       <h3>Class tools</h3>
@@ -504,9 +548,19 @@ export default function SchoolDashboard({ currentUser }) {
                       </div>
                     ))}
                   </section>
-                  <h3>Learner progress</h3>
-                  {selected.learners.length === 0 && <p>No learners have joined this class yet.</p>}
-                  {selected.learners.map((learner) => (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <h3 style={{ marginBottom: 0 }}>Learner progress</h3>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      Show
+                      <select value={learnerFilter} onChange={(event) => setLearnerFilter(event.target.value)} aria-label="Filter learners by progress">
+                        <option value="all">All learners</option>
+                        <option value="support">Needs attention</option>
+                        <option value="ready">Ready for review</option>
+                      </select>
+                    </label>
+                  </div>
+                  {visibleLearners.length === 0 && <p>{selected.learners.length === 0 ? 'No learners have joined this class yet.' : 'No learners match this filter.'}</p>}
+                  {visibleLearners.map((learner) => (
                     <div key={learner.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
                       <span>{learner.username} <small style={{ opacity: .65 }}>({learner.status})</small></span>
                       <span>{learner.wpm} WPM · {learner.accuracy}%</span>
