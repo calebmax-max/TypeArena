@@ -4706,7 +4706,11 @@ img {
 .arena-brand__copy { display: grid; gap: 0.1rem; text-align: left; }
 .arena-brand__copy small { color: rgba(255,255,255,0.62); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .arena-nav { display: flex; align-items: center; gap: 0.25rem; }
+.arena-nav__section { display: contents; }
+.arena-nav__section-label { display: none; }
 .arena-nav .nav-link, .arena-nav__signout, .arena-nav__upgrade { border: 0; border-radius: 999px; color: rgba(255,255,255,0.78); padding: 0.65rem 0.85rem; text-decoration: none; font: inherit; cursor: pointer; background: transparent; }
+.arena-nav__icon { display: inline-grid; place-items: center; width: 1.2rem; color: currentColor; font-size: .95rem; line-height: 1; }
+.arena-nav .nav-link > span:last-child, .arena-nav__signout > span:last-child, .arena-nav__upgrade > span:last-child { min-width: 0; }
 .arena-nav .nav-link:hover, .arena-nav .nav-link--active, .arena-nav__signout:hover, .arena-nav__upgrade:hover { color: #fff; background: rgba(255,255,255,0.1); }
 .arena-nav__profile { margin-left: 0.35rem; background: rgba(240,188,71,0.16) !important; color: #f6d28b !important; }
 .arena-nav__upgrade { margin-left: 0.25rem; background: rgba(79,255,176,0.12) !important; color: #8af6c3 !important; border: 1px solid rgba(79,255,176,0.3); }
@@ -4729,6 +4733,9 @@ img {
   .arena-nav { position: absolute; top: calc(100% + 0.5rem); left: 1rem; right: 1rem; display: grid; gap: 0.35rem; padding: 0.65rem; border: 1px solid rgba(255,255,255,0.12); border-radius: 18px; background: #0b1b38; box-shadow: 0 18px 40px rgba(0,0,0,0.25); opacity: 0; visibility: hidden; transform: translateY(-8px); transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease; }
   .arena-nav.is-open { opacity: 1; visibility: visible; transform: translateY(0); }
   .arena-nav .nav-link, .arena-nav__signout { width: 100%; text-align: left; }
+  .arena-nav__section { display: contents; }
+  .arena-nav__section-label { display: none; }
+  .arena-nav .nav-link, .arena-nav__signout, .arena-nav__upgrade { display: flex; align-items: center; gap: .7rem; }
   .arena-nav__profile { margin-left: 0; }
   .arena-footer__inner { flex-direction: column; }
 }
@@ -4740,11 +4747,16 @@ img {
   .App--workspace .arena-navbar { position: fixed; inset: 0 auto 0 0; width: 238px; padding: 1.25rem .9rem; border-right: 1px solid rgba(255,255,255,.1); border-bottom: 0; }
   .App--workspace .arena-navbar__inner { width: 100%; height: 100%; flex-direction: column; align-items: stretch; justify-content: flex-start; }
   .App--workspace .arena-brand { padding: .25rem .45rem 1.5rem; }
-  .App--workspace .arena-nav { display: grid; align-content: start; gap: .3rem; margin-top: 1rem; }
-  .App--workspace .arena-nav .nav-link, .App--workspace .arena-nav__signout, .App--workspace .arena-nav__upgrade { width: 100%; padding: .72rem .85rem; border-radius: 10px; text-align: left; }
+  .App--workspace .arena-nav { display: flex; flex-direction: column; align-items: stretch; align-content: start; gap: 1.15rem; margin-top: 1.25rem; }
+  .App--workspace .arena-nav__section { display: grid; gap: .28rem; }
+  .App--workspace .arena-nav__section-label { display: block; padding: 0 .85rem .25rem; color: rgba(255,255,255,.36); font-size: .62rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+  .App--workspace .arena-nav .nav-link, .App--workspace .arena-nav__signout, .App--workspace .arena-nav__upgrade { display: flex; align-items: center; gap: .75rem; width: 100%; padding: .72rem .85rem; border-radius: 11px; text-align: left; }
+  .App--workspace .arena-nav .nav-link .arena-nav__icon, .App--workspace .arena-nav__signout .arena-nav__icon, .App--workspace .arena-nav__upgrade .arena-nav__icon { color: rgba(255,255,255,.48); }
+  .App--workspace .arena-nav .nav-link--active .arena-nav__icon { color: #7be0a8; }
   .App--workspace .arena-nav .nav-link--active { background: linear-gradient(90deg, rgba(123,224,168,.2), rgba(123,224,168,.05)); color: #7be0a8; }
-  .App--workspace .arena-nav__profile { margin: 1rem 0 0; }
-  .App--workspace .arena-nav__signout { margin-top: 1.25rem; color: rgba(255,255,255,.55); }
+  .App--workspace .arena-nav__section--account { margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,.1); }
+  .App--workspace .arena-nav__profile { margin: 0; }
+  .App--workspace .arena-nav__signout { margin-top: .3rem; color: rgba(255,255,255,.55); }
   .App--workspace main, .App--workspace .site-marquee, .App--workspace .arena-footer { margin-left: 238px; }
   .App--workspace main { width: calc(100% - 238px); max-width: calc(100% - 238px); min-width: 0; box-sizing: border-box; }
   .App--workspace main > .app-dashboard { width: min(1180px, calc(100% - 2rem)); max-width: 100%; margin-inline: auto; }

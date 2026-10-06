@@ -269,20 +269,31 @@ function AppLayout() {
             <span className="arena-menu-toggle__label">Menu</span>
           </button>
           <nav id="arena-primary-nav" className={`arena-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
-            <NavLink to="/" className={navLinkClassName}>Dashboard</NavLink>
-            <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}>Play</NavLink>
-            <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}>Training</NavLink>
-            <NavLink to="/tasks" className={navLinkClassName}>Skills Lab</NavLink>
-            <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}>Leaderboard</NavLink>
-            <NavLink data-tour="nav-tournaments" to="/tournaments" className={navLinkClassName}>Tournaments</NavLink>
-            <NavLink to="/school" className={navLinkClassName}>School</NavLink>
-            {(currentUser?.accountRole === 'employer' || currentUser?.isAdmin) && <NavLink to="/hiring" className={navLinkClassName}>Hiring</NavLink>}
-            <NavLink to="/certification" className={navLinkClassName}>Get Certified</NavLink>
-            <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}>{currentUser ? 'Profile' : 'Sign In'}</NavLink>
-            {!isProUser && currentUser && (
-              <NavLink to="/profile?tab=account#typearena-pro" className="arena-nav__upgrade">Upgrade Pro</NavLink>
-            )}
-            {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout">Sign Out</button>}
+            <div className="arena-nav__section">
+              <span className="arena-nav__section-label">Workspace</span>
+              <NavLink to="/" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">⌂</span><span>Dashboard</span></NavLink>
+              <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}><span className="arena-nav__icon" aria-hidden="true">▶</span><span>Play</span></NavLink>
+              <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">▦</span><span>Training</span></NavLink>
+              <NavLink to="/tasks" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">✦</span><span>Skills Lab</span></NavLink>
+            </div>
+            <div className="arena-nav__section">
+              <span className="arena-nav__section-label">Compete</span>
+              <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">◎</span><span>Leaderboard</span></NavLink>
+              <NavLink data-tour="nav-tournaments" to="/tournaments" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">♜</span><span>Tournaments</span></NavLink>
+            </div>
+            <div className="arena-nav__section">
+              <span className="arena-nav__section-label">Opportunities</span>
+              <NavLink to="/school" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">▣</span><span>School</span></NavLink>
+              {(currentUser?.accountRole === 'employer' || currentUser?.isAdmin) && <NavLink to="/hiring" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">⌁</span><span>Hiring</span></NavLink>}
+              <NavLink to="/certification" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">✓</span><span>Get Certified</span></NavLink>
+            </div>
+            <div className="arena-nav__section arena-nav__section--account">
+              <NavLink data-tour="nav-profile" to="/profile" className={`${navLinkClassName({ isActive: location.pathname === '/profile' })} arena-nav__profile`}><span className="arena-nav__icon" aria-hidden="true">◉</span><span>{currentUser ? 'Profile' : 'Sign In'}</span></NavLink>
+              {!isProUser && currentUser && (
+                <NavLink to="/profile?tab=account#typearena-pro" className="arena-nav__upgrade"><span className="arena-nav__icon" aria-hidden="true">✦</span><span>Upgrade Pro</span></NavLink>
+              )}
+              {currentUser && <button type="button" onClick={handleSignOut} className="arena-nav__signout"><span className="arena-nav__icon" aria-hidden="true">↪</span><span>Sign Out</span></button>}
+            </div>
           </nav>
         </div>
       </header>
