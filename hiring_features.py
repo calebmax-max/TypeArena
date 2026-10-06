@@ -192,7 +192,7 @@ def register_hiring_routes(
                 return jsonify({'message': 'An employer account is required.'}), 403
             with conn.cursor() as cur:
                 code = secrets.token_urlsafe(9).replace('-', '').replace('_', '')[:12].upper()
-                cur.execute('''INSERT INTO hiring_tests (employer_id, public_code, title, company_name, company_logo_url, category, duration_seconds, min_wpm, min_accuracy, max_attempts) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (employer['id'], code, title, _clean_text(payload.get('companyLogoUrl'), 500) or None, category, duration, min_wpm, min_accuracy, max_attempts))
+                cur.execute('''INSERT INTO hiring_tests (employer_id, public_code, title, company_name, company_logo_url, category, duration_seconds, min_wpm, min_accuracy, max_attempts) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (employer['id'], code, title, company_name, _clean_text(payload.get('companyLogoUrl'), 500) or None, category, duration, min_wpm, min_accuracy, max_attempts))
                 test_id = cur.lastrowid
                 cur.execute('INSERT INTO hiring_passages (test_id, version_no, body) VALUES (%s, 1, %s)', (test_id, passage))
                 cur.execute('SELECT * FROM hiring_tests WHERE id=%s', (test_id,))

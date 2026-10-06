@@ -889,6 +889,15 @@ export default function TypeProfile() {
         {/* ──────────────────────────────────────── Main panel ──────────────────────────────────────── */}
         <main className="tp-main">
 
+          <div className="tp-main-heading">
+            <div>
+              <span className="tp-main-heading__eyebrow">Your TypeArena account</span>
+              <h2>Profile &amp; progress</h2>
+              <p>Manage your account, review your performance, and keep building proof of your skills.</p>
+            </div>
+            <button type="button" className="tp-btn tp-btn--outline" onClick={() => navigate('/training')}>Open training <span aria-hidden="true">→</span></button>
+          </div>
+
           {/* Tab bar */}
           <div className="tp-tabs" role="tablist">
             <Tab id="wallet" active={activeTab === 'wallet'} onClick={setActiveTab}>Wallet</Tab>
