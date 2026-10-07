@@ -152,7 +152,7 @@ function useLivePlayerCount(enabled = true) {
     }
   };
 
-  useVisiblePolling(load, 15000, enabled);
+  useVisiblePolling(load, 60000, enabled);
   return count;
 }
 
@@ -183,7 +183,7 @@ function usePublicStats() {
     load();
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') load();
-    }, 30000);
+    }, 120000);
 
     return () => {
       active = false;
@@ -218,7 +218,7 @@ function useOnlinePresence(currentUser) {
     if (!userId) setPresence({ count: 0, users: [] });
   }, [userId]);
 
-  useVisiblePolling(load, 15000, Boolean(userId));
+  useVisiblePolling(load, 60000, Boolean(userId));
   return presence;
 }
 

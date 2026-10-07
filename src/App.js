@@ -10,7 +10,6 @@ import InviteInbox from './components/InviteInbox';
 
 import Notfound from './components/Notfound';
 import './css/Loader.css';
-// inside your <Routes>:
 
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
@@ -19,18 +18,19 @@ import { preloadPlayContent } from './utils/navigationPrefetch';
 import Play from './components/Play';
 import TrainingPage from './components/TrainingPage';
 import Leaderboard from './components/Leaderboard';
-import Profile from './components/TypeProfile';
-import AdminPanel from './components/AdminPanel';
-import Results from './components/Results';
 import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
-import SchoolDashboard from './components/SchoolDashboard';
+
 import CertificationTest, { CertificateVerification } from './components/Certification';
-import SkillsPassport from './components/SkillsPassport';
-import PracticalTasks from './components/PracticalTasks';
-import Tournaments from './components/Tournaments';
 import { EmployerHiring, CandidateHiringTest } from './components/Hiring';
+const Profile = React.lazy(() => import('./components/TypeProfile'));
+const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
+const Results = React.lazy(() => import('./components/Results'));
+const SchoolDashboard = React.lazy(() => import('./components/SchoolDashboard'));
+const SkillsPassport = React.lazy(() => import('./components/SkillsPassport'));
+const PracticalTasks = React.lazy(() => import('./components/PracticalTasks'));
+const Tournaments = React.lazy(() => import('./components/Tournaments'));
 
 
 
@@ -308,6 +308,7 @@ function AppLayout() {
       
       <main>
         <InviteInbox currentUser={currentUser} />
+        <React.Suspense fallback={<div className="arena-route-loading" style={{ minHeight: '35vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--arena-text-muted, #7e8b9b)' }}>Loading...</div>}>
         <Routes>
           <Route path="/" element={currentUser ? <AppDashboard currentUser={currentUser} /> : <Home currentUser={currentUser} />} />
           <Route path="/play" element={<Play />} />
@@ -328,6 +329,7 @@ function AppLayout() {
           <Route path="/results/:raceId" element={<Results />} />
           <Route path="*" element={<Notfound />} />
         </Routes>
+        </React.Suspense>
       </main>
 
       <footer className="arena-footer">

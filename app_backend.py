@@ -8653,7 +8653,7 @@ def update_live_race_progress(room_id: str):
             return jsonify({'message': 'Unauthorized'}), 401
         payload = request.get_json(silent=True) or {}
         if room.get('status') == 'completed':
-            return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
+            return jsonify(_serialize_live_room(room, viewer_user_id=user['id'], include_text=False))
         status_before = room.get('status')
         player = next((item for item in room.get('players', []) if item.get('userId') == user['id']), None)
         if not player:
@@ -8700,7 +8700,7 @@ def update_live_race_progress(room_id: str):
             with conn.cursor() as cur:
                 _save_live_room(cur, room)
             conn.commit()
-        return jsonify(_serialize_live_room(room, viewer_user_id=user['id']))
+        return jsonify(_serialize_live_room(room, viewer_user_id=user['id'], include_text=False))
     finally:
         _return_connection(conn)
 

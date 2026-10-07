@@ -312,8 +312,9 @@ export function useLiveRaceSession({
       if (isLeavingRef.current) {
         return;
       }
-      setLiveRoom(room);
-      finalizeRoomIfCompleted(room);
+      const mergedRoom = room ? { ...liveRoomRef.current, ...room, text: room.text || liveRoomRef.current?.text } : room;
+      setLiveRoom(mergedRoom);
+      finalizeRoomIfCompleted(mergedRoom);
     } catch (error) {
       console.error('Live heartbeat error:', error);
     } finally {

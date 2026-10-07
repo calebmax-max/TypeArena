@@ -4,20 +4,7 @@
     "Private friend battles are live now.",
     "Wallet top-up and tournaments coming soon."
   ],
-  "musicTracks": [
-    {
-      "id": "track_1779498371161",
-      "title": "Broken Vessels (Amazing Grace)   Hillsong Worship(MP3 128K)",
-      "artist": "Unknown Artist",
-      "url": "blob:http://localhost:3000/e924b910-9c73-42b3-af9f-311ba11ef022"
-    },
-    {
-      "id": "track_1788888938444",
-      "title": "Averly Morillo   MESIAS Lyrics Video   Ven Ven Ven Ven Ven Mesias Ven   Lyrics in english (39kbpsk) 1764475519481",
-      "artist": "Unknown Artist",
-      "url": "https://www.youtube.com/watch?v=e9glPMbC6Rc&list=RDe9glPMbC6Rc&start_radio=1"
-    }
-  ],
+  "musicTracks": [],
   "commentatorEnabled": true,
   "commentatorConfig": {
     "rate": 1.08,

@@ -14,7 +14,6 @@ import { buildHeaders } from '../utils/typingApi';
 // flow. The stake is only debited by that join request after any confirmation.
 
 const PING_INTERVAL_MS = 30000;
-const PLAY_POLL_INTERVAL_MS = 10000;
 
 async function apiFetch(path, opts = {}) {
   const { body, method, ...rest } = opts;
@@ -138,26 +137,6 @@ function InviteInbox({ currentUser }) {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onWake);
       window.removeEventListener('focus', onWake);
-    };
-  }, [isLoggedIn, applyInvites]);
-
-  // ---- Fast read-only check on every page (10 s, visible tab only) --------
-  useEffect(() => {
-    if (!isLoggedIn) return undefined;
-    let stopped = false;
-    const check = () => {
-      if (stopped || document.visibilityState !== 'visible') return;
-      apiFetch('/api/invites/pending')
-        .then((data) => {
-          if (!stopped && data && Array.isArray(data.invites)) applyInvites(data.invites);
-        })
-        .catch(() => {});
-    };
-    check();
-    const intervalId = setInterval(check, PLAY_POLL_INTERVAL_MS);
-    return () => {
-      stopped = true;
-      clearInterval(intervalId);
     };
   }, [isLoggedIn, applyInvites]);
 
