@@ -4813,6 +4813,15 @@ button, input, textarea, select { max-width: 100%; }
   font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* The admin console owns its own navigation and full-screen layout. Keep the
+   regular app shell from adding a second rail or extra page padding there. */
+.App--admin > main.app-main--admin {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
 .home-container,
 .play-container,
 .leaderboard-container,

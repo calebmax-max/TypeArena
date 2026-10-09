@@ -888,13 +888,32 @@ export default function AdminPanel() {
         .ap-topbar-actions { display: flex; align-items: center; gap: 13px; }
         .ap-system-status { display: inline-flex; align-items: center; gap: 7px; color: #9bb3ad; font-size: .68rem; white-space: nowrap; }
         .ap-system-status i { width: 7px; height: 7px; border-radius: 50%; background: #3eb88d; box-shadow: 0 0 0 3px rgba(62,184,141,.13); }
-        .ap-training-layout { display: grid; grid-template-columns: minmax(290px, .72fr) minmax(0, 1.55fr); gap: 18px; align-items: start; }
+        .ap-training-layout { display: grid; grid-template-columns: minmax(320px, .78fr) minmax(0, 1.55fr); gap: 24px; align-items: start; }
         .ap-training-forms, .ap-training-catalog { min-width: 0; }
         .ap-training-forms { position: sticky; top: 22px; }
-        .ap-course-card { padding: 20px; }
+        .ap-training-catalog { display: grid; gap: 16px; align-content: start; }
+        .ap-training-forms > .ap-card { margin-bottom: 16px; }
+        .ap-course-card { padding: 20px; margin-bottom: 0; }
         .ap-course-card .ap-card-title { margin-bottom: 6px; color: var(--ap-text); text-transform: none; letter-spacing: -.01em; font-size: 1rem; }
         .ap-course-card > div:first-child small { color: var(--ap-muted); line-height: 1.45; }
         .ap-course-card .ap-table { margin-top: 18px; }
+        .ap-course-card > div:first-child { min-width: 0; }
+        .ap-course-card > div:first-child > div:last-child { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+
+        /* Shared editor and catalogue layout used by Training and Skills Lab. */
+        .ap-form-grid { display: grid; gap: 11px; }
+        .ap-form-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+        .ap-form-grid .ap-btn { justify-self: start; margin-top: 3px; }
+        .ap-check { display: inline-flex; align-items: center; gap: 8px; color: var(--ap-muted); font-size: .76rem; }
+        .ap-check input { accent-color: var(--ap-accent); }
+        .ap-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--ap-border); border-radius: 9px; }
+        .ap-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: .76rem; }
+        .ap-table th { padding: 10px 12px; background: rgba(255,255,255,.025); color: var(--ap-muted); font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+        .ap-table td { padding: 12px; border-top: 1px solid var(--ap-border); color: var(--ap-text); vertical-align: middle; }
+        .ap-table tr:hover td { background: rgba(255,255,255,.018); }
+        .ap-table td small { color: var(--ap-muted); font-size: .68rem; line-height: 1.4; }
+        .ap-table td:last-child { white-space: nowrap; }
+        .ap-table td:last-child .ap-btn + .ap-btn { margin-left: 6px; }
 
         /* ---- Section header ---- */
         .ap-section-header {
@@ -1285,6 +1304,9 @@ export default function AdminPanel() {
           .ap-two-col, .ap-three-col { grid-template-columns: 1fr; }
           .ap-training-layout { grid-template-columns: 1fr; }
           .ap-training-forms { position: static; }
+          .ap-form-grid--three { grid-template-columns: 1fr; }
+          .ap-course-card > div:first-child { align-items: flex-start !important; flex-direction: column; }
+          .ap-course-card > div:first-child > div:last-child { justify-content: flex-start; }
           .ap-wallet-row { flex-direction: column; }
         }
       `}</style>

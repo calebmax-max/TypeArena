@@ -152,6 +152,7 @@ const readStoredUser = () => {
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isAdminRoute = location.pathname === '/admin';
   // undefined means the local/session auth check has not resolved yet. Keep
   // it distinct from null (a confirmed signed-out visitor) so onboarding
   // cannot flash while a returning user's session is being restored.
@@ -256,9 +257,9 @@ function AppLayout() {
   );
 
   return (
-    <div className={`App${currentUser ? ' App--workspace' : ''}`}>
+    <div className={`App${currentUser && !isAdminRoute ? ' App--workspace' : ''}${isAdminRoute ? ' App--admin' : ''}`}>
       <OfflineBanner />
-      <header className="arena-navbar">
+      {!isAdminRoute && <header className="arena-navbar">
         <div className="arena-navbar__inner">
           <Link to="/" className="arena-brand" aria-label="TypeArena home">
             <span className="arena-brand__copy"><strong>TypeArena</strong><small>Learn. Prove. Progress.</small></span>
@@ -295,19 +296,19 @@ function AppLayout() {
             </div>
           </nav>
         </div>
-      </header>
+      </header>}
 
-      <div className="site-marquee" aria-label="Announcements">
+      {!isAdminRoute && <div className="site-marquee" aria-label="Announcements">
         <div className="site-marquee__track">
           {[...siteMarqueeItems, ...siteMarqueeItems].map((item, index) => (
             <span key={`${item}-${index}`}>{item}</span>
           ))}
         </div>
-      </div>
+      </div>}
 
       
-      <main>
-        <InviteInbox currentUser={currentUser} />
+      <main className={isAdminRoute ? 'app-main--admin' : undefined}>
+        {!isAdminRoute && <InviteInbox currentUser={currentUser} />}
         <React.Suspense fallback={<div className="arena-route-loading" style={{ minHeight: '35vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--arena-text-muted, #7e8b9b)' }}>Loading...</div>}>
         <Routes>
           <Route path="/" element={currentUser ? <AppDashboard currentUser={currentUser} /> : <Home currentUser={currentUser} />} />
@@ -332,22 +333,22 @@ function AppLayout() {
         </React.Suspense>
       </main>
 
-      <footer className="arena-footer">
+      {!isAdminRoute && <footer className="arena-footer">
         <div className="arena-footer__inner">
           <div><strong>TypeArena</strong><p>Practical typing and digital skills for learners, schools, and employers.</p></div>
           <div className="arena-footer__links"><Link to="/play">Play a race</Link><Link to="/tournaments">Tournaments</Link><Link to="/school">School mode</Link><Link to="/leaderboard">Leaderboard</Link><Link to="/profile">Your profile</Link></div>
         </div>
         <p className="arena-footer__bottom">&copy; 2026 TypeArena. Learn. Prove. Progress.</p>
-      </footer>
+      </footer>}
 
-      <OnboardingTour
-        currentUser={currentUser}
-        menuOpen={menuOpen}
-        setMenuOpen={setMenuOpen}
-        onActiveChange={setTourActive}
-      />
-      <TermsUpdateGate currentUser={currentUser} suspended={tourActive} />
-      <InstallButton forceHidden={tourActive} />
+      {!isAdminRoute && <OnboardingTour
+          currentUser={currentUser}
+          menuOpen={menuOpen}
+          setMenuOpen={setMenuOpen}
+          onActiveChange={setTourActive}
+        />}
+      {!isAdminRoute && <TermsUpdateGate currentUser={currentUser} suspended={tourActive} />}
+      {!isAdminRoute && <InstallButton forceHidden={tourActive} />}
       <UpdateBanner />
     </div>
   );
