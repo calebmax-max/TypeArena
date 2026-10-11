@@ -637,7 +637,7 @@ export default function TypeProfile() {
             <div className="tp-auth-logo">
               <AvatarBadge initials="TA" size={80} />
               <h1 className="tp-auth-title">TypeArena</h1>
-              <p className="tp-auth-sub">Compete. Earn. Dominate the keyboard.</p>
+              <p className="tp-auth-sub">Learn. Practise. Prove your progress.</p>
             </div>
 
             {!showAuthForm ? (
@@ -694,7 +694,6 @@ export default function TypeProfile() {
                     <select id="account-type" className="tp-input" value={formData.accountType}
                       onChange={(e) => setFormData((c) => ({ ...c, accountType: e.target.value }))}>
                       <option value="player">Practice, training, and certificates</option>
-                      <option value="employer">Hiring and candidate assessments</option>
                     </select>
                     <small className="tp-field__hint">School access is added separately when a school invites you.</small>
                   </div>

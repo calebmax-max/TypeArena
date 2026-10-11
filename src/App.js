@@ -21,7 +21,7 @@ import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
 
 import CertificationTest, { CertificateVerification } from './components/Certification';
-import { EmployerHiring, CandidateHiringTest } from './components/Hiring';
+import { CandidateHiringTest } from './components/Hiring';
 const Profile = React.lazy(() => import('./components/TypeProfile'));
 const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 const Results = React.lazy(() => import('./components/Results'));
@@ -246,8 +246,6 @@ function AppLayout() {
             </div>
             <div className="arena-nav__section">
               <span className="arena-nav__section-label">Opportunities</span>
-              <NavLink to="/school" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">▣</span><span>School</span></NavLink>
-              {(currentUser?.accountRole === 'employer' || currentUser?.isAdmin) && <NavLink to="/hiring" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">⌁</span><span>Hiring</span></NavLink>}
               <NavLink to="/certification" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">✓</span><span>Get Certified</span></NavLink>
             </div>
             <div className="arena-nav__section arena-nav__section--account">
@@ -269,7 +267,6 @@ function AppLayout() {
           <Route path="/play" element={<Play practicePage />} />
           <Route path="/training" element={<TrainingPage />} />
           <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
-          <Route path="/hiring" element={<EmployerHiring currentUser={currentUser} />} />
           <Route path="/test/:publicCode" element={<CandidateHiringTest currentUser={currentUser} />} />
           <Route path="/certification" element={<CertificationTest />} />
           <Route path="/verify/:certificateId" element={<CertificateVerification />} />
@@ -284,8 +281,8 @@ function AppLayout() {
 
       {!isAdminRoute && <footer className="arena-footer">
         <div className="arena-footer__inner">
-          <div><strong>TypeArena</strong><p>Practical typing and digital skills for learners, schools, and employers.</p></div>
-          <div className="arena-footer__links"><Link to="/play">Practice typing</Link><Link to="/school">School mode</Link><Link to="/profile">Your profile</Link></div>
+          <div><strong>TypeArena</strong><p>Practical typing and digital skills for learners.</p></div>
+          <div className="arena-footer__links"><Link to="/play">Practice typing</Link><Link to="/profile">Your profile</Link></div>
         </div>
         <p className="arena-footer__bottom">&copy; 2026 TypeArena. Learn. Prove. Progress.</p>
       </footer>}
