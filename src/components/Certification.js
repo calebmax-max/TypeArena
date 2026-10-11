@@ -276,7 +276,19 @@ export function CertificationTest() {
               <span>{liveAccuracy.toFixed(1)}% accuracy</span>
             </div>
             <div className="cert-passage" aria-label="Fixed certification passage" onCopy={handleBlockedClipboardAction}>
-              {challenge.passage}
+              {challenge.passage.split('').map((character, index) => {
+                const isTyped = index < typedText.length;
+                const isCurrent = index === typedText.length;
+                const isCorrect = isTyped && typedText[index] === character;
+                const className = isCurrent
+                  ? 'cert-passage__char cert-passage__char--current'
+                  : isCorrect
+                    ? 'cert-passage__char cert-passage__char--correct'
+                    : isTyped
+                      ? 'cert-passage__char cert-passage__char--incorrect'
+                      : 'cert-passage__char';
+                return <span className={className} key={index}>{character}</span>;
+              })}
             </div>
             <label className="cert-input-label" htmlFor="certification-typing-input">
               Type the passage below

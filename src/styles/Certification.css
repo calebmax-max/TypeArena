@@ -59,7 +59,11 @@
 .cert-test { margin-top: 1.5rem; }
 .cert-test__status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.65rem 1rem; margin-bottom: 0.75rem; color: #aab6c9; }
 .cert-test__status strong { color: #f0bc47; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
-.cert-passage { max-height: 230px; overflow: auto; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px; background: rgba(0, 0, 0, 0.2); color: rgba(245, 247, 251, 0.87); line-height: 1.8; user-select: none; }
+.cert-passage { max-height: 230px; overflow: auto; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 14px; background: rgba(0, 0, 0, 0.2); color: rgba(245, 247, 251, 0.87); font: 1.05rem/1.8 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; user-select: none; }
+.cert-passage__char { color: rgba(245, 247, 251, 0.5); }
+.cert-passage__char--correct { color: #8af6c3; }
+.cert-passage__char--incorrect { color: #fff; background: rgba(255, 95, 95, 0.42); text-decoration: underline wavy #ffb3b3; text-underline-offset: 3px; }
+.cert-passage__char--current { color: #fff; border-bottom: 2px solid #f0bc47; }
 .cert-input-label { display: block; margin: 1rem 0 0.5rem; color: #fff; font-weight: 700; }
 .cert-test textarea { width: 100%; min-height: 180px; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 14px; outline: none; background: #071226; color: #fff; font: 1rem/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; resize: vertical; }
 .cert-test textarea:focus { border-color: #f0bc47; box-shadow: 0 0 0 3px rgba(240, 188, 71, 0.15); }
