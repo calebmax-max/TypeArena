@@ -84,6 +84,18 @@
 @keyframes training-finger-tap { 0%, 100% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(8px) scaleY(.88); } }
 .training-finger--left-thumb.is-active { transform: rotate(-42deg) translateY(6px); }
 .training-finger--right-thumb.is-active { transform: rotate(42deg) translateY(6px); }
+.finger-guide { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: .65rem 0 1rem; padding: .8rem 1rem; border: 1px solid var(--tp-sage-border); border-radius: var(--tp-radius); background: linear-gradient(135deg, #fff, var(--tp-paper)); }
+.finger-guide__instruction { display: flex; flex: 0 0 155px; flex-direction: column; gap: .2rem; }
+.finger-guide__instruction strong { color: var(--tp-forest); font-size: 1.5rem; line-height: 1; }
+.finger-guide__instruction > span:last-child { color: var(--tp-muted); font-size: .78rem; line-height: 1.35; }
+.finger-hands { display: flex; align-items: center; justify-content: center; gap: .5rem; min-width: 260px; flex: 1; }
+.finger-hand { width: 145px; height: 120px; overflow: visible; }
+.finger-hand__palm { fill: #e2a274; stroke: #a9603d; stroke-width: 2; }
+.finger-hand__finger { fill: #f3c29b; stroke: #a9603d; stroke-width: 2; transform-box: fill-box; transform-origin: center bottom; transition: fill .18s ease, filter .18s ease, transform .18s ease; }
+.finger-hand__finger.is-active { fill: #f3bd42; filter: drop-shadow(0 0 7px rgba(213, 138, 31, .65)); animation: finger-guide-tap .75s ease-in-out infinite; }
+@keyframes finger-guide-tap { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(7px); } }
+.typing-practice { display: flex; flex-direction: column; }
+@media (prefers-reduced-motion: reduce) { .finger-hand__finger, .training-finger.is-active { animation: none; transition: none; } }
 .training-course-dashboard {
   padding: 1.25rem;
   border: 1px solid var(--tp-sage-border);
@@ -674,6 +686,10 @@
   .training-course-outcome__grid { grid-template-columns: 1fr; }
   .training-finger-guide { align-items: flex-start; flex-direction: column; }
   .training-finger-guide__visual { width: 100%; }
+  .finger-guide { align-items: flex-start; flex-direction: column; }
+  .finger-guide__instruction { flex-basis: auto; }
+  .finger-hands { width: 100%; min-width: 0; }
+  .finger-hand { width: 130px; }
   .training-lesson__objective { align-items: flex-start; flex-direction: column; }
   .training-lesson__objective p { max-width: none; text-align: left; }
   .training-pathway__heading { align-items: flex-start; flex-direction: column; }

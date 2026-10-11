@@ -1,12 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import TypingBox from './TypingBox';
-import PlayKeyboardDeck from './PlayKeyboardDeck';
-import FingerTypingGuide from './FingerTypingGuide';
+import TypingPractice from './TypingPractice';
 import { useTypingSession } from './useTypingSession';
 import { recordAttempt } from './trainingProgress';
 import { startProblemKeyPractice, startTrainingLesson, submitTrainingAttempt } from '../utils/typingApi';
 
-export default function LessonRunner({ lesson, onLessonPassed }) {
+export default function LessonRunner({ lesson, onLessonPassed, fingerMapping }) {
   const [attemptKey, setAttemptKey] = useState(0);
   const [outcome, setOutcome] = useState(null); // { wpm, accuracy, passed, passCount }
   const [attempt, setAttempt] = useState(null);
@@ -152,12 +150,6 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
 
       {!outcome && (
         <>
-          <div className="training-keyboard-toggle">
-            <label><input type="checkbox" checked={showKeyboard} onChange={(event) => setShowKeyboard(event.target.checked)} /> Show keyboard guide</label>
-            <span>Use it while learning, hide it when you want no-look practice.</span>
-          </div>
-          {showKeyboard && <PlayKeyboardDeck phase="racing" normalizeKeyboardKey={(key) => (key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key)} expectedKey={expectedKey} />}
-          {showKeyboard && <FingerTypingGuide expectedKey={expectedKey} />}
           {liveStats && (
             <p className="training-lesson__live-stats" aria-live="polite">
               {Math.round(liveStats.wpm)} WPM · {Math.round(liveStats.accuracy)}% accuracy so far
@@ -167,13 +159,17 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
           {lesson.id !== 'problem-keys' && !attempt && !attemptError && (
             <p className="training-lesson__preparing" role="status">Preparing your secure lesson attempt...</p>
           )}
-          <TypingBox
+          <TypingPractice
             targetText={targetText}
             typedText={typedText}
             onChange={handleChange}
             inputRef={inputRef}
             disabled={finished || (lesson.id !== 'problem-keys' && !attempt)}
-            blockPaste
+            expectedCharacter={expectedKey}
+            mapping={fingerMapping}
+            mode={lesson.lessonType === 'intro' ? 'intro' : lesson.lessonType === 'challenge' ? 'challenge' : 'practice'}
+            showGuidance={showKeyboard}
+            onToggleGuidance={setShowKeyboard}
           />
         </>
       )}
