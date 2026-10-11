@@ -85,6 +85,8 @@
 .cert-verification dl > div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.85rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.09); }
 .cert-verification dt { color: rgba(235, 241, 252, 0.65); }
 .cert-verification dd { margin: 0; color: #fff; font-weight: 700; text-align: right; }
+.cert-verification-link { margin-top: 1rem; color: rgba(235, 241, 252, 0.72); font-size: 0.85rem; line-height: 1.6; overflow-wrap: anywhere; }
+.cert-verification-link a { color: #f6d28b; }
 
 @media (max-width: 600px) {
   .cert-page { padding: 1.5rem 0.75rem; }
@@ -126,6 +128,7 @@
 .cert-document__signature { text-align: right; }
 .cert-document__signature span { color: #f7d98e; font-family: Georgia, 'Times New Roman', serif; font-size: 1.15rem; font-style: italic; text-transform: none; }
 .cert-document__conditions { margin-top: 1.4rem; color: rgba(239, 248, 242, 0.55); font-size: 0.75rem; }
+.cert-document__link { margin: 1rem auto 0; color: #f6d28b; font-size: 0.75rem; overflow-wrap: anywhere; }
 .cert-document .cert-validity { margin: 1.5rem auto 0; }
 
 @media (max-width: 600px) {

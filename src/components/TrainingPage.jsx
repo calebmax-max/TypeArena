@@ -4,7 +4,7 @@ import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
 import PlacementTest from './PlacementTest';
-import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress } from '../utils/typingApi';
+import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress, issueTrainingCourseCertificate } from '../utils/typingApi';
 import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
   loadProgress,
@@ -26,6 +26,7 @@ export default function TrainingPage() {
   const [justCertified, setJustCertified] = useState(false);
   const [showPlacement, setShowPlacement] = useState(false);
   const [stageComplete, setStageComplete] = useState(null);
+  const [certificateError, setCertificateError] = useState('');
 
   const lessons = useMemo(() => flattenLessons(courses), [courses]);
 
@@ -57,6 +58,18 @@ export default function TrainingPage() {
 
   function refreshProgress() {
     setProgress(loadProgress());
+  }
+
+  async function handleIssueCertificate(courseId) {
+    setCertificateError('');
+    try {
+      const certificate = await issueTrainingCourseCertificate(courseId);
+      setCourses((current) => current.map((course) => (
+        String(course.id) === String(courseId) ? { ...course, certificate } : course
+      )));
+    } catch (issueError) {
+      setCertificateError(issueError.message || 'Could not issue the course certificate.');
+    }
   }
 
   function handleSelectLesson(lessonId) {
@@ -152,6 +165,7 @@ export default function TrainingPage() {
   return (
     <div className="training-page training-page--curriculum">
       <div className="training-page__course-header">
+        {certificateError && <div className="training-state-card training-state-card--error" role="alert"><p>{certificateError}</p></div>}
         <CourseDashboard
           progress={progress}
           courses={courses}
@@ -160,6 +174,7 @@ export default function TrainingPage() {
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
           onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); setShowLessonList(false); }}
           onPlacement={() => { setJustCertified(false); setShowPlacement(true); }}
+          onIssueCertificate={handleIssueCertificate}
         />
       </div>
       {showLessonList && <aside className="training-page__sidebar">

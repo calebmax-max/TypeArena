@@ -511,6 +511,24 @@ def register_certification_routes(
                 certificate = cur.fetchone()
             if not certificate:
                 try:
+                    cur.execute('''SELECT certificate_code,course_title,total_lessons,player_name,issued_at
+                        FROM training_certificates WHERE certificate_code=%s LIMIT 1''', (normalized_code,))
+                    training_certificate = cur.fetchone()
+                except Exception:
+                    training_certificate = None
+                if training_certificate:
+                    issued_at = training_certificate.get('issued_at')
+                    return jsonify({
+                        'certificateId': training_certificate['certificate_code'],
+                        'status': 'valid',
+                        'certificateType': 'training_course',
+                        'playerName': training_certificate.get('player_name') or 'TypeArena learner',
+                        'courseName': training_certificate.get('course_title'),
+                        'totalLessons': int(training_certificate.get('total_lessons') or 0),
+                        'testDate': issued_at.isoformat() if issued_at else None,
+                        'statement': 'This certificate verifies completion of the assigned TypeArena training course and its recorded lessons.',
+                    })
+                try:
                     cur.execute('''SELECT certificate_code,learner_name,organization_name,class_name,course_title,total_lessons,issued_at
                         FROM school_certificates WHERE certificate_code=%s AND status='valid' LIMIT 1''', (normalized_code,))
                     school_certificate = cur.fetchone()

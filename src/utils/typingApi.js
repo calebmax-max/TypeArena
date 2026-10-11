@@ -46,6 +46,9 @@ export const submitTrainingAttempt = async (payload) => parseResponse(await apiF
 export const purchaseTrainingCourse = async (courseId) => parseResponse(await apiFetch(buildApiUrl(`/api/training/courses/${encodeURIComponent(courseId)}/purchase`), {
   method: 'POST', headers: buildHeaders(), body: JSON.stringify({}),
 }));
+export const issueTrainingCourseCertificate = async (courseId) => parseResponse(await apiFetch(buildApiUrl(`/api/training/courses/${encodeURIComponent(courseId)}/certificate`), {
+  method: 'POST', headers: buildHeaders(), body: JSON.stringify({}),
+}));
 export const fetchSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { headers: buildHeaders() }));
 export const createSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { method: 'POST', headers: buildHeaders(), body: JSON.stringify({}) }));
 export const revokeSkillsPassport = async () => parseResponse(await apiFetch(buildApiUrl('/api/skills-passport'), { method: 'DELETE', headers: buildHeaders() }));

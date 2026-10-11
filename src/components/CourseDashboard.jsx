@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { getCourseSummary, isLessonPassed } from './trainingProgress';
 
-export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement }) {
+export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement, onIssueCertificate }) {
   const summary = getCourseSummary(progress, lessons);
   const coursePathway = courses.map((course, index) => {
     const courseLessons = course.lessons || [];
@@ -76,6 +76,8 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
                 <span style={{ width: `${course.percentage}%` }} />
               </div>
               <small>{course.isLocked ? 'Unlock after the previous stage' : `${course.passed}/${course.total} lessons complete`}</small>
+              {course.completed && course.certificate && <Link className="training-button training-button--quiet" to={`/verify/${encodeURIComponent(course.certificate.certificateId)}`}>View certificate</Link>}
+              {course.completed && !course.certificate && onIssueCertificate && <button type="button" className="training-button training-button--quiet" onClick={() => onIssueCertificate(course.id)}>Get certificate</button>}
               {course.isLocked && course.accessReason === 'paid' && (
                 <Link className="training-button training-button--quiet" to="/profile?tab=account#typearena-pro">
                   Included with Pro

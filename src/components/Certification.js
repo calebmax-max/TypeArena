@@ -411,6 +411,11 @@ export function CertificateVerification() {
                   <div><dt>Class</dt><dd>{certificate.className}</dd></div>
                   <div><dt>Lessons completed</dt><dd>{certificate.totalLessons}</dd></div>
                 </>
+              ) : certificate.certificateType === 'training_course' ? (
+                <>
+                  <div><dt>Course</dt><dd>{certificate.courseName}</dd></div>
+                  <div><dt>Lessons completed</dt><dd>{certificate.totalLessons}</dd></div>
+                </>
               ) : (
                 <>
                   <div><dt>Typing speed</dt><dd>{certificate.wpm} WPM</dd></div>
@@ -419,11 +424,16 @@ export function CertificateVerification() {
               )}
               <div><dt>Issue date</dt><dd>{certificate.testDate ? new Date(certificate.testDate).toLocaleDateString() : 'Not available'}</dd></div>
             </dl>
-            {certificate.certificateType !== 'school_course' && <p className="cert-muted">
+            {certificate.certificateType === 'training_course' ? <p className="cert-muted">
+              This certificate verifies completion of the recorded TypeArena training course.
+            </p> : certificate.certificateType !== 'school_course' && <p className="cert-muted">
               Test conditions: three minutes; passing threshold {certificate.minimumWpm} WPM,
               {' '}{certificate.minimumAccuracy}% accuracy, and {certificate.minimumCharacters} characters.
             </p>}
             <p className="cert-muted">{certificate.statement}</p>
+            <p className="cert-verification-link">
+              Verify this certificate: <Link to={`/verify/${encodeURIComponent(certificate.certificateId)}`}>{window.location.origin}/verify/{certificate.certificateId}</Link>
+            </p>
           </>
         )}
       </div>
@@ -483,6 +493,7 @@ export function CertificateRealPreview() {
             <div className="cert-document__signature"><span>TypeArena</span><strong>Verified assessment</strong></div>
           </div>
           <div className="cert-document__conditions">Three-minute assessment · minimum 40 WPM · 95% accuracy · 600 characters</div>
+          <p className="cert-document__link">Verify at: {window.location.origin}/verify/TA-PREVIEW-0000</p>
           <div className="cert-validity cert-validity--preview">Preview only</div>
         </div>
         <p className="cert-muted">This is a visual preview. A real certificate receives a unique ID after you pass the assessment and is publicly verifiable.</p>
