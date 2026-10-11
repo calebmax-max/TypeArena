@@ -30,7 +30,6 @@ import { getPB, savePB } from '../utils/personalBests';
 import { getWinStreak, updateWinStreak } from '../utils/winStreak';
 import { getRecentRaces, saveRecentRace } from '../utils/recentRaces';
 import { readMobileTypingSettings, MOBILE_TYPING_SETTINGS_KEY } from '../utils/mobileTypingSettings';
-import FingerGuide from './FingerGuide';
 import '../styles/Play.css';
 
 // Lazy-loaded: only needed for the private-room flow (!practicePage), so
@@ -2620,17 +2619,11 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
           <React.Suspense fallback={null}>
             {mobileTypingSettings.guide && (
-              <>
-                <LazyKeyboardDeck
-                  phase={phase}
-                  normalizeKeyboardKey={normalizeKeyboardKey}
-                  expectedKey={sourceText[typingText.length]}
-                />
-                <FingerGuide
-                  expectedCharacter={sourceText[typingText.length]}
-                  mode={practicePage ? 'practice' : 'challenge'}
-                />
-              </>
+              <LazyKeyboardDeck
+                phase={phase}
+                normalizeKeyboardKey={normalizeKeyboardKey}
+                expectedKey={sourceText[typingText.length]}
+              />
             )}
           </React.Suspense>
 
