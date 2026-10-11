@@ -52,6 +52,10 @@ def _certificate_code() -> str:
     return f'TA-{secrets.token_hex(12).upper()}'
 
 
+def _is_test_account(user: Optional[Dict[str, Any]]) -> bool:
+    return bool(user and str(user.get('email') or '').strip().lower() == 'faith@gmail.com')
+
+
 def _serialize_attempt(row: Dict[str, Any], *, include_admin_data: bool = False) -> Dict[str, Any]:
     result = {
         'attemptId': row['attempt_code'],
@@ -185,26 +189,28 @@ def register_certification_routes(
                     if cur.fetchone():
                         return jsonify({'message': 'Your included certification attempt has already been used. Additional attempts are not available yet.'}), 409
 
-                    # Certification is the final proof step, not a shortcut
-                    # around the learning pathway. Require every published
-                    # training lesson to have a recorded server-side pass.
-                    cur.execute(
-                        '''SELECT COUNT(l.id) AS lesson_count,
-                                  COUNT(DISTINCT CASE WHEN a.passed=1 THEN l.id END) AS passed_count
-                           FROM training_lessons l
-                           JOIN training_courses c ON c.id=l.course_id AND c.is_archived=0
-                           LEFT JOIN training_attempts a
-                             ON a.user_id=%s AND a.lesson_id=CAST(l.id AS CHAR) AND a.passed=1
-                           WHERE l.is_archived=0''',
-                        (user['id'],),
-                    )
-                    completion = cur.fetchone() or {}
-                    lesson_count = int(completion.get('lesson_count') or 0)
-                    passed_count = int(completion.get('passed_count') or 0)
-                    if lesson_count == 0:
-                        return jsonify({'message': 'The training pathway is not ready for certification yet.'}), 503
-                    if passed_count < lesson_count:
-                        return jsonify({'message': 'Complete every training lesson before starting certification.', 'remainingLessons': lesson_count - passed_count}), 403
+                    if not _is_test_account(user):
+                        # Certification is the final proof step, not a shortcut
+                        # around the learning pathway for normal users. Require
+                        # every published training lesson to have a recorded
+                        # server-side pass.
+                        cur.execute(
+                            '''SELECT COUNT(l.id) AS lesson_count,
+                                      COUNT(DISTINCT CASE WHEN a.passed=1 THEN l.id END) AS passed_count
+                               FROM training_lessons l
+                               JOIN training_courses c ON c.id=l.course_id AND c.is_archived=0
+                               LEFT JOIN training_attempts a
+                                 ON a.user_id=%s AND a.lesson_id=CAST(l.id AS CHAR) AND a.passed=1
+                               WHERE l.is_archived=0''',
+                            (user['id'],),
+                        )
+                        completion = cur.fetchone() or {}
+                        lesson_count = int(completion.get('lesson_count') or 0)
+                        passed_count = int(completion.get('passed_count') or 0)
+                        if lesson_count == 0:
+                            return jsonify({'message': 'The training pathway is not ready for certification yet.'}), 503
+                        if passed_count < lesson_count:
+                            return jsonify({'message': 'Complete every training lesson before starting certification.', 'remainingLessons': lesson_count - passed_count}), 403
 
                 cur.execute(
                     "SELECT passage FROM certification_settings WHERE setting_key='typing_test_passage'"

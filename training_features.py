@@ -138,17 +138,13 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
         if not user:
             return False
         email = str(user.get('email') or '').strip().lower()
-        username = str(user.get('username') or '').strip().lower()
-        phone = ''.join(ch for ch in str(user.get('phone_number') or '') if ch.isdigit())
-        return (
-            email == 'faith@gmail.com'
-            and username == 'max_pro'
-            and phone in {'0700384172', '254700384172'}
-        )
+        return email == 'faith@gmail.com'
 
     def has_paid_training_access(cur, user):
         if not user:
             return False
+        if is_test_account(user):
+            return True
         if bool(user.get('is_admin') or user.get('isAdmin')):
             return True
         account_plan = str(user.get('account_plan') or user.get('accountPlan') or 'free').lower()
@@ -271,25 +267,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 ensure_tables(cur)
                 current_user = get_user(conn)
                 test_account = is_test_account(current_user)
-                account_plan = str((current_user or {}).get('account_plan') or (current_user or {}).get('accountPlan') or 'free').lower()
-                has_active_pro = False
-                if current_user:
-                    # The cached user snapshot is display data only. Paid
-                    # training access must come from the current subscription.
-                    cur.execute(
-                        '''SELECT 1 FROM subscriptions
-                           WHERE user_id=%s AND plan_key IN ('pro', 'pro_monthly', 'pro_annual')
-                             AND status='active' AND starts_at<=UTC_TIMESTAMP()
-                             AND expires_at>UTC_TIMESTAMP()
-                           LIMIT 1''',
-                        (current_user['id'],),
-                    )
-                    has_active_pro = bool(cur.fetchone())
-                has_paid_access = (
-                    has_active_pro
-                    or account_plan in {'school', 'sponsored'}
-                    or bool((current_user or {}).get('is_admin') or (current_user or {}).get('isAdmin'))
-                )
+                has_paid_access = has_paid_training_access(cur, current_user)
                 cur.execute('SELECT id,slug,title,description,is_pro,price,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 purchased_courses = set()

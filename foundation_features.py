@@ -174,10 +174,9 @@ def ensure_foundation_schema(cur, admin_email: str = '') -> None:
     # server-authoritative training and certification checks as a paid user.
     cur.execute(
         '''SELECT id FROM users
-           WHERE LOWER(email)=%s AND LOWER(username)=%s
-             AND REPLACE(REPLACE(phone_number, ' ', ''), '+', '') IN (%s, %s)
+           WHERE LOWER(email)=%s
            LIMIT 1''',
-        ('faith@gmail.com', 'max_pro', '0700384172', '254700384172'),
+        ('faith@gmail.com',),
     )
     test_user = cur.fetchone()
     if test_user:
