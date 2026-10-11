@@ -133,6 +133,19 @@ def _validate_keystroke_log(log, typed_text: str, started_at: float, duration_se
 def register_training_routes(app, *, get_connection, return_connection, get_user, is_admin=None):
     schema_ready = False
 
+    def is_test_account(user):
+        """The named local test account may inspect later lessons directly."""
+        if not user:
+            return False
+        email = str(user.get('email') or '').strip().lower()
+        username = str(user.get('username') or '').strip().lower()
+        phone = ''.join(ch for ch in str(user.get('phone_number') or '') if ch.isdigit())
+        return (
+            email == 'faith@gmail.com'
+            and username == 'max_pro'
+            and phone in {'0700384172', '254700384172'}
+        )
+
     def has_paid_training_access(cur, user):
         if not user:
             return False
@@ -257,6 +270,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             with conn.cursor() as cur:
                 ensure_tables(cur)
                 current_user = get_user(conn)
+                test_account = is_test_account(current_user)
                 account_plan = str((current_user or {}).get('account_plan') or (current_user or {}).get('accountPlan') or 'free').lower()
                 has_active_pro = False
                 if current_user:
@@ -312,7 +326,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                     course_paid = int(course['id']) in purchased_courses
                     course['hasPurchase'] = course_paid
                     course['isLocked'] = bool(course.get('is_pro')) and not (has_paid_access or course_paid)
-                    if course.get('prerequisite_course_id'):
+                    if course.get('prerequisite_course_id') and not test_account:
                         prerequisite = next((item for item in courses if item['id'] == course['prerequisite_course_id']), None)
                         course['isLocked'] = course['isLocked'] or not bool(prerequisite and prerequisite.get('completed'))
                     course['accessReason'] = 'paid' if course.get('is_pro') and not has_paid_access else 'prerequisite' if course['isLocked'] else None
@@ -551,7 +565,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 has_course_purchase = bool(cur.fetchone())
                 if lesson.get('is_pro') and not (has_paid_access or has_course_purchase):
                     return jsonify({'message': 'This course requires paid or sponsored access.'}), 403
-                if lesson.get('prerequisite_course_id'):
+                if lesson.get('prerequisite_course_id') and not is_test_account(user):
                     cur.execute('SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0', (lesson['prerequisite_course_id'],))
                     total = int((cur.fetchone() or {}).get('total') or 0)
                     cur.execute('''SELECT COUNT(DISTINCT a.lesson_id) passed FROM training_attempts a
@@ -624,7 +638,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                     has_paid_access = has_paid_training_access(access_cur, user)
                     if access.get('is_pro') and not (has_paid_access or has_course_purchase):
                         return jsonify({'message': 'This course requires paid or sponsored access.'}), 403
-                    if access.get('prerequisite_course_id'):
+                    if access.get('prerequisite_course_id') and not is_test_account(user):
                         access_cur.execute('SELECT COUNT(*) total FROM training_lessons WHERE course_id=%s AND is_archived=0', (access['prerequisite_course_id'],))
                         total = int((access_cur.fetchone() or {}).get('total') or 0)
                         access_cur.execute('''SELECT COUNT(DISTINCT a.lesson_id) passed FROM training_attempts a JOIN training_lessons l ON CAST(a.lesson_id AS UNSIGNED)=l.id WHERE a.user_id=%s AND l.course_id=%s AND a.passed=1 AND l.is_archived=0''', (user['id'], access['prerequisite_course_id']))
