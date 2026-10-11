@@ -169,6 +169,39 @@ def ensure_foundation_schema(cur, admin_email: str = '') -> None:
         '''
     )
 
+    # Local/staging testing entitlement. This is a real subscription row, not
+    # a browser-side premium flag, so the test account exercises the same
+    # server-authoritative training and certification checks as a paid user.
+    cur.execute(
+        '''SELECT id FROM users
+           WHERE LOWER(email)=%s AND LOWER(username)=%s
+             AND REPLACE(REPLACE(phone_number, ' ', ''), '+', '') IN (%s, %s)
+           LIMIT 1''',
+        ('faith@gmail.com', 'max_pro', '0700384172', '254700384172'),
+    )
+    test_user = cur.fetchone()
+    if test_user:
+        cur.execute(
+            '''SELECT id FROM subscriptions
+               WHERE user_id=%s AND plan_key IN ('pro', 'pro_monthly', 'pro_annual')
+                 AND status='active' AND expires_at>UTC_TIMESTAMP()
+               LIMIT 1''',
+            (test_user['id'],),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                '''INSERT INTO subscriptions
+                   (user_id, plan_key, amount, currency, billing_period_days,
+                    status, starts_at, expires_at)
+                   VALUES (%s, 'pro_monthly', 0, 'KES', 36500, 'active',
+                           UTC_TIMESTAMP(), '2099-12-31 23:59:59')''',
+                (test_user['id'],),
+            )
+        cur.execute(
+            "UPDATE users SET account_role='pro', account_plan='pro' WHERE id=%s",
+            (test_user['id'],),
+        )
+
     normalized_admin_email = str(admin_email or '').strip().lower()
     if normalized_admin_email:
         cur.execute(
