@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { getCourseSummary, isLessonPassed } from './trainingProgress';
 
-export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement, onIssueCertificate, stagesOnly = false }) {
+export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement, stagesOnly = false }) {
   const summary = getCourseSummary(progress, lessons);
   const coursePathway = courses.map((course, index) => {
     const courseLessons = course.lessons || [];
@@ -44,6 +44,20 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
       <div className="training-course-dashboard__track" aria-hidden="true">
         <span style={{ width: `${summary.percentage}%` }} />
       </div>
+      <section className="training-course-requirements" aria-labelledby="training-course-requirements-title">
+        <div className="training-course-requirements__heading">
+          <div>
+            <span className="training-eyebrow">Before you begin</span>
+            <h2 id="training-course-requirements-title">How to complete Beginner Typing</h2>
+          </div>
+          <span>Learn at your own pace</span>
+        </div>
+        <div className="training-course-requirements__grid">
+          <div><strong>1. Complete every lesson</strong><span>Pass each lesson in the pathway to finish the full course.</span></div>
+          <div><strong>2. Build reliable accuracy</strong><span>Meet the speed and accuracy target shown in each lesson.</span></div>
+          <div><strong>3. Take the final exam</strong><span>After the course is complete, pass the certification exam to receive your certificate.</span></div>
+        </div>
+      </section>
       {featuredCourse && <section className="training-course-outcome" aria-labelledby="course-outcome-title">
         <div className="training-course-outcome__heading">
           <div>
@@ -63,9 +77,9 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
         <div>
           <span className="training-eyebrow">Verified pathway</span>
           <h2 id="training-assessment-title">{summary.completed ? 'Ready to prove your skills?' : 'Your verified assessment comes next'}</h2>
-          <p>{summary.completed ? 'Take the verified assessment and create evidence you can share with a school or employer.' : `${Math.max(0, summary.totalLessons - summary.passedLessons)} lesson(s) remain before the verified assessment.`}</p>
+          <p>{summary.completed ? 'You completed every lesson. Pass the final certification exam to receive your verified certificate.' : `${Math.max(0, summary.totalLessons - summary.passedLessons)} lesson(s) remain before the final certification exam.`}</p>
         </div>
-        {summary.completed ? <Link className="training-button" to="/certification">Take assessment</Link> : <span className="training-assessment-callout__status">Keep practising</span>}
+        {summary.completed ? <Link className="training-button" to="/certification">Start certification exam</Link> : <span className="training-assessment-callout__status">Keep practising</span>}
       </section>
       {stagesOnly && <div className="training-pathway" aria-labelledby="training-pathway-title">
         <div className="training-pathway__heading">
@@ -85,8 +99,6 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
                 <span style={{ width: `${course.percentage}%` }} />
               </div>
               <small>{course.isLocked ? 'Unlock after the previous stage' : `${course.passed}/${course.total} lessons complete`}</small>
-              {course.certificate && <Link className="training-button training-button--quiet" to={`/verify/${encodeURIComponent(course.certificate.certificateId)}`}>View certificate</Link>}
-              {course.completed && !course.certificate && onIssueCertificate && <button type="button" className="training-button training-button--quiet" onClick={() => onIssueCertificate(course.id)}>Get certificate</button>}
               {course.isLocked && course.accessReason === 'paid' && (
                 <Link className="training-button training-button--quiet" to="/profile?tab=account#typearena-pro">
                   Included with Pro

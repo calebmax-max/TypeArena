@@ -393,7 +393,7 @@ export function CertificateVerification() {
 
   return (
     <section className="cert-page">
-      <div className="cert-card cert-verification">
+      <div className="cert-card cert-verification cert-printable">
         <p className="cert-eyebrow">Public verification</p>
         <h1>TypeArena certificate</h1>
         {loading && <p role="status">Checking certificate...</p>}
@@ -434,6 +434,12 @@ export function CertificateVerification() {
             <p className="cert-verification-link">
               Verify this certificate: <Link to={`/verify/${encodeURIComponent(certificate.certificateId)}`}>{window.location.origin}/verify/{certificate.certificateId}</Link>
             </p>
+            <div className="cert-print-actions">
+              <button type="button" className="cert-button" onClick={() => window.print()}>
+                Download as PDF
+              </button>
+              <span>Choose “Save as PDF” in the print window.</span>
+            </div>
           </>
         )}
       </div>

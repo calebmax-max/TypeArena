@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import TypingBox from './TypingBox';
 import PlayKeyboardDeck from './PlayKeyboardDeck';
+import FingerTypingGuide from './FingerTypingGuide';
 import { useTypingSession } from './useTypingSession';
 import { recordAttempt } from './trainingProgress';
 import { startProblemKeyPractice, startTrainingLesson, submitTrainingAttempt } from '../utils/typingApi';
@@ -156,6 +157,7 @@ export default function LessonRunner({ lesson, onLessonPassed }) {
             <span>Use it while learning, hide it when you want no-look practice.</span>
           </div>
           {showKeyboard && <PlayKeyboardDeck phase="racing" normalizeKeyboardKey={(key) => (key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key)} expectedKey={expectedKey} />}
+          {showKeyboard && <FingerTypingGuide expectedKey={expectedKey} />}
           {liveStats && (
             <p className="training-lesson__live-stats" aria-live="polite">
               {Math.round(liveStats.wpm)} WPM · {Math.round(liveStats.accuracy)}% accuracy so far

@@ -87,12 +87,45 @@
 .cert-verification dd { margin: 0; color: #fff; font-weight: 700; text-align: right; }
 .cert-verification-link { margin-top: 1rem; color: rgba(235, 241, 252, 0.72); font-size: 0.85rem; line-height: 1.6; overflow-wrap: anywhere; }
 .cert-verification-link a { color: #f6d28b; }
+.cert-print-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem 1rem; margin-top: 1.25rem; }
+.cert-print-actions span { color: rgba(235, 241, 252, 0.6); font-size: .8rem; }
 
 @media (max-width: 600px) {
   .cert-page { padding: 1.5rem 0.75rem; }
   .cert-verification dl > div { flex-direction: column; gap: 0.2rem; }
   .cert-verification dd { text-align: left; }
   .cert-button--secondary { margin: 0.65rem 0 0; }
+}
+
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  body { background: #fff !important; }
+  body * { visibility: hidden !important; }
+  .cert-printable,
+  .cert-printable * { visibility: visible !important; }
+  .cert-printable {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 18mm 24mm;
+    border: 5px solid #c9952e;
+    border-radius: 0;
+    background: #fff;
+    color: #183047;
+    box-shadow: none;
+  }
+  .cert-printable .cert-eyebrow { color: #9b6c18; }
+  .cert-printable h1 { color: #183047; }
+  .cert-printable .cert-validity { background: #e7f6ed; color: #17633c; }
+  .cert-printable dl > div { border-color: #d8dee5; }
+  .cert-printable dt { color: #5d6b79; }
+  .cert-printable dd { color: #183047; }
+  .cert-printable .cert-muted,
+  .cert-printable .cert-verification-link { color: #536271; }
+  .cert-printable .cert-verification-link a { color: #8a5f12; }
+  .cert-print-actions { display: none; }
 }
 
 .cert-preview-shell { max-width: 980px; }

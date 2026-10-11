@@ -449,6 +449,9 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             user = get_user(conn)
             if not user:
                 return jsonify({'message': 'Sign in to receive a course certificate.'}), 401
+            return jsonify({
+                'message': 'Stage certificates are no longer issued. Complete the full training course and pass the certification assessment to receive your certificate.'
+            }), 410
             with conn.cursor() as cur:
                 ensure_tables(cur)
                 cur.execute('SELECT id,title,is_archived FROM training_courses WHERE id=%s', (course_id,))

@@ -4,7 +4,7 @@ import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
 import PlacementTest from './PlacementTest';
-import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress, issueTrainingCourseCertificate } from '../utils/typingApi';
+import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress } from '../utils/typingApi';
 import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
   loadProgress,
@@ -26,7 +26,6 @@ export default function TrainingPage() {
   const [justCertified, setJustCertified] = useState(false);
   const [showPlacement, setShowPlacement] = useState(false);
   const [stageComplete, setStageComplete] = useState(null);
-  const [certificateError, setCertificateError] = useState('');
   const [activeTrainingTab, setActiveTrainingTab] = useState('overview');
 
   const lessons = useMemo(() => flattenLessons(courses), [courses]);
@@ -59,18 +58,6 @@ export default function TrainingPage() {
 
   function refreshProgress() {
     setProgress(loadProgress());
-  }
-
-  async function handleIssueCertificate(courseId) {
-    setCertificateError('');
-    try {
-      const certificate = await issueTrainingCourseCertificate(courseId);
-      setCourses((current) => current.map((course) => (
-        String(course.id) === String(courseId) ? { ...course, certificate } : course
-      )));
-    } catch (issueError) {
-      setCertificateError(issueError.message || 'Could not issue the course certificate.');
-    }
   }
 
   function handleSelectLesson(lessonId) {
@@ -180,7 +167,6 @@ export default function TrainingPage() {
       {activeTrainingTab === 'overview' ? (
         <>
       <div className="training-page__course-header">
-        {certificateError && <div className="training-state-card training-state-card--error" role="alert"><p>{certificateError}</p></div>}
         <CourseDashboard
           progress={progress}
           courses={courses}
@@ -189,14 +175,12 @@ export default function TrainingPage() {
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
           onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); setShowLessonList(false); setActiveTrainingTab('lessons'); }}
           onPlacement={() => { setJustCertified(false); setShowPlacement(true); }}
-          onIssueCertificate={handleIssueCertificate}
         />
       </div>
         </>
       ) : null}
       {activeTrainingTab === 'stages' ? (
         <div className="training-page__course-header">
-          {certificateError && <div className="training-state-card training-state-card--error" role="alert"><p>{certificateError}</p></div>}
           <CourseDashboard progress={progress} courses={courses} lessons={lessons} stagesOnly />
         </div>
       ) : null}
@@ -227,12 +211,14 @@ export default function TrainingPage() {
             {stageComplete.locked && <button type="button" className="training-button training-button--quiet" onClick={() => setStageComplete(null)}>View pathway</button>}
           </div>
         ) : justCertified ? (
-          <div className="training-certified">
-            <h2>Training complete</h2>
+          <div className="training-certified training-completion-summary">
+            <span className="training-eyebrow">Beginner Typing complete</span>
+            <h2>Every lesson is complete</h2>
             <p>
-              You cleared every lesson in the curriculum, finishing with{' '}
+              You passed all {lessons.length} lessons, finishing with{' '}
               {activeLesson?.title || 'the final lesson'}.
             </p>
+            <p className="training-completion-summary__note">Your certificate is not issued for individual stages. Pass the final certification exam to receive the official certificate.</p>
             <button
               type="button"
               className="training-button"
