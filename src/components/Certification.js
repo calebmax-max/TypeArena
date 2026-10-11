@@ -6,7 +6,14 @@ import {
   submitCertification,
   verifyCertificate,
 } from '../utils/typingApi';
-import { createBlurTracker, createKeystrokeLogger, diffAppendedChars } from '../utils/typingEngine';
+import {
+  calculateAccuracy,
+  calculateOfficialWPM,
+  countUncorrectedErrors,
+  createBlurTracker,
+  createKeystrokeLogger,
+  diffAppendedChars,
+} from '../utils/typingEngine';
 import '../styles/Certification.css';
 
 const CERTIFICATION_SESSION_KEY = 'typearena_certification_attempt';
@@ -202,6 +209,23 @@ export function CertificationTest() {
 
   const handleBlockedClipboardAction = (event) => event.preventDefault();
 
+  const elapsedSeconds = challenge
+    ? Math.max(0, Number(challenge.durationSeconds || 180) - secondsRemaining)
+    : 0;
+  const liveWpm = challenge && typedText
+    ? calculateOfficialWPM(challenge.passage, typedText, elapsedSeconds)
+    : 0;
+  const liveAccuracy = challenge && typedText
+    ? calculateAccuracy(challenge.passage, typedText)
+    : 0;
+  const liveErrors = challenge && typedText
+    ? countUncorrectedErrors(challenge.passage, typedText)
+    : 0;
+  const lastTypedIndex = typedText.length - 1;
+  const lastCharacterIncorrect = Boolean(
+    challenge && lastTypedIndex >= 0 && typedText[lastTypedIndex] !== challenge.passage[lastTypedIndex]
+  );
+
   if (!user?.id) {
     return (
       <section className="cert-page">
@@ -248,6 +272,8 @@ export function CertificationTest() {
             <div className="cert-test__status">
               <strong aria-live="polite">{formatDuration(secondsRemaining)}</strong>
               <span>{typedText.length} characters typed</span>
+              <span>{liveWpm.toFixed(1)} WPM</span>
+              <span>{liveAccuracy.toFixed(1)}% accuracy</span>
             </div>
             <div className="cert-passage" aria-label="Fixed certification passage" onCopy={handleBlockedClipboardAction}>
               {challenge.passage}
@@ -271,8 +297,14 @@ export function CertificationTest() {
               rows={8}
               aria-describedby="certification-test-note"
             />
+            <div className="cert-live-feedback" aria-live="polite">
+              <span>{liveErrors} error{liveErrors === 1 ? '' : 's'} so far</span>
+              <span className={lastCharacterIncorrect ? 'cert-live-feedback__error' : 'cert-live-feedback__ok'}>
+                {lastTypedIndex < 0 ? 'Start typing when ready' : lastCharacterIncorrect ? 'Last character does not match' : 'Last character matches'}
+              </span>
+            </div>
             <p id="certification-test-note" className="cert-muted">
-              The test submits automatically when the timer ends. Keep this page open until then.
+              Live WPM and accuracy are estimates. The server calculates the official result when the timer ends. Keep this page open until then.
             </p>
           </div>
         )}
