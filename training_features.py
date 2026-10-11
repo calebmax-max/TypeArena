@@ -133,6 +133,24 @@ def _validate_keystroke_log(log, typed_text: str, started_at: float, duration_se
 def register_training_routes(app, *, get_connection, return_connection, get_user, is_admin=None):
     schema_ready = False
 
+    def has_paid_training_access(cur, user):
+        if not user:
+            return False
+        if bool(user.get('is_admin') or user.get('isAdmin')):
+            return True
+        account_plan = str(user.get('account_plan') or user.get('accountPlan') or 'free').lower()
+        if account_plan in {'school', 'sponsored'}:
+            return True
+        cur.execute(
+            '''SELECT 1 FROM subscriptions
+               WHERE user_id=%s AND plan_key IN ('pro', 'pro_monthly', 'pro_annual')
+                 AND status='active' AND starts_at<=UTC_TIMESTAMP()
+                 AND expires_at>UTC_TIMESTAMP()
+               LIMIT 1''',
+            (user['id'],),
+        )
+        return bool(cur.fetchone())
+
     def ensure_tables(cur):
         nonlocal schema_ready
         if schema_ready:
@@ -180,8 +198,10 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             if existing_stage:
                 previous_id = existing_stage['id']
                 continue
+            # Pro owns the advanced training pathway. Keep course prices at
+            # zero so the curriculum does not compete with subscription checkout.
             is_pro = int(stage_number >= 8)
-            price = 500 if stage_number == 8 else 750 if stage_number == 9 else 1000 if stage_number == 10 else 0
+            price = 0
             cur.execute('INSERT INTO training_courses (slug,title,description,is_pro,price,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (slug, f'Stage {stage_number}: {title}', focus, is_pro, price, previous_id, stage_number, focus, gate_wpm, gate_accuracy))
             stage_id = cur.lastrowid
             for order_number, (lesson_title, content, wpm, accuracy, lesson_type) in enumerate(lessons, 1):
@@ -189,7 +209,10 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
             previous_id = stage_id
         seed_titles = {item[0] for item in SEED_LESSONS}
         seed_titles.update(lesson[0] for stage in STAGE_SEEDS for lesson in stage[5])
-        cur.execute("UPDATE training_courses SET is_pro=1,price=CASE stage_number WHEN 8 THEN 500 WHEN 9 THEN 750 WHEN 10 THEN 1000 ELSE price END WHERE stage_number IN (8,9,10) AND price=0")
+        # Beginning-phase pricing: stages 1-7 are free; stages 8-10 are
+        # included in an active Pro subscription. Existing course purchase
+        # records remain valid for users who bought access under the old model.
+        cur.execute("UPDATE training_courses SET is_pro=CASE WHEN stage_number >= 8 THEN 1 ELSE 0 END, price=0 WHERE stage_number IS NOT NULL")
         cur.execute('SELECT id,title,content FROM training_lessons WHERE CHAR_LENGTH(content) < 150')
         for short_lesson in cur.fetchall():
             if short_lesson.get('title') in seed_titles:
@@ -235,7 +258,24 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 ensure_tables(cur)
                 current_user = get_user(conn)
                 account_plan = str((current_user or {}).get('account_plan') or (current_user or {}).get('accountPlan') or 'free').lower()
-                has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool((current_user or {}).get('is_admin') or (current_user or {}).get('isAdmin'))
+                has_active_pro = False
+                if current_user:
+                    # The cached user snapshot is display data only. Paid
+                    # training access must come from the current subscription.
+                    cur.execute(
+                        '''SELECT 1 FROM subscriptions
+                           WHERE user_id=%s AND plan_key IN ('pro', 'pro_monthly', 'pro_annual')
+                             AND status='active' AND starts_at<=UTC_TIMESTAMP()
+                             AND expires_at>UTC_TIMESTAMP()
+                           LIMIT 1''',
+                        (current_user['id'],),
+                    )
+                    has_active_pro = bool(cur.fetchone())
+                has_paid_access = (
+                    has_active_pro
+                    or account_plan in {'school', 'sponsored'}
+                    or bool((current_user or {}).get('is_admin') or (current_user or {}).get('isAdmin'))
+                )
                 cur.execute('SELECT id,slug,title,description,is_pro,price,prerequisite_course_id,stage_number,stage_focus,gate_wpm,gate_accuracy,skill_level,target_skill,expected_duration,practical_outcome,assessment_requirements,certificate_outcome,job_relevance FROM training_courses WHERE is_archived=0 ORDER BY COALESCE(stage_number,99),id')
                 courses = cur.fetchall()
                 purchased_courses = set()
@@ -353,18 +393,9 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 cur.execute("SELECT id FROM course_purchases WHERE user_id=%s AND course_id=%s AND status='completed' LIMIT 1", (user['id'], course_id))
                 if cur.fetchone():
                     return jsonify({'message': 'You already own this course.', 'purchased': True})
-                amount = max(0.0, float(course.get('price') or 0))
                 if not course.get('is_pro'):
                     return jsonify({'message': 'This course is available without purchase.'}), 400
-                cur.execute('SELECT balance FROM users WHERE id=%s FOR UPDATE', (user['id'],))
-                wallet = cur.fetchone() or {}
-                balance = float(wallet.get('balance') or 0)
-                if balance < amount:
-                    return jsonify({'message': f'Insufficient wallet balance. Add KES {amount - balance:.2f} using M-Pesa top-up, then try again.'}), 400
-                cur.execute('UPDATE users SET balance=balance-%s WHERE id=%s', (amount, user['id']))
-                cur.execute("INSERT INTO course_purchases (user_id,course_id,amount,method,status) VALUES (%s,%s,%s,'wallet','completed')", (user['id'], course_id, amount))
-                conn.commit()
-                return jsonify({'purchased': True, 'courseId': course_id, 'amount': amount, 'balance': balance - amount})
+                return jsonify({'message': 'Paid training courses are included with an active Pro subscription. Choose Pro from your account.'}), 410
         except Exception:
             conn.rollback()
             raise
@@ -515,8 +546,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                 lesson = cur.fetchone()
                 if not lesson:
                     return jsonify({'message': 'Unknown training lesson.'}), 404
-                account_plan = str(user.get('account_plan') or user.get('accountPlan') or 'free').lower()
-                has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool(user.get('is_admin') or user.get('isAdmin'))
+                has_paid_access = has_paid_training_access(cur, user)
                 cur.execute("SELECT 1 FROM course_purchases WHERE user_id=%s AND course_id=%s AND status='completed' LIMIT 1", (user['id'], lesson['course_id']))
                 has_course_purchase = bool(cur.fetchone())
                 if lesson.get('is_pro') and not (has_paid_access or has_course_purchase):
@@ -591,8 +621,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                     access = access_cur.fetchone() or {}
                     access_cur.execute("SELECT 1 FROM course_purchases WHERE user_id=%s AND course_id=%s AND status='completed' LIMIT 1", (user['id'], access.get('course_id')))
                     has_course_purchase = bool(access_cur.fetchone())
-                    account_plan = str(user.get('account_plan') or user.get('accountPlan') or 'free').lower()
-                    has_paid_access = account_plan in {'pro', 'premium', 'paid', 'school', 'sponsored'} or bool(user.get('is_admin') or user.get('isAdmin'))
+                    has_paid_access = has_paid_training_access(access_cur, user)
                     if access.get('is_pro') and not (has_paid_access or has_course_purchase):
                         return jsonify({'message': 'This course requires paid or sponsored access.'}), 403
                     if access.get('prerequisite_course_id'):

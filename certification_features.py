@@ -112,10 +112,12 @@ def ensure_certification_schema(cur) -> None:
             issued_at DATETIME NULL,
             reviewed_at DATETIME NULL,
             reviewed_by VARCHAR(120) NULL,
+            subscription_id BIGINT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             KEY idx_certification_user_created (user_id, created_at),
             KEY idx_certification_review_queue (status, created_at),
+            KEY idx_certification_subscription (subscription_id),
             CONSTRAINT fk_certification_attempts_user
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -126,6 +128,12 @@ def ensure_certification_schema(cur) -> None:
         cur.execute(
             "ALTER TABLE certification_attempts ADD COLUMN target_text MEDIUMTEXT NULL AFTER status"
         )
+    cur.execute("SHOW COLUMNS FROM certification_attempts LIKE 'subscription_id'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE certification_attempts ADD COLUMN subscription_id BIGINT NULL AFTER user_id")
+    cur.execute("SHOW INDEX FROM certification_attempts WHERE Key_name='idx_certification_subscription'")
+    if not cur.fetchone():
+        cur.execute("CREATE INDEX idx_certification_subscription ON certification_attempts (subscription_id)")
     cur.execute(
         '''
         UPDATE certification_attempts
@@ -156,6 +164,48 @@ def register_certification_routes(
             if not user:
                 return jsonify({'message': 'Sign in to start a certification test.'}), 401
             with conn.cursor() as cur:
+                active_subscription_id = None
+                if not is_admin_email(str(user.get('email') or '')):
+                    cur.execute(
+                        '''SELECT id FROM subscriptions
+                           WHERE user_id=%s AND plan_key IN ('pro', 'pro_monthly', 'pro_annual')
+                             AND status='active' AND starts_at<=UTC_TIMESTAMP()
+                             AND expires_at>UTC_TIMESTAMP()
+                           ORDER BY expires_at DESC, id DESC LIMIT 1''',
+                        (user['id'],),
+                    )
+                    active_subscription = cur.fetchone()
+                    if not active_subscription:
+                        return jsonify({'message': 'Certification is included with an active Pro subscription. Choose Pro from your account.'}), 403
+                    active_subscription_id = active_subscription['id']
+                    cur.execute(
+                        'SELECT id FROM certification_attempts WHERE user_id=%s AND subscription_id=%s LIMIT 1',
+                        (user['id'], active_subscription_id),
+                    )
+                    if cur.fetchone():
+                        return jsonify({'message': 'Your included certification attempt has already been used. Additional attempts are not available yet.'}), 409
+
+                    # Certification is the final proof step, not a shortcut
+                    # around the learning pathway. Require every published
+                    # training lesson to have a recorded server-side pass.
+                    cur.execute(
+                        '''SELECT COUNT(l.id) AS lesson_count,
+                                  COUNT(DISTINCT CASE WHEN a.passed=1 THEN l.id END) AS passed_count
+                           FROM training_lessons l
+                           JOIN training_courses c ON c.id=l.course_id AND c.is_archived=0
+                           LEFT JOIN training_attempts a
+                             ON a.user_id=%s AND a.lesson_id=CAST(l.id AS CHAR) AND a.passed=1
+                           WHERE l.is_archived=0''',
+                        (user['id'],),
+                    )
+                    completion = cur.fetchone() or {}
+                    lesson_count = int(completion.get('lesson_count') or 0)
+                    passed_count = int(completion.get('passed_count') or 0)
+                    if lesson_count == 0:
+                        return jsonify({'message': 'The training pathway is not ready for certification yet.'}), 503
+                    if passed_count < lesson_count:
+                        return jsonify({'message': 'Complete every training lesson before starting certification.', 'remainingLessons': lesson_count - passed_count}), 403
+
                 cur.execute(
                     "SELECT passage FROM certification_settings WHERE setting_key='typing_test_passage'"
                 )
@@ -197,10 +247,10 @@ def register_certification_routes(
                 cur.execute(
                     '''
                     INSERT INTO certification_attempts
-                        (attempt_code, user_id, status, target_text, race_token_hash, started_at)
-                    VALUES (%s, %s, 'in_progress', %s, %s, UTC_TIMESTAMP())
+                        (attempt_code, user_id, status, target_text, race_token_hash, subscription_id, started_at)
+                    VALUES (%s, %s, 'in_progress', %s, %s, %s, UTC_TIMESTAMP())
                     ''',
-                    (attempt_code, user['id'], passage, token_hash),
+                    (attempt_code, user['id'], passage, token_hash, active_subscription_id),
                 )
             conn.commit()
             return jsonify({

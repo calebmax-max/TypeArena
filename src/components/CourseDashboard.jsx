@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { getCourseSummary, isLessonPassed } from './trainingProgress';
 
-export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement, onPurchase }) {
+export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement }) {
   const summary = getCourseSummary(progress, lessons);
   const coursePathway = courses.map((course, index) => {
     const courseLessons = course.lessons || [];
@@ -77,9 +77,9 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
               </div>
               <small>{course.isLocked ? 'Unlock after the previous stage' : `${course.passed}/${course.total} lessons complete`}</small>
               {course.isLocked && course.accessReason === 'paid' && (
-                <button type="button" className="training-button training-button--quiet" onClick={() => onPurchase?.(course)}>
-                  Unlock for KES {Number(course.price || 0).toLocaleString()}
-                </button>
+                <Link className="training-button training-button--quiet" to="/profile?tab=account#typearena-pro">
+                  Included with Pro
+                </Link>
               )}
             </div>
           ))}

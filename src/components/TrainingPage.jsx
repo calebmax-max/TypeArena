@@ -4,7 +4,7 @@ import CurriculumMap from './CurriculumMap';
 import LessonRunner from './LessonRunner';
 import CourseDashboard from './CourseDashboard';
 import PlacementTest from './PlacementTest';
-import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress, purchaseTrainingCourse } from '../utils/typingApi';
+import { fetchTrainingCourses, fetchTrainingProblemKeys, fetchTrainingProgress } from '../utils/typingApi';
 import { flattenLessons, getLessonById, getNextLessonId, normalizeCourseResponse } from './trainingContent';
 import {
   loadProgress,
@@ -26,8 +26,6 @@ export default function TrainingPage() {
   const [justCertified, setJustCertified] = useState(false);
   const [showPlacement, setShowPlacement] = useState(false);
   const [stageComplete, setStageComplete] = useState(null);
-  const [purchaseError, setPurchaseError] = useState('');
-  const [purchasingCourseId, setPurchasingCourseId] = useState(null);
 
   const lessons = useMemo(() => flattenLessons(courses), [courses]);
 
@@ -115,21 +113,6 @@ export default function TrainingPage() {
   }
 
 
-  async function handlePurchase(course) {
-    setPurchaseError('');
-    setPurchasingCourseId(course.id);
-    try {
-      await purchaseTrainingCourse(course.id);
-      const [payload, progressPayload] = await Promise.all([fetchTrainingCourses(), fetchTrainingProgress()]);
-      setCourses(normalizeCourseResponse(payload));
-      setProgress(applyServerProgress(progressPayload));
-    } catch (purchaseFailure) {
-      setPurchaseError(purchaseFailure.message || 'Could not unlock this course.');
-    } finally {
-      setPurchasingCourseId(null);
-    }
-  }
-
   if (loading) return <div className="training-page training-page--loading" role="status" aria-live="polite"><div className="training-loading-card"><span className="training-eyebrow">Your learning pathway</span><h1>Loading courses</h1><p>Preparing your lessons and progress...</p><span className="training-loading-card__bar" aria-hidden="true" /></div></div>;
   if (error) return (
     <div className="training-page">
@@ -169,7 +152,6 @@ export default function TrainingPage() {
   return (
     <div className="training-page training-page--curriculum">
       <div className="training-page__course-header">
-        {purchaseError && <p className="training-lesson__error" role="alert">{purchaseError}</p>}
         <CourseDashboard
           progress={progress}
           courses={courses}
@@ -178,7 +160,6 @@ export default function TrainingPage() {
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
           onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); setShowLessonList(false); }}
           onPlacement={() => { setJustCertified(false); setShowPlacement(true); }}
-          onPurchase={purchasingCourseId ? undefined : handlePurchase}
         />
       </div>
       {showLessonList && <aside className="training-page__sidebar">
