@@ -20,7 +20,7 @@ import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
 
-import CertificationTest, { CertificateVerification } from './components/Certification';
+import CertificationTest, { CertificateRealPreview, CertificateVerification } from './components/Certification';
 import { CandidateHiringTest } from './components/Hiring';
 const Profile = React.lazy(() => import('./components/TypeProfile'));
 const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
@@ -269,6 +269,7 @@ function AppLayout() {
           <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
           <Route path="/test/:publicCode" element={<CandidateHiringTest currentUser={currentUser} />} />
           <Route path="/certification" element={<CertificationTest />} />
+          <Route path="/certificate-preview" element={<CertificateRealPreview />} />
           <Route path="/verify/:certificateId" element={<CertificateVerification />} />
           <Route path="/passport/:shareCode" element={<SkillsPassport />} />
           <Route path="/admin" element={<AdminPanel />} />

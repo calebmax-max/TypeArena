@@ -10975,6 +10975,15 @@ def _log_big_responses(resp):  # TEMPORARY (A6): remove after a day of data
             app.logger.warning('BIGRESP %s %s bytes=%s', request.method, request.path, size)
     except Exception:
         pass
+    # Keep local development requests usable even when Flask-CORS does not
+    # attach a header to a lightweight or preflight response.
+    origin = request.headers.get('Origin')
+    if origin and (origin in ALLOWED_ORIGINS or '*' in ALLOWED_ORIGINS):
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Vary'] = 'Origin'
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Admin-Email, X-Admin-Password'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
     return resp
 
 

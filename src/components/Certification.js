@@ -264,6 +264,9 @@ export function CertificationTest() {
             <button type="button" className="cert-button" onClick={beginTest} disabled={phase === 'starting'}>
               {phase === 'starting' ? 'Preparing test...' : 'Start certification'}
             </button>
+            <Link className="cert-button cert-button--secondary" to="/certificate-preview">
+              Preview certificate
+            </Link>
           </div>
         ) : null}
 
@@ -423,6 +426,66 @@ export function CertificateVerification() {
             <p className="cert-muted">{certificate.statement}</p>
           </>
         )}
+      </div>
+    </section>
+  );
+}
+
+export function CertificatePreview() {
+  return (
+    <section className="cert-page">
+      <div className="cert-card cert-verification cert-preview-card">
+        <p className="cert-eyebrow">Certificate preview</p>
+        <h1>TypeArena certificate</h1>
+        <p className="cert-notice">
+          Preview only — this certificate is not issued, valid, or publicly verifiable.
+        </p>
+        <div className="cert-validity cert-validity--preview">Preview</div>
+        <dl>
+          <div><dt>Certificate ID</dt><dd>TA-PREVIEW-0000</dd></div>
+          <div><dt>Learner</dt><dd>Faith Mutheu</dd></div>
+          <div><dt>Typing speed</dt><dd>52 WPM</dd></div>
+          <div><dt>Accuracy</dt><dd>97.4%</dd></div>
+          <div><dt>Issue date</dt><dd>Issued after passing</dd></div>
+        </dl>
+        <p className="cert-muted">
+          Test conditions: three minutes; passing threshold 40 WPM, 95% accuracy,
+          and 600 characters.
+        </p>
+        <p className="cert-muted">
+          This certificate verifies the recorded typing result under TypeArena testing conditions.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+export function CertificateRealPreview() {
+  return (
+    <section className="cert-page">
+      <div className="cert-card cert-preview-shell">
+        <p className="cert-eyebrow">Certificate preview</p>
+        <div className="cert-document cert-document--preview">
+          <div className="cert-document__topline">TypeArena · Verified Skills</div>
+          <div className="cert-document__seal" aria-hidden="true">TA</div>
+          <p className="cert-document__kicker">Certificate of achievement</p>
+          <h1>Typing proficiency</h1>
+          <p className="cert-document__presented">This certificate is proudly presented to</p>
+          <p className="cert-document__name">Faith Mutheu</p>
+          <p className="cert-document__statement">For demonstrating verified typing proficiency under TypeArena assessment conditions.</p>
+          <div className="cert-document__stats">
+            <div><span>Typing speed</span><strong>52 WPM</strong></div>
+            <div><span>Accuracy</span><strong>97.4%</strong></div>
+          </div>
+          <div className="cert-document__footer">
+            <div><span>Certificate ID</span><strong>TA-PREVIEW-0000</strong></div>
+            <div><span>Issue date</span><strong>Issued after passing</strong></div>
+            <div className="cert-document__signature"><span>TypeArena</span><strong>Verified assessment</strong></div>
+          </div>
+          <div className="cert-document__conditions">Three-minute assessment · minimum 40 WPM · 95% accuracy · 600 characters</div>
+          <div className="cert-validity cert-validity--preview">Preview only</div>
+        </div>
+        <p className="cert-muted">This is a visual preview. A real certificate receives a unique ID after you pass the assessment and is publicly verifiable.</p>
       </div>
     </section>
   );
