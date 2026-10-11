@@ -94,7 +94,7 @@ def ensure_foundation_schema(cur, admin_email: str = '') -> None:
             (plan_key, display_name, amount, billing_period_days, is_active)
         VALUES
             ('pro_monthly', 'Pro Monthly', 199.00, 30, 1),
-            ('pro_annual', 'Pro Annual', 1499.00, 365, 1),
+            ('pro_annual', 'Pro Annual', 1499.00, 365, 0),
             ('pro', 'Pro', 199.00, 30, 1)
         '''
     )
@@ -115,7 +115,7 @@ def ensure_foundation_schema(cur, admin_email: str = '') -> None:
         END,
             is_active = CASE plan_key
             WHEN 'pro_monthly' THEN 1
-            WHEN 'pro_annual' THEN 1
+            WHEN 'pro_annual' THEN 0
             WHEN 'pro' THEN 1
             ELSE is_active
         END
@@ -277,7 +277,7 @@ def register_foundation_routes(
                     '''
                     SELECT plan_key, display_name, amount, currency, billing_period_days
                     FROM subscription_plans
-                    WHERE is_active=1 AND amount IS NOT NULL AND billing_period_days IS NOT NULL
+                    WHERE is_active=1 AND plan_key='pro_monthly' AND amount IS NOT NULL AND billing_period_days IS NOT NULL
                     ORDER BY CASE plan_key
                         WHEN 'pro_monthly' THEN 0
                         WHEN 'pro_annual' THEN 1
@@ -385,6 +385,8 @@ def register_foundation_routes(
         if raw_plan is None:
             raw_plan = payload.get('plan_key')
         requested_plan = normalize_subscription_plan_key(raw_plan if raw_plan is not None else 'pro_monthly')
+        if requested_plan == 'pro_annual':
+            return jsonify({'message': 'Annual Pro is no longer available. Choose the monthly Pro plan.'}), 410
         raw_phone = str(payload.get('phoneNumber') or payload.get('phone') or '')
         phone_number = normalize_mpesa_phone(raw_phone)
         if len(phone_number) != 12 or not phone_number.startswith('254'):
@@ -400,7 +402,7 @@ def register_foundation_routes(
             if not user:
                 return jsonify({'message': 'Unauthorized'}), 401
             with conn.cursor() as cur:
-                candidates = [requested_plan, 'pro_monthly', 'pro_annual', 'pro']
+                candidates = [requested_plan, 'pro_monthly']
                 unique_candidates = []
                 seen = set()
                 for candidate in candidates:

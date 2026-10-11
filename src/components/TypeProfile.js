@@ -1042,7 +1042,7 @@ export default function TypeProfile() {
                 {subscriptionPlans.length ? subscriptionPlans.map((plan) => {
                   const isSelected = selectedPlanKey === plan.plan;
                   const isActive = currentUser.accountPlan === plan.plan || (plan.plan === 'pro_monthly' && currentUser.accountPlan === 'pro');
-                  const label = plan.billingPeriodDays >= 365 ? 'Annual' : 'Monthly';
+                  const label = 'Monthly';
                   return (
                     <div key={plan.plan} className={`tp-pro-card ${isSelected ? 'tp-pro-card--selected' : ''} ${isActive ? 'tp-pro-card--active' : ''}`}>
                       <div className="tp-pro-card__topline">{isActive ? 'Current plan' : label}</div>
@@ -1091,7 +1091,7 @@ export default function TypeProfile() {
                   onClick={handleProUpgrade}
                   disabled={proLoading || !subscriptionPlans.length}
                 >
-                  {proLoading ? 'Sending...' : `Checkout ${selectedPlanKey === 'pro_annual' ? 'Annual' : 'Monthly'} Pro`}
+                  {proLoading ? 'Sending...' : 'Checkout Monthly Pro'}
                 </button>
               </div>
               <Notice message={proNotice} type={proNoticeType} />

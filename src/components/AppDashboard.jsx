@@ -6,7 +6,6 @@ import './AppDashboard.css';
 const actions = [
   { href: '/training', icon: '01', title: 'Continue training', text: 'Build speed and accuracy through structured lessons.' },
   { href: '/play', icon: '02', title: 'Practice now', text: 'Start a focused typing session or race.' },
-  { href: '/school', icon: '03', title: 'School mode', text: 'Manage classes, learners, and assignments.' },
 ];
 
 export default function AppDashboard({ currentUser }) {

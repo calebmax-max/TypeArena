@@ -497,6 +497,7 @@ export function CertificateRealPreview() {
           <div className="cert-validity cert-validity--preview">Preview only</div>
         </div>
         <p className="cert-muted">This is a visual preview. A real certificate receives a unique ID after you pass the assessment and is publicly verifiable.</p>
+        <Link className="cert-button cert-button--secondary cert-preview-back" to="/certification">Back to certification</Link>
       </div>
     </section>
   );

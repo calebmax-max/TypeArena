@@ -129,6 +129,7 @@
 .cert-document__signature span { color: #f7d98e; font-family: Georgia, 'Times New Roman', serif; font-size: 1.15rem; font-style: italic; text-transform: none; }
 .cert-document__conditions { margin-top: 1.4rem; color: rgba(239, 248, 242, 0.55); font-size: 0.75rem; }
 .cert-document__link { margin: 1rem auto 0; color: #f6d28b; font-size: 0.75rem; overflow-wrap: anywhere; }
+.cert-preview-back { margin-top: 1.25rem; }
 .cert-document .cert-validity { margin: 1.5rem auto 0; }
 
 @media (max-width: 600px) {
