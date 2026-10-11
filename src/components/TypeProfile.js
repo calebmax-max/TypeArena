@@ -275,7 +275,7 @@ export default function TypeProfile() {
       setShowAuthForm(true);
       setAuthMode('login');
       setAuthNoticeType('info');
-      setAuthNotice('Sign in to continue joining your private room.');
+      setAuthNotice('Sign in to continue to your TypeArena profile.');
     }
     if (params.get('signup') === '1' && !currentUser) {
       setShowAuthForm(true);
@@ -693,7 +693,7 @@ export default function TypeProfile() {
                     <label className="tp-field__label" htmlFor="account-type">What will you use TypeArena for?</label>
                     <select id="account-type" className="tp-input" value={formData.accountType}
                       onChange={(e) => setFormData((c) => ({ ...c, accountType: e.target.value }))}>
-                      <option value="player">Practice, races, and certificates</option>
+                      <option value="player">Practice, training, and certificates</option>
                       <option value="employer">Hiring and candidate assessments</option>
                     </select>
                     <small className="tp-field__hint">School access is added separately when a school invites you.</small>
@@ -831,7 +831,7 @@ export default function TypeProfile() {
 
           {/* Tab bar */}
           <div className="tp-tabs" role="tablist">
-            <Tab id="history" active={activeTab === 'history'} onClick={setActiveTab}>Race History</Tab>
+            <Tab id="history" active={activeTab === 'history'} onClick={setActiveTab}>Practice History</Tab>
             <Tab id="account" active={activeTab === 'account'} onClick={setActiveTab}>Account</Tab>
           </div>
 
@@ -841,7 +841,7 @@ export default function TypeProfile() {
               <p className="tp-panel__help">
                 {simulatedPaymentsEnabled
                   ? 'Test payments enabled - sandbox top-up and withdrawal are available.'
-                  : 'Top up your account, withdraw winnings, and keep your tournament wallet ready.'}
+                  : 'Manage your account balance and transaction history.'}
               </p>
 
               {/* Section switcher */}
@@ -948,7 +948,7 @@ export default function TypeProfile() {
           {activeTab === 'history' && (
             <div className="tp-panel">
               <div className="tp-section-head">
-                <h3>Recent Races</h3>
+                <h3>Recent Practice</h3>
                 <span className="tp-section-head__sub">{raceHistory.length} recorded</span>
               </div>
               <div className="tp-race-list">
@@ -976,7 +976,7 @@ export default function TypeProfile() {
                   );
                 }) : (
                   <div className="tp-empty">
-                    <span>No races yet - enter the arena to build your history.</span>
+                    <span>No practice sessions yet - complete a session to build your history.</span>
                   </div>
                 )}
               </div>
@@ -1055,7 +1055,6 @@ export default function TypeProfile() {
                       <div className="tp-pro-card__period">{Math.round((plan.billingPeriodDays || 30) / 30)} month access</div>
                       <ul className="tp-pro-card__features">
                         <li>No ads</li>
-                        <li>Private rooms</li>
                         <li>Custom race lengths</li>
                         <li>Custom text</li>
                         <li>Advanced analytics</li>

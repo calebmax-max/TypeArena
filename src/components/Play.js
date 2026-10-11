@@ -13,7 +13,6 @@ import {
 import {
   buildHeaders,
   fetchCurrentUser,
-  fetchMediaSettings,
   fetchSchoolAssignment,
   fetchSponsoredEvents,
   getStoredUserSnapshot,
@@ -279,14 +278,6 @@ const SCRIPT = {
   ],
 };
 
-// Pre-load voices (Chrome requires a trigger before voices are populated)
-if (typeof window !== 'undefined' && window.speechSynthesis) {
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.addEventListener('voiceschanged', () => {
-    window.speechSynthesis.getVoices();
-  });
-}
-
 const LOCAL_RACE_TICK_INTERVAL_MS = 1000;
 const THEME_PRESETS = {
   default: {
@@ -549,63 +540,14 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
   const [initialRoomId, setInitialRoomId] = useState('');
   // Ã¯Â¿Â½"?Ã¯Â¿Â½"? new feature state Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?Ã¯Â¿Â½"?
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('typearena_sound') !== 'false');
+  // The commentator feature has been retired. Keep the legacy branches inert
+  // while old cached settings and result data age out naturally.
+  const commentatorEnabled = false;
   // Keep the module-level flag in sync so playSound always knows the current setting
   useEffect(() => { setSoundEnabledGlobal(soundEnabled); }, [soundEnabled]);
-  const [commentatorEnabled, setCommentatorEnabled] = useState(() => localStorage.getItem('typearena_commentator') !== 'false');
-  const [commentatorPhrases, setCommentatorPhrases] = useState({});
   const [mobileTypingSettings, setMobileTypingSettings] = useState(readMobileTypingSettings);
   const [showMobileTypingSetup, setShowMobileTypingSetup] = useState(() => localStorage.getItem(MOBILE_TYPING_SETTINGS_KEY) === null);
 
-  useEffect(() => {
-    let active = true;
-    fetchMediaSettings().then((settings) => {
-      if (settings?.commentatorConfig) {
-        setCommentatorConfig(settings.commentatorConfig);
-      }
-      if (settings?.commentatorPhrases) {
-        setCommentatorPhrases(settings.commentatorPhrases);
-      }
-      if (active && settings?.commentatorEnabled === false) {
-        setCommentatorEnabled(false);
-      }
-    });
-    return () => { active = false; };
-  }, []);
-
-  // React to settings changed in TypeProfile (same tab or another tab)
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === 'typearena_sound') {
-        const next = e.newValue !== 'false';
-        setSoundEnabledGlobal(next); // sync module flag immediately, no render gap
-        setSoundEnabled(next);
-      }
-      if (e.key === 'typearena_commentator')  setCommentatorEnabled(e.newValue !== 'false');
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  // Cancel speech and hard-disable when commentator is toggled off
-  const commentatorScriptRef = useRef(SCRIPT);
-  useEffect(() => {
-    if (!commentatorEnabled) {
-      _commentatorDisabled = true;
-      _commentatorCancelFlag = true;
-      window.speechSynthesis?.cancel();
-      _commentatorBusy = false;
-    } else {
-      _commentatorDisabled = false;
-      _commentatorCancelFlag = false;
-    }
-  }, [commentatorEnabled]);
-  useEffect(() => {
-    commentatorScriptRef.current = {
-      ...SCRIPT,
-      ...(commentatorPhrases || {}),
-    };
-  }, [commentatorPhrases]);
-  const commentatorMilestonesRef = useRef({ m25: false, m50: false, m75: false });
   const [focusLost, setFocusLost] = useState(false);
   const [streak, setStreak] = useState(0);
   const [wpmHistory, setWpmHistory] = useState([]);       // [{t, wpm}] for sparkline
@@ -1415,7 +1357,6 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
       );
     }
 
-    commentatorMilestonesRef.current = { m25: false, m50: false, m75: false };
     if (commentatorEnabled) {
       const _racerName = currentUser?.username || currentUser?.name || null;
       const _raceScript = _racerName
