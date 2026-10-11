@@ -472,10 +472,21 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                     certificate = existing
                 else:
                     certificate_code = f"TR-{secrets.token_hex(6).upper()}"
-                    cur.execute('''INSERT INTO training_certificates
-                        (certificate_code,user_id,player_name,course_id,course_title,total_lessons)
-                        VALUES (%s,%s,%s,%s,%s,%s)''', (certificate_code, user['id'], user.get('username') or user.get('email') or 'TypeArena learner', course_id, course['title'], total_lessons))
-                    certificate = {'certificate_code': certificate_code, 'course_title': course['title'], 'total_lessons': total_lessons, 'player_name': user.get('username') or user.get('email') or 'TypeArena learner', 'issued_at': None}
+                    try:
+                        cur.execute('''INSERT INTO training_certificates
+                            (certificate_code,user_id,player_name,course_id,course_title,total_lessons)
+                            VALUES (%s,%s,%s,%s,%s,%s)''', (certificate_code, user['id'], user.get('username') or user.get('email') or 'TypeArena learner', course_id, course['title'], total_lessons))
+                        certificate = {'certificate_code': certificate_code, 'course_title': course['title'], 'total_lessons': total_lessons, 'player_name': user.get('username') or user.get('email') or 'TypeArena learner', 'issued_at': None}
+                    except Exception as insert_error:
+                        # Two clicks/tabs can request the same certificate at
+                        # once. The unique user/course key makes issuance
+                        # idempotent; return the certificate created by the
+                        # other request instead of leaking a 503.
+                        if '1062' not in str(insert_error):
+                            raise
+                        cur.execute('''SELECT certificate_code,course_title,total_lessons,player_name,issued_at
+                            FROM training_certificates WHERE user_id=%s AND course_id=%s LIMIT 1''', (user['id'], course_id))
+                        certificate = cur.fetchone()
                 conn.commit()
                 return jsonify({
                     'certificateId': certificate['certificate_code'],

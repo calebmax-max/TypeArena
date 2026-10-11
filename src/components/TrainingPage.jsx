@@ -196,6 +196,7 @@ export default function TrainingPage() {
       ) : null}
       {activeTrainingTab === 'stages' ? (
         <div className="training-page__course-header">
+          {certificateError && <div className="training-state-card training-state-card--error" role="alert"><p>{certificateError}</p></div>}
           <CourseDashboard progress={progress} courses={courses} lessons={lessons} stagesOnly />
         </div>
       ) : null}

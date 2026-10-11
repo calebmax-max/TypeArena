@@ -511,9 +511,10 @@ def register_certification_routes(
                 certificate = cur.fetchone()
             if not certificate:
                 try:
-                    cur.execute('''SELECT certificate_code,course_title,total_lessons,player_name,issued_at
-                        FROM training_certificates WHERE certificate_code=%s LIMIT 1''', (normalized_code,))
-                    training_certificate = cur.fetchone()
+                    with conn.cursor() as cur:
+                        cur.execute('''SELECT certificate_code,course_title,total_lessons,player_name,issued_at
+                            FROM training_certificates WHERE certificate_code=%s LIMIT 1''', (normalized_code,))
+                        training_certificate = cur.fetchone()
                 except Exception:
                     training_certificate = None
                 if training_certificate:
@@ -529,9 +530,10 @@ def register_certification_routes(
                         'statement': 'This certificate verifies completion of the assigned TypeArena training course and its recorded lessons.',
                     })
                 try:
-                    cur.execute('''SELECT certificate_code,learner_name,organization_name,class_name,course_title,total_lessons,issued_at
-                        FROM school_certificates WHERE certificate_code=%s AND status='valid' LIMIT 1''', (normalized_code,))
-                    school_certificate = cur.fetchone()
+                    with conn.cursor() as cur:
+                        cur.execute('''SELECT certificate_code,learner_name,organization_name,class_name,course_title,total_lessons,issued_at
+                            FROM school_certificates WHERE certificate_code=%s AND status='valid' LIMIT 1''', (normalized_code,))
+                        school_certificate = cur.fetchone()
                 except Exception:
                     school_certificate = None
                 if not school_certificate:
