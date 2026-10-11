@@ -3,6 +3,7 @@ import { isLessonPassed, isLessonUnlocked } from './trainingProgress';
 
 function lessonStatus(progress, lesson, currentLessonId, lessons) {
   if (lesson.courseLocked) return 'locked';
+  if (lesson.courseBypassPrerequisites) return isLessonPassed(progress, lesson) ? 'passed' : 'unlocked';
   if (isLessonPassed(progress, lesson)) return 'passed';
   if (lesson.id === currentLessonId) return 'current';
   if (isLessonUnlocked(progress, lesson, lessons)) return 'unlocked';

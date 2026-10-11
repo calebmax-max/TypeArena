@@ -7,6 +7,7 @@ export function normalizeCourseResponse(payload) {
     lessons: (Array.isArray(course.lessons) ? course.lessons : []).map((lesson) => ({
       ...lesson,
       courseLocked: Boolean(course.isLocked),
+      courseBypassPrerequisites: Boolean(course.bypassPrerequisites),
       accessReason: course.accessReason || null,
       id: String(lesson.id),
       unitId: String(lesson.course_id || course.id),

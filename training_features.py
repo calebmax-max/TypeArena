@@ -288,6 +288,7 @@ def register_training_routes(app, *, get_connection, return_connection, get_user
                         lessons_by_course.setdefault(int(lesson['course_id']), []).append(lesson)
                 for course in courses:
                     course['lessons'] = lessons_by_course.get(int(course['id']), [])
+                    course['bypassPrerequisites'] = test_account
                     total_lessons = len(course['lessons'])
                     passed_lessons = 0
                     for lesson in course['lessons']:
