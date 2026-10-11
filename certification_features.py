@@ -14,7 +14,9 @@ CERTIFICATION_DURATION_SECONDS = 180
 CERTIFICATION_MIN_WPM = 40.0
 CERTIFICATION_MIN_ACCURACY = 95.0
 CERTIFICATION_MIN_CHARACTERS = 600
-CERTIFICATION_COOLDOWN_DAYS = 30
+CERTIFICATION_RETAKE_COOLDOWN_DAYS = 7
+CERTIFICATION_RETAKE_FEE = 150.0
+CERTIFICATION_STANDALONE_FEE = 300.0
 
 DEFAULT_CERTIFICATION_PASSAGE = (
     'Clear communication depends on careful attention, steady practice, and '
@@ -117,6 +119,8 @@ def ensure_certification_schema(cur) -> None:
             reviewed_at DATETIME NULL,
             reviewed_by VARCHAR(120) NULL,
             subscription_id BIGINT NULL,
+            fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            payment_method VARCHAR(20) NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             KEY idx_certification_user_created (user_id, created_at),
@@ -135,6 +139,12 @@ def ensure_certification_schema(cur) -> None:
     cur.execute("SHOW COLUMNS FROM certification_attempts LIKE 'subscription_id'")
     if not cur.fetchone():
         cur.execute("ALTER TABLE certification_attempts ADD COLUMN subscription_id BIGINT NULL AFTER user_id")
+    cur.execute("SHOW COLUMNS FROM certification_attempts LIKE 'fee_amount'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE certification_attempts ADD COLUMN fee_amount DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER subscription_id")
+    cur.execute("SHOW COLUMNS FROM certification_attempts LIKE 'payment_method'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE certification_attempts ADD COLUMN payment_method VARCHAR(20) NULL AFTER fee_amount")
     cur.execute("SHOW INDEX FROM certification_attempts WHERE Key_name='idx_certification_subscription'")
     if not cur.fetchone():
         cur.execute("CREATE INDEX idx_certification_subscription ON certification_attempts (subscription_id)")
@@ -169,6 +179,8 @@ def register_certification_routes(
                 return jsonify({'message': 'Sign in to start a certification test.'}), 401
             with conn.cursor() as cur:
                 active_subscription_id = None
+                attempt_fee = 0.0
+                payment_method = None
                 if not is_admin_email(str(user.get('email') or '')):
                     cur.execute(
                         '''SELECT id FROM subscriptions
@@ -179,17 +191,53 @@ def register_certification_routes(
                         (user['id'],),
                     )
                     active_subscription = cur.fetchone()
-                    if not active_subscription:
-                        return jsonify({'message': 'Certification is included with an active Pro subscription. Choose Pro from your account.'}), 403
-                    active_subscription_id = active_subscription['id']
+                    if active_subscription:
+                        active_subscription_id = active_subscription['id']
                     cur.execute(
-                        'SELECT id FROM certification_attempts WHERE user_id=%s AND subscription_id=%s LIMIT 1',
-                        (user['id'], active_subscription_id),
+                        '''SELECT id, status, started_at, submitted_at
+                           FROM certification_attempts
+                           WHERE user_id=%s
+                           ORDER BY id DESC LIMIT 1''',
+                        (user['id'],),
                     )
-                    if cur.fetchone():
-                        return jsonify({'message': 'Your included certification attempt has already been used. Additional attempts are not available yet.'}), 409
+                    previous_attempt = cur.fetchone()
+                    if previous_attempt and previous_attempt.get('status') in {'passed', 'review_approved'}:
+                        return jsonify({'message': 'Your certification has already been passed.'}), 409
+                    if previous_attempt and previous_attempt.get('status') == 'in_progress':
+                        return jsonify({'message': 'You already have a certification attempt in progress.'}), 409
+                    if previous_attempt and previous_attempt.get('status') == 'flagged':
+                        return jsonify({'message': 'Your previous certification attempt is still under review.'}), 409
 
-                    if not _is_test_account(user):
+                    if previous_attempt:
+                        retry_base = previous_attempt.get('submitted_at') or previous_attempt.get('started_at')
+                        retry_at = retry_base + timedelta(days=CERTIFICATION_RETAKE_COOLDOWN_DAYS)
+                        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+                        if retry_at > now_utc:
+                            return jsonify({
+                                'message': f'You can retake the assessment after the 7-day cooldown. The retake costs KES {CERTIFICATION_RETAKE_FEE:.0f}.',
+                                'retryAt': retry_at.isoformat(),
+                                'cooldownDays': CERTIFICATION_RETAKE_COOLDOWN_DAYS,
+                                'retakeFee': CERTIFICATION_RETAKE_FEE,
+                            }), 429
+                        attempt_fee = CERTIFICATION_RETAKE_FEE
+                        payment_method = 'wallet'
+                    elif not active_subscription:
+                        attempt_fee = CERTIFICATION_STANDALONE_FEE
+                        payment_method = 'wallet'
+
+                    if attempt_fee:
+                        cur.execute('SELECT balance FROM users WHERE id=%s FOR UPDATE', (user['id'],))
+                        wallet = cur.fetchone() or {}
+                        balance = float(wallet.get('balance') or 0)
+                        if balance < attempt_fee:
+                            return jsonify({
+                                'message': f'Add KES {attempt_fee:.0f} to your wallet to start this certification assessment.',
+                                'assessmentFee': attempt_fee,
+                                'balance': balance,
+                            }), 402
+                        cur.execute('UPDATE users SET balance=balance-%s WHERE id=%s', (attempt_fee, user['id']))
+
+                    if active_subscription and not _is_test_account(user):
                         # Certification is the final proof step, not a shortcut
                         # around the learning pathway for normal users. Require
                         # every published training lesson to have a recorded
@@ -222,26 +270,6 @@ def register_certification_routes(
                 cur.execute('SELECT id FROM users WHERE id=%s FOR UPDATE', (user['id'],))
                 if not cur.fetchone():
                     return jsonify({'message': 'Account not found.'}), 404
-                cur.execute(
-                    '''
-                    SELECT started_at
-                    FROM certification_attempts
-                    WHERE user_id=%s AND started_at>DATE_SUB(UTC_TIMESTAMP(), INTERVAL %s DAY)
-                    ORDER BY started_at DESC, id DESC
-                    LIMIT 1
-                    ''',
-                    (user['id'], CERTIFICATION_COOLDOWN_DAYS),
-                )
-                previous_attempt = cur.fetchone()
-                if previous_attempt:
-                    return jsonify({
-                        'message': 'You can start another certification attempt after the 30-day cooldown.',
-                        'retryAt': (previous_attempt['started_at'] + timedelta(
-                            days=CERTIFICATION_COOLDOWN_DAYS
-                        )).isoformat(),
-                        'cooldownDays': CERTIFICATION_COOLDOWN_DAYS,
-                    }), 429
-
                 issued = issue_race_token(
                     user_id=int(user['id']),
                     target_text=passage,
@@ -253,10 +281,10 @@ def register_certification_routes(
                 cur.execute(
                     '''
                     INSERT INTO certification_attempts
-                        (attempt_code, user_id, status, target_text, race_token_hash, subscription_id, started_at)
-                    VALUES (%s, %s, 'in_progress', %s, %s, %s, UTC_TIMESTAMP())
+                        (attempt_code, user_id, status, target_text, race_token_hash, subscription_id, fee_amount, payment_method, started_at)
+                    VALUES (%s, %s, 'in_progress', %s, %s, %s, %s, %s, UTC_TIMESTAMP())
                     ''',
-                    (attempt_code, user['id'], passage, token_hash, active_subscription_id),
+                    (attempt_code, user['id'], passage, token_hash, active_subscription_id, attempt_fee, payment_method),
                 )
             conn.commit()
             return jsonify({
@@ -267,6 +295,8 @@ def register_certification_routes(
                 'minimumWpm': CERTIFICATION_MIN_WPM,
                 'minimumAccuracy': CERTIFICATION_MIN_ACCURACY,
                 'minimumCharacters': CERTIFICATION_MIN_CHARACTERS,
+                'attemptFee': attempt_fee,
+                'paymentMethod': payment_method,
             }), 201
         finally:
             return_connection(conn)
@@ -389,8 +419,10 @@ def register_certification_routes(
                         if status == 'passed'
                         else 'Your attempt is flagged for admin review. No certificate has been issued yet.'
                         if status == 'flagged'
-                        else 'You did not meet the certification requirements. The 30-day attempt cooldown applies.'
+                        else f'You did not meet the certification requirements. You may retake after {CERTIFICATION_RETAKE_COOLDOWN_DAYS} days for KES {CERTIFICATION_RETAKE_FEE:.0f}.'
                     ),
+                    'retakeFee': CERTIFICATION_RETAKE_FEE,
+                    'retakeCooldownDays': CERTIFICATION_RETAKE_COOLDOWN_DAYS,
                 }
                 return jsonify(result), 200
         finally:

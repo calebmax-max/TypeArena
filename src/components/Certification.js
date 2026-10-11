@@ -222,8 +222,9 @@ export function CertificationTest() {
         <h1>Typing speed and accuracy certificate</h1>
         <p className="cert-intro">
           The fixed test lasts three minutes. A passing score requires at least
-          40 WPM, 95% accuracy, and 600 typed characters. Attempts are limited
-          to one every 30 days.
+          40 WPM, 95% accuracy, and 600 typed characters. Your first attempt
+          is included with Pro; non-Pro users can start one for KES 300. After
+          a failed attempt, a retake costs KES 150 after a seven-day cooldown.
         </p>
 
         {error && <p className="cert-notice cert-notice--error" role="alert">{error}</p>}
@@ -307,6 +308,11 @@ export function CertificationTest() {
             )}
             {result.status === 'flagged' && result.antiCheatFlags?.length > 0 && (
               <p className="cert-muted">Review flags: {result.antiCheatFlags.join(', ')}</p>
+            )}
+            {result.status === 'failed' && (
+              <button type="button" className="cert-button" onClick={beginTest}>
+                Retake for KES 150
+              </button>
             )}
           </div>
         )}

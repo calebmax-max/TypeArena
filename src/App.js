@@ -242,10 +242,10 @@ function AppLayout() {
               <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">▦</span><span>Training</span></NavLink>
             </div>
             <div className="arena-nav__section">
-              <span className="arena-nav__section-label">Compete</span>
+              <span className="arena-nav__section-label"></span>
             </div>
             <div className="arena-nav__section">
-              <span className="arena-nav__section-label">Opportunities</span>
+              <span className="arena-nav__section-label"></span>
               <NavLink to="/certification" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">✓</span><span>Get Certified</span></NavLink>
             </div>
             <div className="arena-nav__section arena-nav__section--account">
