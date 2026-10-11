@@ -12,6 +12,12 @@ const FINGER_BY_KEY = {
   ' ': 'thumbs',
 };
 
+const KEY_ROWS = [
+  ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+  ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';'],
+  ['Z', 'X', 'C', 'V', 'B', 'N', 'M', ',', '.', '/'],
+];
+
 function normalizeKey(key) {
   return String(key || '').toLowerCase();
 }
@@ -26,18 +32,28 @@ export default function FingerTypingGuide({ expectedKey }) {
         <strong>{expectedKey === ' ' ? 'Space' : expectedKey || '—'}</strong>
         <span>{activeFinger === 'thumbs' ? 'Use either thumb' : activeFinger ? `Use your ${activeFinger.replace('-', ' ')}` : 'Follow the highlighted key'}</span>
       </div>
-      <div className="training-finger-guide__hands" aria-hidden="true">
-        <div className="training-hand training-hand--left">
-          {['left-pinky', 'left-ring', 'left-middle', 'left-index'].map((finger) => (
-            <span key={finger} className={`training-finger training-finger--${finger}${activeFinger === finger ? ' is-active' : ''}`} />
+      <div className="training-finger-guide__visual" aria-hidden="true">
+        <div className="training-finger-guide__keyboard">
+          {KEY_ROWS.map((row, rowIndex) => (
+            <div className={`training-finger-guide__key-row training-finger-guide__key-row--${rowIndex}`} key={row.join('')}>
+              {row.map((key) => <span className={normalizeKey(expectedKey) === key.toLowerCase() ? 'is-target' : ''} key={key}>{key}</span>)}
+            </div>
           ))}
-          <span className={`training-finger training-finger--left-thumb${activeFinger === 'thumbs' ? ' is-active' : ''}`} />
+          <div className={`training-finger-guide__key-row training-finger-guide__key-row--space${activeFinger === 'thumbs' ? ' is-target' : ''}`}><span>SPACE</span></div>
         </div>
-        <div className="training-hand training-hand--right">
-          <span className={`training-finger training-finger--right-thumb${activeFinger === 'thumbs' ? ' is-active' : ''}`} />
-          {['right-index', 'right-middle', 'right-ring', 'right-pinky'].map((finger) => (
-            <span key={finger} className={`training-finger training-finger--${finger}${activeFinger === finger ? ' is-active' : ''}`} />
-          ))}
+        <div className="training-finger-guide__hands">
+          <div className="training-hand training-hand--left">
+            {['left-pinky', 'left-ring', 'left-middle', 'left-index'].map((finger) => (
+              <span key={finger} className={`training-finger training-finger--${finger}${activeFinger === finger ? ' is-active' : ''}`} />
+            ))}
+            <span className={`training-finger training-finger--left-thumb${activeFinger === 'thumbs' ? ' is-active' : ''}`} />
+          </div>
+          <div className="training-hand training-hand--right">
+            <span className={`training-finger training-finger--right-thumb${activeFinger === 'thumbs' ? ' is-active' : ''}`} />
+            {['right-index', 'right-middle', 'right-ring', 'right-pinky'].map((finger) => (
+              <span key={finger} className={`training-finger training-finger--${finger}${activeFinger === finger ? ' is-active' : ''}`} />
+            ))}
+          </div>
         </div>
       </div>
     </section>

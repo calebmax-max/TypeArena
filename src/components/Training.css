@@ -61,7 +61,14 @@
 .training-finger-guide__copy { display: flex; flex-direction: column; gap: .18rem; min-width: 125px; }
 .training-finger-guide__copy strong { color: var(--tp-forest); font-size: 1.4rem; line-height: 1; }
 .training-finger-guide__copy > span:last-child { color: var(--tp-muted); font-size: .76rem; text-transform: capitalize; }
-.training-finger-guide__hands { display: flex; align-items: flex-end; justify-content: center; gap: 1rem; min-height: 74px; flex: 1; }
+.training-finger-guide__visual { position: relative; width: min(100%, 430px); height: 126px; overflow: hidden; border-radius: 12px; background: linear-gradient(180deg, rgba(227, 240, 230, .42), rgba(255, 255, 255, .9)); }
+.training-finger-guide__keyboard { position: absolute; z-index: 1; top: 9px; left: 50%; width: 92%; transform: translateX(-50%) perspective(360px) rotateX(20deg); padding: 7px 6px 8px; border: 1px solid var(--tp-sage-border); border-radius: 8px; background: #dfe8e1; box-shadow: 0 4px 8px rgba(22, 40, 31, .14); }
+.training-finger-guide__key-row { display: flex; justify-content: center; gap: 3px; margin-bottom: 3px; }
+.training-finger-guide__key-row span { display: grid; place-items: center; width: 24px; height: 15px; border: 1px solid rgba(22, 40, 31, .13); border-radius: 3px; background: #f7faf7; color: var(--tp-muted); font: .5rem ui-monospace, SFMono-Regular, Consolas, monospace; box-shadow: 0 1px 0 rgba(22, 40, 31, .16); }
+.training-finger-guide__key-row span.is-target, .training-finger-guide__key-row--space.is-target span { border-color: #d58a1f; background: #f4bd48; color: #31200a; box-shadow: 0 0 8px rgba(213, 138, 31, .55); }
+.training-finger-guide__key-row--space { margin-top: 2px; }
+.training-finger-guide__key-row--space span { width: 110px; }
+.training-finger-guide__hands { position: absolute; z-index: 2; right: 0; bottom: -21px; left: 0; display: flex; align-items: flex-end; justify-content: center; gap: 1rem; }
 .training-hand { position: relative; display: flex; align-items: flex-end; gap: .2rem; width: 128px; height: 64px; padding: 0 .65rem .2rem; border-radius: 45% 45% 28% 28%; background: linear-gradient(160deg, #f3c89f, #d99568); box-shadow: inset -5px -5px 0 rgba(147, 73, 42, .12), 0 5px 12px rgba(28, 62, 45, .12); }
 .training-hand--left { transform: rotate(5deg); }
 .training-hand--right { transform: rotate(-5deg); }
@@ -666,7 +673,7 @@
   .training-course-outcome__heading { align-items: flex-start; flex-direction: column; }
   .training-course-outcome__grid { grid-template-columns: 1fr; }
   .training-finger-guide { align-items: flex-start; flex-direction: column; }
-  .training-finger-guide__hands { width: 100%; }
+  .training-finger-guide__visual { width: 100%; }
   .training-lesson__objective { align-items: flex-start; flex-direction: column; }
   .training-lesson__objective p { max-width: none; text-align: left; }
   .training-pathway__heading { align-items: flex-start; flex-direction: column; }
