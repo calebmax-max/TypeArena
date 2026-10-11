@@ -46,8 +46,6 @@ jest.mock('./utils/navigationPrefetch', () => ({
   warmNavigation: jest.fn(),
 }));
 jest.mock('./components/Play', () => () => <div>Play Page</div>);
-jest.mock('./components/Tournaments', () => () => <div>Tournaments Page</div>);
-jest.mock('./components/Leaderboard', () => () => <div>Leaderboard Page</div>);
 jest.mock('./components/TypeProfile', () => () => <div>Profile Page</div>);
 jest.mock('./components/AdminPanel', () => () => <div>Admin Page</div>);
 jest.mock('./components/SchoolDashboard', () => () => <div>School Dashboard</div>);
@@ -66,20 +64,24 @@ import { shouldKeepTourVisible, shouldShowOnboardingTour } from './OnboardingTou
 test('renders the current TypeArena navigation and home content', async () => {
   render(<App />);
 
-  await waitFor(() => expect(screen.getByText(/start typing/i)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('link', { name: 'Practice' })).toBeInTheDocument());
   expect(screen.getAllByText(/typearena/i).length).toBeGreaterThan(0);
-  expect(screen.getAllByText(/private friend battles are live now/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/sign in/i).length).toBeGreaterThan(0);
   expect(within(screen.getByRole('navigation', { name: 'Primary navigation' }))
-    .getByRole('link', { name: 'Tournaments' })).toHaveAttribute('href', '/tournaments');
+    .getByRole('link', { name: 'Practice' })).toHaveAttribute('href', '/play');
+  expect(screen.queryByRole('link', { name: 'Skills Lab' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Tournaments' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Leaderboard' })).not.toBeInTheDocument();
+  expect(document.querySelector('.site-marquee')).not.toBeInTheDocument();
 });
 
-test('registers the tournaments page at /tournaments', () => {
+test('registers the practice page at /play and removes competitive routes', () => {
   render(<App />);
 
-  expect(document.querySelector('[data-route-path="/tournaments"]')).toBeInTheDocument();
-  expect(document.querySelector('[data-route-path="/tournaments/:eventId/race"]')).toBeInTheDocument();
-  expect(screen.getByText('Tournaments Page')).toBeInTheDocument();
+  expect(document.querySelector('[data-route-path="/play"]')).toBeInTheDocument();
+  expect(document.querySelector('[data-route-path="/tasks"]')).not.toBeInTheDocument();
+  expect(document.querySelector('[data-route-path="/tournaments"]')).not.toBeInTheDocument();
+  expect(document.querySelector('[data-route-path="/leaderboard"]')).not.toBeInTheDocument();
 });
 
 test('shows onboarding for signed-out visitors on the home page', () => {

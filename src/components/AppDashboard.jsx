@@ -6,8 +6,7 @@ import './AppDashboard.css';
 const actions = [
   { href: '/training', icon: '01', title: 'Continue training', text: 'Build speed and accuracy through structured lessons.' },
   { href: '/play', icon: '02', title: 'Practice now', text: 'Start a focused typing session or race.' },
-  { href: '/tasks', icon: '03', title: 'Open Skills Lab', text: 'Apply your skills to realistic work tasks.' },
-  { href: '/school', icon: '04', title: 'School mode', text: 'Manage classes, learners, and assignments.' },
+  { href: '/school', icon: '03', title: 'School mode', text: 'Manage classes, learners, and assignments.' },
 ];
 
 export default function AppDashboard({ currentUser }) {
@@ -68,7 +67,7 @@ export default function AppDashboard({ currentUser }) {
 
       <section className="app-dashboard__lower-grid">
         <div className="app-dashboard__panel app-dashboard__panel--pathway"><div className="app-dashboard__panel-heading"><div><span className="app-dashboard__eyebrow">Learning pathway</span><h2>{currentCourse?.title || 'Start your typing pathway'}</h2></div><Link to="/training">View all</Link></div><div className="app-dashboard__progress-line"><span style={{ width: `${completion}%` }} /></div><p>{currentLesson ? `Next up: ${currentLesson.title}` : 'Choose Training to begin your first measured lesson.'}</p><Link className="app-dashboard__panel-button" to="/training">Open training</Link></div>
-        <div className="app-dashboard__panel app-dashboard__panel--proof"><span className="app-dashboard__eyebrow">Proof of progress</span><h2>Turn practice into opportunity</h2><p>Complete Skills Lab tasks and verified assessments to build evidence for schools and employers.</p><div className="app-dashboard__proof-links"><Link to="/tasks">Skills Lab <span>→</span></Link><Link to="/certification">Get certified <span>→</span></Link></div></div>
+        <div className="app-dashboard__panel app-dashboard__panel--proof"><span className="app-dashboard__eyebrow">Proof of progress</span><h2>Turn practice into opportunity</h2><p>Complete structured training and verified assessments to build evidence for schools and employers.</p><div className="app-dashboard__proof-links"><Link to="/certification">Get certified <span>→</span></Link></div></div>
       </section>
     </main>
   );

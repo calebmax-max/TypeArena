@@ -60,8 +60,8 @@ import {
 
 const DEFAULT_SITE_MARQUEE_ITEMS = [
   'Product Update',
-  'Private friend battles are live now.',
-  'Wallet top-up, tournaments, and marketplace are active.',
+  'Focused practice, practical skills, and verified progress.',
+  'School mode supports classes, assignments, and learner progress.',
 ];
 const SITE_MARQUEE_CHANGE_EVENT = 'typearena-site-marquee-changed';
 const normalizeTournamentList = (v) => (Array.isArray(v) ? v : []);
@@ -74,8 +74,6 @@ const DEFAULT_LEADERBOARD_TIERS = { bronze: 500, silver: 851, gold: 1500, diamon
 
 const CONTENT_TYPE_TABS = [
   { id: 'practice', label: 'Practice' },
-  { id: 'live', label: '1v1' },
-  { id: 'tournament', label: 'Tournament' },
 ];
 const PRACTICE_MODE_TABS = [
   { id: 'all', label: 'All Modes' },
@@ -91,13 +89,9 @@ const PRACTICE_MODE_TABS = [
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: 'OV' },
   { id: 'wallet', label: 'Wallet', icon: 'W' },
-  { id: 'tournaments', label: 'Tournaments', icon: 'T' },
-  { id: 'sponsoredEvents', label: 'Sponsor Events', icon: 'SE' },
   { id: 'players', label: 'Top Players', icon: 'P' },
-  { id: 'leaderboard', label: 'Leaderboard', icon: 'L' },
   { id: 'content', label: 'Content', icon: 'C' },
   { id: 'training', label: 'Training Courses', icon: 'TR' },
-  { id: 'skillsLab', label: 'Skills Lab', icon: 'SL' },
   { id: 'marketplace', label: 'Marketplace', icon: 'MK' },
   { id: 'ai', label: 'AI Settings', icon: 'AI' },
   { id: 'schools', label: 'Schools', icon: 'S' },
@@ -107,10 +101,7 @@ const NAV_ITEMS = [
 const SECTION_META = {
   overview: ['Overview', 'A clear view of platform health, activity, and financial signals.'],
   wallet: ['Wallet', 'Review balances, transactions, and controlled transfers.'],
-  tournaments: ['Tournaments', 'Create, schedule, and manage competitive events.'],
-  sponsoredEvents: ['Sponsor Events', 'Manage sponsored opportunities and qualifying activity.'],
   players: ['Top Players', 'Review player performance and account activity.'],
-  leaderboard: ['Leaderboard', 'Tune ranking thresholds and public competition settings.'],
   content: ['Content', 'Maintain the passages, announcements, and assessment material.'],
   training: ['Training Courses', 'Build structured learning paths and review learner impact.'],
   skillsLab: ['Skills Lab', 'Create practical tasks and control their automatic verification rules.'],
@@ -284,19 +275,16 @@ export default function AdminPanel() {
   };
 
   const loadAdminData = React.useCallback(async () => {
-    const [analyticsData, tournamentData, aiSettingsData, siteMarqueeData, walletData, contentData, leaderboardData, marketplaceData, schoolsData, schoolBillingData] = await Promise.all([
-      fetchAdminAnalytics(), fetchTournaments(), fetchAdminAiSettings(), fetchAdminSiteMarquee(), fetchAdminWallet(), fetchAdminContent(), fetchAdminLeaderboardSettings(), fetchAdminMarketplace(), fetchAdminSchoolOrganizations(), fetchAdminSchoolBilling(),
+    const [analyticsData, aiSettingsData, walletData, contentData, marketplaceData, schoolsData, schoolBillingData] = await Promise.all([
+      fetchAdminAnalytics(), fetchAdminAiSettings(), fetchAdminWallet(), fetchAdminContent(), fetchAdminMarketplace(), fetchAdminSchoolOrganizations(), fetchAdminSchoolBilling(),
     ]);
     setAnalytics(analyticsData);
-    setTournaments(normalizeTournamentList(tournamentData));
     setAiSettings(normalizeAiSettings(aiSettingsData));
-    setSiteMarqueeText((siteMarqueeData?.items || DEFAULT_SITE_MARQUEE_ITEMS).join('\n'));
     setAdminWallet(walletData);
     setAdminContent(Array.isArray(contentData) ? contentData : []);
     setMarketplaceItems(Array.isArray(marketplaceData?.items) ? marketplaceData.items : []);
     setSchoolOrganizations(Array.isArray(schoolsData?.organizations) ? schoolsData.organizations : []);
     setSchoolPricePerStudent(Number(schoolBillingData?.pricePerStudent) || 100);
-    if (leaderboardData?.tiers) setLeaderboardTiers({ ...DEFAULT_LEADERBOARD_TIERS, ...leaderboardData.tiers });
   }, []);
 
   useEffect(() => {

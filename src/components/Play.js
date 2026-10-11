@@ -790,6 +790,13 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
   }, [currentUser, location.pathname, location.search, navigate, showNotice]);
 
   useEffect(() => {
+    if (practicePage) {
+      setTournamentId('');
+      setInitialRoomId('');
+      setFriendBattle((prev) => ({ ...prev, inviteCode: '' }));
+      autoJoinInviteRef.current = '';
+      return;
+    }
     const params = new URLSearchParams(location.search);
     const inviteCode = (params.get('invite') || '').trim().toUpperCase();
     const nextTournamentId = (params.get('tournamentId') || '').trim();
@@ -817,7 +824,7 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
       'info'
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search]);
+  }, [location.search, practicePage]);
 
   useEffect(() => {
     // Never replace race text while a race is live or in the queued/waiting phase
@@ -954,7 +961,7 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const inviteCode = (params.get('invite') || '').trim().toUpperCase();
-    if (params.get('autoJoin') !== '1' || !inviteCode || !currentUser?.id || liveRoom || loadingLive) {
+    if (practicePage || params.get('autoJoin') !== '1' || !inviteCode || !currentUser?.id || liveRoom || loadingLive) {
       return;
     }
     if (friendBattle.inviteCode !== inviteCode || autoJoinInviteRef.current === inviteCode) {
@@ -962,7 +969,7 @@ export default function Play({ practicePage = false, sponsoredEventMode = false 
     }
     autoJoinInviteRef.current = inviteCode;
     joinFriendBattle();
-  }, [currentUser?.id, friendBattle.inviteCode, joinFriendBattle, loadingLive, liveRoom, location.search]);
+  }, [currentUser?.id, friendBattle.inviteCode, joinFriendBattle, loadingLive, liveRoom, location.search, practicePage]);
 
   const finishRaceRef = useRef(null);
   const finishRace = useCallback(async () => {
@@ -2124,7 +2131,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
 
           {practicePage && (
             <p className="results-challenge">
-              This page is only for solo practice. Use the Play page for live races, friend battles, and private rooms.
+              Build speed and accuracy through focused solo practice.
             </p>
           )}
 

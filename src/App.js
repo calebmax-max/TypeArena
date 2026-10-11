@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Link, NavLink, useLocation, useNavigate }
 import React, { useEffect, useState } from 'react';
 import Home from './components/Home';
 import AppDashboard from './components/AppDashboard';
-import InviteInbox from './components/InviteInbox';
 
 // Inside your layout/App component, pass in currentUser:
 
@@ -13,11 +12,10 @@ import './css/Loader.css';
 
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './styles/TypeArena.css';
-import { fetchSiteMarquee, fetchCurrentUser } from './utils/typingApi';
+import { fetchCurrentUser } from './utils/typingApi';
 import { preloadPlayContent } from './utils/navigationPrefetch';
 import Play from './components/Play';
 import TrainingPage from './components/TrainingPage';
-import Leaderboard from './components/Leaderboard';
 import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
 import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
@@ -29,20 +27,12 @@ const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 const Results = React.lazy(() => import('./components/Results'));
 const SchoolDashboard = React.lazy(() => import('./components/SchoolDashboard'));
 const SkillsPassport = React.lazy(() => import('./components/SkillsPassport'));
-const PracticalTasks = React.lazy(() => import('./components/PracticalTasks'));
-const Tournaments = React.lazy(() => import('./components/Tournaments'));
 
 
 
 
 const USER_STORAGE_KEY = 'typearena_user';
 const USER_CHANGE_EVENT = 'typearena-user-changed';
-const SITE_MARQUEE_CHANGE_EVENT = 'typearena-site-marquee-changed';
-const DEFAULT_SITE_MARQUEE_ITEMS = [
-  'Product Update',
-  'Private friend battles are live now.',
-  'School mode now supports classes, assignments, and learner progress.',
-];
 
 // Network failures and API error responses are expected on flaky connections
 // (DNS drops, HTTP/2 pings failing, a 500 from an overloaded backend). They are
@@ -157,7 +147,6 @@ function AppLayout() {
   // it distinct from null (a confirmed signed-out visitor) so onboarding
   // cannot flash while a returning user's session is being restored.
   const [currentUser, setCurrentUser] = useState(undefined);
-  const [siteMarqueeItems, setSiteMarqueeItems] = useState(DEFAULT_SITE_MARQUEE_ITEMS);
   const [menuOpen, setMenuOpen] = useState(false);
   const [tourActive, setTourActive] = useState(false);
 
@@ -213,29 +202,6 @@ function AppLayout() {
     };
   }, []);
 
-  useEffect(() => {
-    let active = true;
-
-    const loadSiteMarquee = async () => {
-      const data = await fetchSiteMarquee();
-      const items = Array.isArray(data?.items)
-        ? data.items.map((item) => String(item || '').trim()).filter(Boolean)
-        : [];
-
-      if (active && items.length > 0) {
-        setSiteMarqueeItems(items);
-      }
-    };
-
-    loadSiteMarquee();
-    window.addEventListener(SITE_MARQUEE_CHANGE_EVENT, loadSiteMarquee);
-
-    return () => {
-      active = false;
-      window.removeEventListener(SITE_MARQUEE_CHANGE_EVENT, loadSiteMarquee);
-    };
-  }, []);
-
   const preloadPlayPage = () => {
     void preloadPlayContent();
   };
@@ -272,14 +238,11 @@ function AppLayout() {
             <div className="arena-nav__section">
               <span className="arena-nav__section-label">Workspace</span>
               <NavLink to="/" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">⌂</span><span>Dashboard</span></NavLink>
-              <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}><span className="arena-nav__icon" aria-hidden="true">▶</span><span>Play</span></NavLink>
+              <NavLink data-tour="nav-play" to="/play" className={navLinkClassName} onMouseEnter={preloadPlayPage} onFocus={preloadPlayPage} onTouchStart={preloadPlayPage}><span className="arena-nav__icon" aria-hidden="true">▶</span><span>Practice</span></NavLink>
               <NavLink data-tour="nav-training" to="/training" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">▦</span><span>Training</span></NavLink>
-              <NavLink to="/tasks" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">✦</span><span>Skills Lab</span></NavLink>
             </div>
             <div className="arena-nav__section">
               <span className="arena-nav__section-label">Compete</span>
-              <NavLink data-tour="nav-leaderboard" to="/leaderboard" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">◎</span><span>Leaderboard</span></NavLink>
-              <NavLink data-tour="nav-tournaments" to="/tournaments" className={navLinkClassName}><span className="arena-nav__icon" aria-hidden="true">♜</span><span>Tournaments</span></NavLink>
             </div>
             <div className="arena-nav__section">
               <span className="arena-nav__section-label">Opportunities</span>
@@ -298,27 +261,13 @@ function AppLayout() {
         </div>
       </header>}
 
-      {!isAdminRoute && <div className="site-marquee" aria-label="Announcements">
-        <div className="site-marquee__track">
-          {[...siteMarqueeItems, ...siteMarqueeItems].map((item, index) => (
-            <span key={`${item}-${index}`}>{item}</span>
-          ))}
-        </div>
-      </div>}
-
       
       <main className={isAdminRoute ? 'app-main--admin' : undefined}>
-        {!isAdminRoute && <InviteInbox currentUser={currentUser} />}
         <React.Suspense fallback={<div className="arena-route-loading" style={{ minHeight: '35vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--arena-text-muted, #7e8b9b)' }}>Loading...</div>}>
         <Routes>
           <Route path="/" element={currentUser ? <AppDashboard currentUser={currentUser} /> : <Home currentUser={currentUser} />} />
-          <Route path="/play" element={<Play />} />
+          <Route path="/play" element={<Play practicePage />} />
           <Route path="/training" element={<TrainingPage />} />
-          <Route path="/tasks" element={<PracticalTasks />} />
-          <Route path="/practice" element={<Play practicePage />} />
-          <Route path="/leaderboard" element={<Leaderboard />} />
-          <Route path="/tournaments" element={<Tournaments />} />
-          <Route path="/tournaments/:eventId/race" element={<Play practicePage sponsoredEventMode />} />
           <Route path="/school" element={<SchoolDashboard currentUser={currentUser} />} />
           <Route path="/hiring" element={<EmployerHiring currentUser={currentUser} />} />
           <Route path="/test/:publicCode" element={<CandidateHiringTest currentUser={currentUser} />} />
@@ -336,7 +285,7 @@ function AppLayout() {
       {!isAdminRoute && <footer className="arena-footer">
         <div className="arena-footer__inner">
           <div><strong>TypeArena</strong><p>Practical typing and digital skills for learners, schools, and employers.</p></div>
-          <div className="arena-footer__links"><Link to="/play">Play a race</Link><Link to="/tournaments">Tournaments</Link><Link to="/school">School mode</Link><Link to="/leaderboard">Leaderboard</Link><Link to="/profile">Your profile</Link></div>
+          <div className="arena-footer__links"><Link to="/play">Practice typing</Link><Link to="/school">School mode</Link><Link to="/profile">Your profile</Link></div>
         </div>
         <p className="arena-footer__bottom">&copy; 2026 TypeArena. Learn. Prove. Progress.</p>
       </footer>}

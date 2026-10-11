@@ -114,7 +114,7 @@ const features = [
   {
     icon: '📊',
     label: 'Compete when ready',
-    desc: 'Optional live races make practice motivating without replacing the learning pathway.',
+    desc: 'Focused practice makes progress measurable without replacing the learning pathway.',
   },
 ];
 
