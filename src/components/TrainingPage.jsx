@@ -27,6 +27,7 @@ export default function TrainingPage() {
   const [showPlacement, setShowPlacement] = useState(false);
   const [stageComplete, setStageComplete] = useState(null);
   const [certificateError, setCertificateError] = useState('');
+  const [activeTrainingTab, setActiveTrainingTab] = useState('overview');
 
   const lessons = useMemo(() => flattenLessons(courses), [courses]);
 
@@ -77,6 +78,12 @@ export default function TrainingPage() {
     setStageComplete(null);
     setActiveLessonId(lessonId);
     setShowLessonList(false);
+    setActiveTrainingTab('lessons');
+  }
+
+  function openLessons() {
+    setActiveTrainingTab('lessons');
+    setShowLessonList(true);
   }
 
   function handlePlacementComplete(startLessonId) {
@@ -85,6 +92,7 @@ export default function TrainingPage() {
     setJustCertified(false);
     setActiveLessonId(startLessonId);
     setShowLessonList(false);
+    setActiveTrainingTab('lessons');
     refreshProgress();
   }
 
@@ -164,6 +172,13 @@ export default function TrainingPage() {
 
   return (
     <div className="training-page training-page--curriculum">
+      <nav className="training-tabs" aria-label="Training sections">
+        <button type="button" className={activeTrainingTab === 'overview' ? 'is-active' : ''} onClick={() => setActiveTrainingTab('overview')}>Overview</button>
+        <button type="button" className={activeTrainingTab === 'stages' ? 'is-active' : ''} onClick={() => setActiveTrainingTab('stages')}>Stages</button>
+        <button type="button" className={activeTrainingTab === 'lessons' ? 'is-active' : ''} onClick={openLessons}>All lessons <span>{lessons.length}</span></button>
+      </nav>
+      {activeTrainingTab === 'overview' ? (
+        <>
       <div className="training-page__course-header">
         {certificateError && <div className="training-state-card training-state-card--error" role="alert"><p>{certificateError}</p></div>}
         <CourseDashboard
@@ -172,11 +187,20 @@ export default function TrainingPage() {
           lessons={lessons}
           problemKeys={problemKeys}
           onContinue={(lessonId) => lessonId && handleSelectLesson(lessonId)}
-          onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); setShowLessonList(false); }}
+          onProblemPractice={() => { setJustCertified(false); setActiveLessonId('problem-keys'); setShowLessonList(false); setActiveTrainingTab('lessons'); }}
           onPlacement={() => { setJustCertified(false); setShowPlacement(true); }}
           onIssueCertificate={handleIssueCertificate}
         />
       </div>
+        </>
+      ) : null}
+      {activeTrainingTab === 'stages' ? (
+        <div className="training-page__course-header">
+          <CourseDashboard progress={progress} courses={courses} lessons={lessons} stagesOnly />
+        </div>
+      ) : null}
+      {activeTrainingTab === 'lessons' ? (
+        <>
       {showLessonList && <aside className="training-page__sidebar">
         <CurriculumMap
           progress={progress}
@@ -229,6 +253,8 @@ export default function TrainingPage() {
           <p>Select a lesson to begin.</p>
         )}
       </main>
+        </>
+      ) : null}
     </div>
   );
 }

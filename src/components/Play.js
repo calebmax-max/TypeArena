@@ -1842,7 +1842,7 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
   };
 
   return (
-    <div className="play-container">
+    <div className={`play-container${practicePage ? ' play-container--practice' : ''}`}>
       {isSponsoredEvent && (
         <section className="sponsored-race-banner" aria-live="polite">
           <div>
@@ -1868,7 +1868,30 @@ Give exactly 2-3 concrete, personalised drill suggestions. Each drill must name 
       )}
       {phase === 'lobby' && (
         <div className="mode-select">
-          <h1>{isSponsoredEvent ? 'Sponsored Event Race' : practicePage ? 'Practice Arena' : 'Live Typing Arena'}</h1>
+          {practicePage ? (
+            <section className="practice-hero" aria-labelledby="practice-page-title">
+              <div className="practice-hero__copy">
+                <p className="practice-hero__eyebrow">Solo training space</p>
+                <h1 id="practice-page-title">Practice Arena</h1>
+                <p>Build speed, accuracy, and confidence one focused session at a time.</p>
+                <div className="practice-hero__facts">
+                  <span><strong>30–120s</strong> flexible sessions</span>
+                  <span><strong>Live</strong> WPM feedback</span>
+                </div>
+              </div>
+              <div className="practice-hero__art" aria-hidden="true">
+                <div className="practice-hero__glow" />
+                <div className="practice-hero__orbit practice-hero__orbit--one" />
+                <div className="practice-hero__orbit practice-hero__orbit--two" />
+                <div className="practice-hero__keyboard">
+                  <span>Q</span><span>W</span><span>E</span><span>R</span><span>T</span><span>Y</span>
+                  <span>A</span><span>S</span><span>D</span><span>F</span><span>J</span><span>K</span>
+                  <span className="practice-hero__key--active">↵</span>
+                </div>
+                <div className="practice-hero__speed"><strong>42</strong><span>WPM</span></div>
+              </div>
+            </section>
+          ) : <h1>{isSponsoredEvent ? 'Sponsored Event Race' : 'Live Typing Arena'}</h1>}
 
           {assignmentId && (
             <section className="live-board" aria-live="polite" style={{ marginBottom: '1rem' }}>

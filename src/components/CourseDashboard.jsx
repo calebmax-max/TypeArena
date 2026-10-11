@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { getCourseSummary, isLessonPassed } from './trainingProgress';
 
-export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement, onIssueCertificate }) {
+export default function CourseDashboard({ progress, courses = [], lessons, problemKeys = [], onContinue, onProblemPractice, onPlacement, onIssueCertificate, stagesOnly = false }) {
   const summary = getCourseSummary(progress, lessons);
   const coursePathway = courses.map((course, index) => {
     const courseLessons = course.lessons || [];
@@ -20,7 +20,7 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
     || coursePathway[0];
 
   return (
-    <section className="training-course-dashboard" aria-labelledby="beginner-course-title">
+    <section className={`training-course-dashboard${stagesOnly ? ' training-course-dashboard--stages-only' : ''}`} aria-labelledby="beginner-course-title">
       <div className="training-course-dashboard__intro">
         <div>
           <p className="training-eyebrow">Structured course</p>
@@ -30,6 +30,15 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
         <div className="training-course-dashboard__progress" aria-label={`${summary.percentage}% complete`}>
           <strong>{summary.percentage}%</strong>
           <span>{summary.passedLessons}/{summary.totalLessons} lessons</span>
+        </div>
+        <div className="training-course-dashboard__art" aria-hidden="true">
+          <div className="training-course-dashboard__art-glow" />
+          <div className="training-course-dashboard__mini-keyboard">
+            <span>Q</span><span>W</span><span>E</span><span>R</span><span>T</span>
+            <span>A</span><span>S</span><span>D</span><span>F</span><span>J</span>
+            <span className="is-active">✓</span>
+          </div>
+          <span className="training-course-dashboard__art-label">Learn · practise · progress</span>
         </div>
       </div>
       <div className="training-course-dashboard__track" aria-hidden="true">
@@ -58,7 +67,7 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
         </div>
         {summary.completed ? <Link className="training-button" to="/certification">Take assessment</Link> : <span className="training-assessment-callout__status">Keep practising</span>}
       </section>
-      <div className="training-pathway" aria-labelledby="training-pathway-title">
+      {stagesOnly && <div className="training-pathway" aria-labelledby="training-pathway-title">
         <div className="training-pathway__heading">
           <div>
             <p className="training-eyebrow">Your learning pathway</p>
@@ -86,7 +95,7 @@ export default function CourseDashboard({ progress, courses = [], lessons, probl
             </div>
           ))}
         </div>
-      </div>
+      </div>}
       <div className="training-course-dashboard__meta">
         <span><strong>{summary.totalXp}</strong> XP earned</span>
         <span>Pass targets require both speed and accuracy</span>
