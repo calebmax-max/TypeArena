@@ -1067,7 +1067,7 @@ export default function TypeProfile() {
 
               <div id="typearena-pro" className="tp-section-head tp-pro-section-head" style={{ marginTop: '2rem' }}>
                 <h3>TypeArena Pro</h3>
-                <span className="tp-section-head__sub">Unlock the full Pro package</span>
+                <span className="tp-section-head__sub">Server-verified account access</span>
               </div>
               <div className="tp-pro-grid">
                 {subscriptionPlans.length ? subscriptionPlans.map((plan) => {
@@ -1084,12 +1084,9 @@ export default function TypeProfile() {
                       </div>
                       <div className="tp-pro-card__period">{Math.round((plan.billingPeriodDays || 30) / 30)} month access</div>
                       <ul className="tp-pro-card__features">
-                        <li>Ad-free practice and races</li>
-                        <li>Longer and custom race formats</li>
-                        <li>Custom passages for focused practice</li>
-                        <li>Progress and performance analytics</li>
-                        <li>Pro profile badge</li>
-                        <li>One certification attempt included</li>
+                        <li>Active Pro subscription on your account</li>
+                        <li>Certification fee waived after the training pathway is complete</li>
+                        <li>Server-verified access across your signed-in devices</li>
                       </ul>
                       <button
                         className="tp-btn tp-btn--primary tp-btn--full"
@@ -1106,7 +1103,7 @@ export default function TypeProfile() {
                 )}
               </div>
 
-              <p className="tp-pro-access-note">After Daraja verifies your payment, Pro is enabled on your account across devices. You can practise without ads, use the expanded race tools, review deeper analytics, and take the included certification assessment.</p>
+              <p className="tp-pro-access-note">After Daraja verifies your payment, Pro is enabled on your account across signed-in devices. Pro removes the separate certification fee once you complete the required training pathway. Features are unlocked from the server, not from browser storage.</p>
               <div className="tp-pro-checkout">
                 <div className="tp-field tp-field--grow">
                   <label className="tp-field__label">M-Pesa number</label>
