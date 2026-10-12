@@ -17,7 +17,6 @@ import { preloadPlayContent } from './utils/navigationPrefetch';
 import Play from './components/Play';
 import TrainingPage from './components/TrainingPage';
 import { InstallButton, UpdateBanner, OfflineBanner } from './PwaPrompts';
-import OnboardingTour from './OnboardingTour';
 import TermsUpdateGate from './components/TermsUpdateGate';
 
 import CertificationTest, { CertificateRealPreview, CertificateVerification } from './components/Certification';
@@ -148,7 +147,6 @@ function AppLayout() {
   // cannot flash while a returning user's session is being restored.
   const [currentUser, setCurrentUser] = useState(undefined);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [tourActive, setTourActive] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -288,14 +286,8 @@ function AppLayout() {
         <p className="arena-footer__bottom">&copy; 2026 TypeArena. Learn. Prove. Progress.</p>
       </footer>}
 
-      {!isAdminRoute && <OnboardingTour
-          currentUser={currentUser}
-          menuOpen={menuOpen}
-          setMenuOpen={setMenuOpen}
-          onActiveChange={setTourActive}
-        />}
-      {!isAdminRoute && <TermsUpdateGate currentUser={currentUser} suspended={tourActive} />}
-      {!isAdminRoute && <InstallButton forceHidden={tourActive} />}
+      {!isAdminRoute && <TermsUpdateGate currentUser={currentUser} />}
+      {!isAdminRoute && <InstallButton />}
       <UpdateBanner />
     </div>
   );

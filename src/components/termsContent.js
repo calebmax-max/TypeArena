@@ -1,13 +1,13 @@
 /**
  * termsContent.js
  * TypeArena Terms of Service & Policy Pack, as data.
- * Source: TypeArena_Legal_Policies.pdf (effective 10 September 2026).
+ * Product terms and policy pack for the current TypeArena service.
  *
  * Bump TERMS_VERSION whenever you change any wording below, so you can tell
  * which version a user accepted (see the note about recording consent).
  */
 
-export const TERMS_VERSION = '2026-09-10';
+export const TERMS_VERSION = '2026-10-12';
 export const CONTACT_EMAIL = 'typearena45@gmail.com';
 export const CONTACT_PHONE = '0700 384 172';
 
@@ -24,95 +24,54 @@ export const TERMS_DOCS = [
     id: 'terms',
     tab: 'Terms of Service',
     title: 'TypeArena Terms of Service',
-    effective: '10 September 2026',
-    updated: '10 September 2026',
+    effective: '12 October 2026',
+    updated: '12 October 2026',
     intro: [
       p(`These Terms of Service ("Terms") are an agreement between you and TypeArena ("TypeArena", "we", "us"). By creating an account or using TypeArena you agree to these Terms, our Refund & Dispute Policy, our Complaints Policy and our Privacy Policy. If you do not agree, please do not use TypeArena.`),
     ],
     sections: [
       sec('1. What TypeArena is',
-        p(`TypeArena is a multiplayer typing race platform. You can practise for free, race other players, join tournaments, create private rooms (with or without a stake), and buy digital items in the marketplace. Money on TypeArena is held in an in-app wallet.`)),
+        p(`TypeArena is a learning and assessment platform for typing and practical digital skills. The current service lets you practise typing, complete structured training, take server-scored assessments, use certification and Pro services, create an optional Skills Passport, complete hiring assessments, and use school workspaces and assignments where you have access. The features available to you are the ones shown in the app.`)),
 
       sec('2. Who can use TypeArena',
         ul(
-          `You must be 18 or older to create an account, add money to your wallet, or take part in any tournament or staked room.`,
+          `You must be 18 or older to create an account and use TypeArena.`,
           `You must give accurate information at sign-up (username, email, and a phone number that belongs to you) and keep it up to date.`,
           `One person, one account. You may not create or use several accounts, or let someone else use yours.`,
           `You must be legally allowed to use a service like this where you live. It is your responsibility to check.`,
         )),
 
       sec('3. Your account',
-        p(`You are responsible for your password and for everything done through your account. Tell us straight away at typearena45@gmail.com if you think someone else has accessed it. We may suspend or close an account as set out in section 12.`),
+        p(`You are responsible for your password and for everything done through your account. Tell us straight away at typearena45@gmail.com if you think someone else has accessed it. We may suspend or close an account as set out in section 9.`),
         p(`If you report a problem, or if we need to check for cheating, fraud or a technical fault, authorised TypeArena staff may sign in to your account to look into it. Each time this happens we record which account was accessed and when. We only do this for support, security or legal reasons. Signing in this way may sign you out on your own device, so you may need to log in again.`, 'Support access.')),
 
-      sec('4. Your wallet',
-        ol(
-          `Your wallet balance is held in Kenyan Shillings (KES). If you pay in another currency (for example by card), the amount is converted at the rate applied by our payment partner.`,
-          `You can add money by the payment methods shown in the app (for example M-Pesa or card). Money is added to your wallet only after our payment partner confirms the payment.`,
-          `Your wallet is not a bank account. It earns no interest, is not covered by any deposit insurance scheme, and balances cannot be transferred to another user.`,
-          `Money you use for entry fees, stakes and purchases is deducted from your wallet at the time described in sections 5 and 7. When a stake is "locked", it is set aside until the race finishes or is cancelled.`,
-          `Your wallet history in the app shows your top-ups and withdrawals. Please check it and tell us quickly about anything that looks wrong (see the Refund & Dispute Policy).`,
-          `Payments and withdrawals are processed by third-party payment providers. We are not responsible for delays or charges that come from them, but we will help you follow up.`,
+      sec('4. Training, assessments and Skills Passport',
+        ul(
+          `Training progress, lesson passes, assessment results and certificates are recorded from server-side records. The browser cannot create a verified pass, score or certificate by itself.`,
+          `Certification tests use a fixed passage, time limit and integrity checks. We may review typing telemetry, focus changes, paste attempts and other signals. A flagged result is not issued as a certificate unless it is approved through review.`,
+          `A Skills Passport is an optional public link. It may show your display name, verified learning evidence, assessment results and certificates. It does not intentionally show your email, phone number or other private account records. You can revoke the public link.`,
+          `A certificate or Skills Passport records the TypeArena evidence described on the page. It is not a government licence, employment guarantee or general professional qualification.`,
         )),
 
-      sec('5. Racing, tournaments and stakes',
-        p(`Practice races and public one-on-one matchmaking races are free and do not involve prizes or cash.`, '5.1 Free play.'),
-        p(``, '5.2 Tournaments.'),
+      sec('5. TypeArena Pro and payments',
         ul(
-          `Each tournament match has 3 or more players. The number of players and the entry fee are shown before you join.`,
-          `You are charged the entry fee only when the match is full and about to start. You need enough wallet balance at that moment.`,
-          `All entry fees form a prize pool. The pool is shared like this: 1st place 50%, 2nd place 25%, 3rd place 15%, and the platform keeps 10%.`,
-          `In a small match, 2nd and 3rd place can receive less than the entry fee they paid. Example: 3 players each pay KES 100, so the pool is KES 300. First place receives KES 150, second KES 75, third KES 45, and TypeArena keeps KES 30.`,
-        ),
-        p(``, '5.3 Private rooms.'),
-        ul(
-          `The host of a private room may set a stake (it can be zero). Everyone who joins a staked room agrees to pay that stake, and it is locked from their wallet when they join. If you do not want to pay the stake, do not join.`,
-          `Two players (heads-up): the winner receives 95% of the pool and TypeArena keeps 5%. Example: two players each stake KES 100, so the winner receives KES 190 and TypeArena keeps KES 10.`,
-          `Three or more players: the pool is shared the same way as a tournament (50% / 25% / 15%, platform 10%).`,
-          `The host can cancel a room only while it is still waiting for players. If the host cancels, every locked stake is returned in full. Once a race has started it cannot be cancelled.`,
-        ),
-        p(`Results are calculated by our servers, not by your device. Players are ranked by typing speed (words per minute), then by accuracy, then by who finished first. Races have a fixed time limit. If time runs out, or you disconnect, your result is what you had typed up to that moment.`, '5.4 How the winner is decided.'),
-        p(`Prizes are credited to your wallet when the race is settled. You can then withdraw them under section 8.`, '5.5 Prizes.'),
-        p(`Race outcomes depend on typing speed and accuracy. Even so, you can lose money when you enter a paid race. Only stake what you can comfortably afford to lose, and stop if it stops being fun. If you want to limit or close your account for this reason, contact us at typearena45@gmail.com and we will act on your request.`, '5.6 Skill, not chance.')),
+          `Pro is a time-limited subscription. The plan, price, currency and access period are shown before you confirm payment.`,
+          `Pro payment is requested through a Daraja M-Pesa STK Push. Pro is activated only after TypeArena receives and verifies the provider callback, including the checkout, amount and receipt details. Sending an STK Push or entering a phone number does not by itself activate Pro.`,
+          `Pro is linked to your server account and is available on signed-in devices while the subscription is active. It does not create a cash balance in your wallet and does not automatically renew unless the app explicitly says so.`,
+          `Where the app says the certification fee is waived for Pro, the waiver applies only after you have completed any stated training and assessment requirements.`,
+          `Certification, Pro and other digital purchases are subject to the Refund & Dispute Policy and the payment provider's processing rules.`,
+        )),
 
       sec('6. Fair play',
         p(`To keep races fair, we verify each competitive result on our servers. This can include checking the passage shown, the timing of the race, keystroke patterns, whether the window lost focus during the race, and whether the speed is humanly possible.`),
         ul(
           `A result we cannot verify may be rejected and not recorded.`,
           `Results that look suspicious may be flagged for review by our team.`,
-          `If we find cheating (for example scripts, bots, pasted text, automated tools, or teaming up with another player), we may cancel the result, withhold or reverse prizes from that race, suspend or close the account, and keep the evidence.`,
+          `If we find cheating (for example scripts, bots, pasted text or automated tools), we may reject the result, suspend or close the account, and keep the evidence.`,
         ),
-        p(`You can dispute a decision under the Refund & Dispute Policy.`)),
+        p(`You can dispute a decision by contacting us.`)),
 
-      sec('7. Marketplace',
-        ul(
-          `The marketplace sells digital items and perks for use inside TypeArena (for example cosmetics and account perks).`,
-          `Items are paid for from your wallet and delivered immediately. You can own each item only once.`,
-          `Items have no cash value, cannot be sold, gifted or transferred, and are lost if your account is closed for breaking these Terms.`,
-          `Because items are digital and delivered immediately, purchases are final, except as set out in the Refund & Dispute Policy (for example a failed delivery or a duplicate charge).`,
-        )),
-
-      sec('8. Withdrawals',
-        ul(
-          `You can withdraw your available wallet balance using the withdrawal methods shown in the app (for example M-Pesa). Money locked in an unfinished race cannot be withdrawn.`,
-          `Withdrawals must go to an account or phone number that belongs to you.`,
-          `A withdrawal fee applies. It is shown before you confirm, and it is charged on top of the amount you withdraw. For example, if you withdraw KES 1,000 and the fee is KES 30, KES 1,030 leaves your wallet. Fees may change; the fee shown at the time you confirm is the fee that applies.`,
-          `Most withdrawals are quick, but they depend on our payment partners and can take longer. If a withdrawal fails, the full amount and the fee are returned to your wallet.`,
-          `We may ask you to confirm your identity or explain unusual activity before a withdrawal, and we may delay a withdrawal while we investigate suspected fraud, cheating or money laundering. We follow applicable laws on preventing fraud and money laundering.`,
-        )),
-
-      sec('9. Fees at a glance',
-        table(['Activity', 'What applies'], [
-          ['Creating an account, practising, public 1v1 races', 'Free'],
-          ['Adding money to your wallet', 'We add no fee. Your payment provider may charge one.'],
-          ['Tournaments', 'Entry fee shown before you join. Prize pool: 50% / 25% / 15%, platform 10%.'],
-          ['Private room, two players', 'Winner 95%, platform 5% of the pool'],
-          ['Private room, three or more players', 'Same split as tournaments'],
-          ['Marketplace items', 'Price shown in the app'],
-          ['Withdrawals', 'Fee shown before you confirm, charged on top of the amount'],
-        ])),
-
-      sec('10. What you must not do',
+      sec('7. What you must not do',
         ul(
           `Cheat, use bots or scripts, exploit bugs, or interfere with races or other players.`,
           `Create multiple accounts, or use someone else's account or payment details.`,
@@ -122,25 +81,25 @@ export const TERMS_DOCS = [
           `Arrange results with another player ("match fixing").`,
         )),
 
-      sec('11. Your content',
-        p(`You keep ownership of what you post (such as chat messages, usernames and profile images), but you give us a licence to host and display it as needed to run TypeArena. You are responsible for what you post. We may remove content that breaks these Terms. How we handle your personal data is explained in our Privacy Policy.`)),
+      sec('8. Your content',
+        p(`You keep ownership of what you post ( usernames and profile images), but you give us a licence to host and display it as needed to run TypeArena. You are responsible for what you post. We may remove content that breaks these Terms. How we handle your personal data is explained in our Privacy Policy.`)),
 
-      sec('12. Suspending or closing accounts',
-        p(`We may warn, restrict, suspend or close an account if you break these Terms, if we reasonably suspect fraud or cheating, or if the law requires it. You may close your account at any time by contacting us. If your account is closed, we will let you withdraw your remaining available balance, unless the balance is linked to cheating, fraud or a legal or payment-provider investigation, in which case we may hold or reverse it. We will explain our reasons where we lawfully can.`)),
+      sec('9. Suspending or closing accounts',
+        p(`We may warn, restrict, suspend or close an account if you break these Terms, if we reasonably suspect abuse or cheating, or if the law requires it. You may close your account at any time by contacting us. We will explain our reasons where we lawfully can.`)),
 
-      sec('13. Availability and changes to the service',
-        p(`We work hard to keep TypeArena running, but we do not promise it will always be available or error-free. We may change or stop features. If a race or tournament cannot be completed because of a fault on our side, we may cancel it and return the stakes or entry fees.`)),
+      sec('10. Availability',
+        p(`We work hard to keep TypeArena running, but we do not promise it will always be available or error-free. Access may depend on your device, connection, account, school invitation or other eligibility requirements.`)),
 
-      sec('14. Our responsibility to you',
-        p(`We are responsible for money in your wallet and for settling races according to these Terms. To the extent the law allows, we are not responsible for losses caused by things outside our control (for example internet or mobile network outages, or failures of payment providers), or for indirect or unforeseeable losses. Nothing in these Terms limits any right or liability that cannot be limited by law.`)),
+      sec('11. Our responsibility to you',
+        p(`To the extent the law allows, we are not responsible for losses caused by things outside our control, such as internet or mobile network outages, or for indirect or unforeseeable losses. Nothing in these Terms limits any right or liability that cannot be limited by law.`)),
 
-      sec('15. Changes to these Terms',
-        p(`We may update these Terms. If a change is important, we will tell you in the app or by email before it takes effect. If you keep using TypeArena after the change, you accept the new Terms. If you do not agree, you can close your account and withdraw your balance.`)),
+      sec('12. Changes to these Terms',
+        p(`We may update these Terms. If a change is important, we will tell you in the app or by email before it takes effect. If you keep using TypeArena after the change, you accept the new Terms. If you do not agree, you can stop using TypeArena and close your account.`)),
 
-      sec('16. Law and disputes',
+      sec('13. Law and disputes',
         p(`These Terms are governed by the laws of Kenya. Please try our Complaints Policy first. If we cannot resolve a dispute, the courts of Kenya have jurisdiction, and nothing here limits any rights you have as a consumer under Kenyan law.`)),
 
-      sec('17. Contact',
+      sec('14. Contact',
         p(`TypeArena`),
         p(`typearena45@gmail.com`, 'Email:'),
         p(`0700 384 172`, 'Phone / WhatsApp:')),
@@ -159,49 +118,33 @@ export const TERMS_DOCS = [
     sections: [
       sec('1. Quick guide',
         table(['Situation', 'What happens'], [
-          ['Your payment was taken but your wallet was not credited', 'We check with the payment provider and credit your wallet once the payment is confirmed.'],
-          ['You were charged twice for the same top-up or purchase', 'We refund the duplicate to your wallet, or to your original payment method if you ask.'],
-          ['A withdrawal failed', 'The withdrawal amount and fee are returned to your wallet.'],
-          ['A private room is cancelled by the host before the race starts', 'Every stake is returned in full.'],
-          ['A tournament is cancelled by us', 'Every entry fee is returned in full.'],
-          ['A race could not finish because of a fault on our side', 'We cancel the race and return stakes or entry fees, or, where fair, settle it based on the results we have.'],
-          ['You lost a race fairly', 'No refund. Race results are final once verified.'],
-          ['You disconnected or your internet dropped during a race', 'No refund. Your result is what you typed until time ran out.'],
-          ['You changed your mind after a race started', 'No refund. Stakes and entry fees cannot be cancelled once the race has started.'],
-          ['A marketplace item was not delivered, or was charged twice', 'We deliver the item or refund you.'],
-          ['You changed your mind about a marketplace item', 'No refund, because items are digital and delivered immediately.'],
-          ['We removed your result or prize for cheating', 'No refund and the prize is not paid. You may dispute the decision (section 3).'],
+          ['Your Pro or certification payment was taken but access was not activated', 'We check the verified Daraja transaction. We activate the entitlement or resolve/refund the payment according to the provider record.'],
+          ['You were charged twice for Pro or certification', 'We investigate the duplicate payment and resolve or refund it according to the verified provider record.'],
+          ['You believe an assessment or certification decision is wrong', 'You may ask us to review the server record and integrity checks.'],
         ])),
 
-      sec('2. Wallet problems',
-        p(`Some payments take a few minutes to confirm. If your wallet has not been credited after 30 minutes, contact us with:`, 'Top-up not credited.'),
-        ul(
-          `the phone number or card used,`,
-          `the amount and date and time,`,
-          `the M-Pesa message or payment reference (for example the receipt code).`,
-        ),
-        p(`We will verify the payment with our payment partner. If the money reached us, we credit it. If the money left you but did not reach us, we will help you trace it with the payment provider.`),
-        p(`If a withdrawal fails, is rejected or times out, the amount and the fee are returned to your wallet automatically. If you do not see it within 24 hours, contact us.`, 'Failed withdrawal.'),
-        p(`Withdrawals go to the number or account you enter. If you enter the wrong one, we cannot always recover the money, but contact us immediately and we will ask our payment partner to try. Please check the details carefully before you confirm.`, 'Wrong number.')),
+      sec('2. Pro and certification payments',
+        p(`Pro and standalone certification payments use an M-Pesa STK Push. The app may show a pending state while we wait for the Daraja callback. Pro or certification access is not granted merely because the prompt was sent; TypeArena must verify the checkout, amount and receipt.`),
+        p(`If you completed payment and access is still pending after 30 minutes, contact us with the transaction reference, phone number, amount and M-Pesa receipt message. Do not repeat the payment until we have checked the first request.`)),
 
-      sec('3. Disputing a race result or a decision',
-        p(`You can dispute a race result, a prize, a verification decision, or an account suspension.`),
+      sec('3. Disputing an assessment or decision',
+        p(`You can dispute a certification result, a verification decision, or an account suspension.`),
         ol(
-          `Tell us within 7 days of the race or decision. Send: your username, the date and time, the room or tournament name, and what you think went wrong.`,
-          `We review. We look at the race record (speed, accuracy, timing), the verification checks, any anti-cheat flags, and connection and payment logs. We may ask you for more information (for example a screenshot or screen recording).`,
-          `We decide and explain our decision in writing. If we made a mistake, we correct the result and credit your wallet.`,
+          `Tell us within 7 days of the assessment or decision. Send your username, the date and time, what you think went wrong, and any relevant reference.`,
+          `We review the server record, assessment result, verification checks and integrity flags. We may ask for more information.`,
+          `We decide and explain our decision in writing. If we made a mistake, we correct the record or entitlement.`,
           `You can appeal. If you disagree, reply within 7 days and ask for a second review by a different team member, who will look at the case fresh. Their decision is our final decision under this policy.`,
         ),
-        p(`While a dispute is open, we may hold the disputed prize until it is resolved.`)),
+        p(`While a dispute is open, we may temporarily restrict the disputed result or entitlement until it is resolved.`)),
 
       sec('4. How to ask for a refund',
-        p(`Email typearena45@gmail.com (or use the support option in the app) with your username, the phone number or account used, the transaction reference or code, the amount, the date, and a short description of the problem. Screenshots help.`)),
+        p(`Email typearena45@gmail.com with your username, the transaction reference or code if your request concerns a payment, the date, and a short description of the problem. Screenshots help.`)),
 
       sec('5. How long it takes',
         ul(
           `We acknowledge your request within 2 business days.`,
           `We aim to resolve most cases within 7 business days, and complex ones within 14 business days. We will tell you if it will take longer and why.`,
-          `Refunds are normally made to your TypeArena wallet. If you ask for a refund to your original payment method, it is subject to our payment partner's processing time and rules.`,
+          `Where a refund is due, it is handled using the verified payment record and the payment provider's processing rules.`,
         )),
 
       sec('6. Chargebacks and bank disputes',
@@ -231,7 +174,7 @@ export const TERMS_DOCS = [
           `Acknowledge your complaint within 2 business days and give you a reference number.`,
           `Investigate fairly. We will look at the records and, if needed, ask you or the payment provider for more information.`,
           `Respond in writing within 10 business days with what we found, what we will do, and why. If a case is complex, we will tell you within that time and give you a new date, which will not normally be more than 20 business days from your complaint.`,
-          `Fix it. If we got something wrong, we will correct it, and where money is owed we will credit your wallet.`,
+          `Fix it. If we got something wrong, we will correct the record or entitlement and explain any payment resolution.`,
         )),
 
       sec('3. Complaints about other players',
@@ -262,20 +205,21 @@ export const TERMS_DOCS = [
       sec('2. What we collect',
         table(['What', 'Details', 'Why we need it'], [
           ['Account details', 'Username, email address, password (stored in scrambled form, never as plain text), phone number if you give one, and a profile picture if you upload one', 'To create and secure your account, let you sign in, and contact you about your account'],
-          ['Gameplay records', 'Race results (speed, accuracy, time, placing), wins, points, season and leaderboard stats, and any prizes won', 'To run races, rankings and tournaments, and to show your progress'],
+          ['Gameplay records', 'Practice results, speed, accuracy, time and progress records', 'To provide practice and show your progress'],
+          ['Learning and assessment records', 'Course enrolments, lesson attempts and passes, practical-task results, certification attempts, scores, integrity flags and certificates', 'To provide training, assess performance, issue and verify certificates, and protect assessment integrity'],
+          ['Skills Passport records', 'The public share code and the verified learning, assessment and certificate evidence you choose to publish', 'To create, display and revoke your optional public Skills Passport'],
+          ['School records', 'Organisation or class membership, assignments, invitations and learning reports where you join a school programme', 'To operate school features and provide authorised teacher or organisation reporting'],
           ['Fair-play checks', 'Timing and typing patterns during competitive races, whether the window lost focus, and the resulting integrity flags kept with each race record', 'To detect bots, scripts and cheating so races stay fair'],
-          ['Wallet and payment records', 'Top-ups, stakes, entry fees, prizes, purchases and withdrawals (amounts, dates, status and reference codes), plus the phone number or account you pay from or withdraw to', 'To keep your balance correct, settle races, process payments and withdrawals, and resolve disputes'],
-          ['Marketplace purchases', 'Which items you have bought and equipped', 'To deliver your items'],
-          ['Messages and activity', 'Chat messages you send to other players, and when you were last online', 'To let players talk to each other and show who is online'],
+          ['Payment records', 'Pro and certification checkout details, payment status and provider reference codes', 'To verify paid access, resolve payment issues and keep required records'],
           ['Support and security records', 'Messages you send us, complaints and dispute details, a record of any time our staff sign in to your account (which account, when, and the IP address and browser used), and standard server logs', 'To help you, investigate problems and keep the service secure'],
         ]),
         p(`We do not store your card number or M-Pesa PIN. Payments are handled by our payment partners, who receive the details they need to process them.`)),
 
       sec('3. How we use your information',
         ul(
-          `To provide TypeArena: accounts, races, tournaments, private rooms, your wallet and the marketplace.`,
-          `To process payments, prizes and withdrawals, and to keep accurate financial records.`,
-          `To detect and prevent cheating, fraud, money laundering and abuse.`,
+          `To provide TypeArena: accounts, practice, training, assessments, certificates, Skills Passports, hiring assessments and school features.`,
+          `To process Pro and certification payments and keep accurate records.`,
+          `To protect assessments and prevent cheating and abuse.`,
           `To answer your questions, complaints and refund or dispute requests.`,
           `To keep the service working, fix faults and improve it.`,
           `To meet our legal obligations.`,
@@ -285,24 +229,22 @@ export const TERMS_DOCS = [
 
       sec('4. Who can see your information',
         ul(
-          `Other players. Your username, profile picture, equipped items, stats and leaderboard position are visible to other users. People in a race room with you can see your progress, and live races can be watched by others. Your chat messages are seen by the person you send them to.`,
+          `Other users or authorised school or hiring participants may see the profile and verified learning or assessment information that the relevant feature displays. A public Skills Passport shows only the evidence described on its page.`,
           `Our staff. Only authorised people who need it to run and support TypeArena. See section 5.`,
-          `Service providers. Companies that help us run TypeArena, such as payment partners (for example Safaricom for M-Pesa and our payment processor), and hosting and database providers. They may only use your information to provide their service to us. We also use an AI service to generate typing passages. It receives only a general request (such as the language and race mode) and none of your personal details.`,
+          `Service providers. Companies that help us run TypeArena, including payment partners, hosting and database providers. They may only use your information to provide their service to us.`,
           `Authorities and legal reasons. We may share information where the law requires it, to respond to valid legal requests, or to protect people from fraud or harm.`,
-          `A new owner. If TypeArena is ever sold or merged, your information may move to the new owner, who must protect it under this policy.`,
         )),
 
       sec('5. Staff access to accounts',
         p(`To help with a problem you report, or to check for cheating or fraud, authorised staff may sign in to your account. Each time this happens we record which account was accessed, when, and the IP address and browser used. We only do this for support, security or legal reasons. It may sign you out on your own device. We may also review chat messages that are reported to us or that we need to check to investigate abuse.`)),
 
       sec('6. Information on your device',
-        p(`TypeArena uses your browser's local storage to keep you signed in and to remember your settings (such as sound and music), personal bests, win streaks, recent races and daily challenge progress. You can clear this in your browser settings, but you will then be signed out and lose those saved settings. If we add analytics or advertising tools in future, we will update this policy first.`)),
+        p(`TypeArena uses your browser's local storage to keep you signed in and to remember settings and local practice information, such as sound, music, personal bests and recent activity. You can clear this in your browser settings, but you will then be signed out and lose those saved settings.`)),
 
       sec('7. How long we keep it',
         ul(
           `Account and gameplay information: for as long as your account is open.`,
-          `Wallet, payment and dispute records: for 7 years or as long as the law requires, even if you close your account.`,
-          `Chat messages: until you or the other person deletes your account, or until we remove them under our Terms.`,
+          `Payment and dispute records: for 7 years or as long as the law requires, even if you close your account.`,
           `Security and support records: for as long as needed to keep the service safe and to deal with any dispute.`,
         ),
         p(`When we no longer need information, we delete it or make it anonymous.`)),
@@ -324,7 +266,7 @@ export const TERMS_DOCS = [
           `Take your data with you in a common format where the law allows.`,
         ),
         p(`To use any of these, email typearena45@gmail.com from the address on your account. We may ask you to confirm it is really you. We aim to reply within 14 days.`),
-        p(`Withdraw your wallet balance first, then email us to request deletion. We will delete or anonymise your personal information, except records we must keep for financial or legal reasons. Race results may be kept without your name so leaderboards and tournament records stay accurate.`, 'Deleting your account:')),
+        p(`Email us to request deletion. We will delete or anonymise your personal information, except records we must keep for financial or legal reasons. Assessment records may be kept without your name where needed for verification and reporting.`, 'Deleting your account:')),
 
       sec('11. Children',
         p(`TypeArena is for people aged 18 and over. We do not knowingly collect information from anyone under 18. If we learn that a child has signed up, we will close the account and delete the information.`)),
