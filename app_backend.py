@@ -111,6 +111,7 @@ MPESA_SHORTCODE = os.getenv('MPESA_SHORTCODE', '174379')
 MPESA_PASSKEY = os.getenv('MPESA_PASSKEY', '')
 MPESA_CALLBACK_URL = os.getenv('MPESA_CALLBACK_URL', '').strip()
 MPESA_SUBSCRIPTION_CALLBACK_URL = os.getenv('MPESA_SUBSCRIPTION_CALLBACK_URL', '').strip()
+MPESA_CERTIFICATION_CALLBACK_URL = os.getenv('MPESA_CERTIFICATION_CALLBACK_URL', '').strip()
 MPESA_B2C_SHORTCODE = os.getenv('MPESA_B2C_SHORTCODE', MPESA_SHORTCODE)
 MPESA_B2C_INITIATOR_NAME = os.getenv('MPESA_B2C_INITIATOR_NAME', '')
 MPESA_B2C_SECURITY_CREDENTIAL = os.getenv('MPESA_B2C_SECURITY_CREDENTIAL', '')
@@ -11077,6 +11078,9 @@ _ensure_certification_tables = register_certification_routes(
     verify_race_token=lambda *args, **kwargs: _verify_race_token(*args, **kwargs),
     evaluate_race_submission=lambda **kwargs: evaluate_race_submission(**kwargs),
     score_typed_text=lambda *args, **kwargs: _score_typed_text(*args, **kwargs),
+    mpesa_stk_push=lambda **kwargs: _mpesa_stk_push(**kwargs),
+    normalize_mpesa_phone=lambda phone: _normalize_mpesa_phone(phone),
+    mpesa_callback_url=MPESA_CERTIFICATION_CALLBACK_URL,
 )
 
 _ensure_sponsored_event_tables = register_sponsored_event_routes(

@@ -300,6 +300,9 @@ export const startProCheckout = async ({ planKey, phoneNumber }) => {
   });
   return await parseResponse(response);
 };
+export const fetchSubscriptionPaymentStatus = async (transactionId) => parseResponse(await apiFetch(buildApiUrl(`/api/subscription-payments/${encodeURIComponent(transactionId)}`), { headers: buildHeaders() }));
+export const startCertificationCheckout = async (phoneNumber) => parseResponse(await apiFetch(buildApiUrl('/api/certifications/checkout'), { method: 'POST', headers: buildHeaders(), body: JSON.stringify({ phoneNumber }) }));
+export const fetchCertificationPaymentStatus = async (transactionId) => parseResponse(await apiFetch(buildApiUrl(`/api/certification-payments/${encodeURIComponent(transactionId)}`), { headers: buildHeaders() }));
 
 export const startCertification = async () => {
   const response = await apiFetch(buildApiUrl('/api/certifications/start'), {

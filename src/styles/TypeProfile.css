@@ -1533,6 +1533,7 @@
   border-radius: 12px;
   background: rgba(99, 202, 183, .06);
 }
+.tp-access-note, .tp-pro-access-note { margin: 1rem 0; padding: .9rem 1rem; border-left: 3px solid #7be0a8; background: rgba(123,224,168,.08); color: var(--tp-muted, #aeb9c8); line-height: 1.55; font-size: .86rem; }
 
 .tp-training-summary__heading { display: flex; justify-content: space-between; gap: .75rem; color: var(--tp-text, #f3f7f5); font-size: .85rem; }
 .tp-training-summary__heading span { color: var(--tp-accent, #63cab7); font-weight: 700; }

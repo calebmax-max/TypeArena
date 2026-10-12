@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import {
   getStoredUserSnapshot,
   startCertification,
+  startCertificationCheckout,
+  fetchCertificationPaymentStatus,
   submitCertification,
   verifyCertificate,
 } from '../utils/typingApi';
@@ -57,6 +59,8 @@ export function CertificationTest() {
   );
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [paymentPhone, setPaymentPhone] = useState(user?.phoneNumber || '');
+  const [paymentTransaction, setPaymentTransaction] = useState(null);
   const [pasteAttempted, setPasteAttempted] = useState(Boolean(resumeState?.pasteAttempted));
   const typedTextRef = useRef(resumeState?.typedText || '');
   const deadlineRef = useRef(resumeState?.deadlineMs || 0);
@@ -171,8 +175,35 @@ export function CertificationTest() {
       });
       setPhase('testing');
     } catch (startError) {
+      if (startError.status === 402) {
+        setError('Certification requires payment. Enter your M-Pesa number below to receive an STK Push.');
+        setPhase('payment');
+        return;
+      }
       setError(startError.message || 'Could not start the certification test.');
       setPhase('error');
+    }
+  };
+
+  const payAndContinue = async () => {
+    if (!paymentPhone.trim()) { setError('Enter the M-Pesa number that should receive the STK Push.'); return; }
+    setPhase('paying');
+    setError('');
+    try {
+      const payment = await startCertificationCheckout(paymentPhone.trim());
+      setPaymentTransaction(payment.transactionId);
+      setError('STK Push sent. Approve it on your phone; we will continue only after the backend verifies the payment.');
+      const startedAt = Date.now();
+      const check = async () => {
+        const status = await fetchCertificationPaymentStatus(payment.transactionId);
+        if (status.status === 'completed') { setError('Payment verified. Starting your certification…'); setPhase('ready'); setTimeout(() => beginTest(), 250); return; }
+        if (status.status === 'failed' || Date.now() - startedAt > 180000) { setError(status.message || 'Payment was not completed.'); setPhase('payment'); return; }
+        setTimeout(check, 4000);
+      };
+      setTimeout(check, 3500);
+    } catch (paymentError) {
+      setError(paymentError.message || 'Could not start the M-Pesa payment.');
+      setPhase('payment');
     }
   };
 
@@ -253,7 +284,15 @@ export function CertificationTest() {
 
         {error && <p className="cert-notice cert-notice--error" role="alert">{error}</p>}
 
-        {phase === 'ready' || phase === 'starting' || phase === 'error' ? (
+        {phase === 'payment' || phase === 'paying' ? (
+          <div className="cert-start cert-payment">
+            <h2>Pay for certification</h2>
+            <p>Pay KES 300 by M-Pesa. Your test opens only after TypeArena verifies the Daraja callback.</p>
+            <label className="cert-input-label" htmlFor="certification-phone">M-Pesa number</label>
+            <input id="certification-phone" className="cert-input" type="tel" value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} placeholder="2547XX XXX XXX" />
+            <button type="button" className="cert-button" onClick={payAndContinue} disabled={phase === 'paying'}>{phase === 'paying' ? 'Waiting for verification…' : 'Send STK Push'}</button>
+          </div>
+        ) : phase === 'ready' || phase === 'starting' || phase === 'error' ? (
           <div className="cert-start">
             <ul>
               <li>Use the fixed passage shown during the assessment.</li>

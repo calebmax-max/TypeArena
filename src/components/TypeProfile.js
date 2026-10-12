@@ -38,6 +38,7 @@ import {
   fetchWalletHistory,
   fetchWalletTopupStatus,
   fetchSubscriptionPlans,
+  fetchSubscriptionPaymentStatus,
   fetchWalletWithdrawStatus,
   getStoredUserSnapshot,
   loginUser,
@@ -162,6 +163,7 @@ export default function TypeProfile() {
   const [proNotice, setProNotice] = useState('');
   const [proNoticeType, setProNoticeType] = useState('info');
   const [proLoading, setProLoading] = useState(false);
+  const [proPaymentId, setProPaymentId] = useState(null);
   const [authNotice,    setAuthNotice]     = useState('');
   const [authNoticeType, setAuthNoticeType] = useState('error');
   const [authLoading,   setAuthLoading]   = useState(false);
@@ -396,10 +398,7 @@ export default function TypeProfile() {
       });
       setProNotice(result.message || 'M-Pesa payment prompt sent. Complete the payment on your phone.');
       setProNoticeType('success');
-      const refreshedUser = await fetchCurrentUser({ force: true });
-      if (refreshedUser) {
-        applyFreshUserState(refreshedUser);
-      }
+      setProPaymentId(result.transactionId || null);
     } catch (error) {
       setProNotice(error.message || 'Could not start Pro checkout.');
       setProNoticeType('error');
@@ -407,6 +406,38 @@ export default function TypeProfile() {
       setProLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!proPaymentId) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+    const poll = async () => {
+      try {
+        const status = await fetchSubscriptionPaymentStatus(proPaymentId);
+        if (cancelled) return;
+        if (status.status === 'completed') {
+          setProNotice('Payment verified by TypeArena. Pro is now active.');
+          setProNoticeType('success');
+          setProPaymentId(null);
+          const refreshedUser = await fetchCurrentUser({ force: true });
+          if (refreshedUser) applyFreshUserState(refreshedUser);
+          return;
+        }
+        if (status.status === 'failed' || attempts >= 45) {
+          setProNotice(status.message || 'Payment was not completed.');
+          setProNoticeType('error');
+          setProPaymentId(null);
+          return;
+        }
+        attempts += 1;
+        window.setTimeout(poll, 4000);
+      } catch (error) {
+        if (!cancelled) { setProNotice(error.message || 'Could not verify payment yet.'); setProNoticeType('error'); setProPaymentId(null); }
+      }
+    };
+    void poll();
+    return () => { cancelled = true; };
+  }, [applyFreshUserState, proPaymentId]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -1053,11 +1084,12 @@ export default function TypeProfile() {
                       </div>
                       <div className="tp-pro-card__period">{Math.round((plan.billingPeriodDays || 30) / 30)} month access</div>
                       <ul className="tp-pro-card__features">
-                        <li>No ads</li>
-                        <li>Custom race lengths</li>
-                        <li>Custom text</li>
-                        <li>Advanced analytics</li>
-                        <li>Pro badge</li>
+                        <li>Ad-free practice and races</li>
+                        <li>Longer and custom race formats</li>
+                        <li>Custom passages for focused practice</li>
+                        <li>Progress and performance analytics</li>
+                        <li>Pro profile badge</li>
+                        <li>One certification attempt included</li>
                       </ul>
                       <button
                         className="tp-btn tp-btn--primary tp-btn--full"
@@ -1074,6 +1106,7 @@ export default function TypeProfile() {
                 )}
               </div>
 
+              <p className="tp-pro-access-note">After Daraja verifies your payment, Pro is enabled on your account across devices. You can practise without ads, use the expanded race tools, review deeper analytics, and take the included certification assessment.</p>
               <div className="tp-pro-checkout">
                 <div className="tp-field tp-field--grow">
                   <label className="tp-field__label">M-Pesa number</label>
@@ -1091,7 +1124,7 @@ export default function TypeProfile() {
                   onClick={handleProUpgrade}
                   disabled={proLoading || !subscriptionPlans.length}
                 >
-                  {proLoading ? 'Sending...' : 'Checkout Monthly Pro'}
+                  {proLoading ? 'Sending STK Push...' : proPaymentId ? 'Waiting for verification...' : 'Pay with M-Pesa'}
                 </button>
               </div>
               <Notice message={proNotice} type={proNoticeType} />
