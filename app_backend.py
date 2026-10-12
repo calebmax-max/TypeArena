@@ -182,7 +182,7 @@ ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS = 60
 # Version of the Terms of Service & Policy Pack users accept at signup. Keep in
 # sync with TERMS_VERSION in the frontend's termsContent.js and bump it whenever
 # the legal text changes.
-TERMS_VERSION = '2026-09-10'
+TERMS_VERSION = '2026-10-12'
 TOURNAMENT_MATCH_SIZE = 3
 TOURNAMENT_START_DELAY_SECONDS = 30
 TOURNAMENT_PODIUM_SHARES = (0.50, 0.25, 0.15)

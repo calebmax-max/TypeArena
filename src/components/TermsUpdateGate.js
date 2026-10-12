@@ -8,7 +8,7 @@
  * Mount it ONCE, in App.js (inside AppLayout), and pass it the same
  * `currentUser` that App keeps in state:
  *
- *   <TermsUpdateGate currentUser={currentUser} suspended={tourActive} />
+ *   <TermsUpdateGate currentUser={currentUser} />
  *
  * The server decides who needs it: /api/user/me and login return
  * `termsCurrent: false` for those users. Nothing is shown when termsCurrent is
@@ -21,7 +21,6 @@
  *
  * Props:
  *   currentUser {object|null} - the signed-in user from App state
- *   suspended   {boolean}     - true to hold the prompt back (e.g. while the onboarding tour is open)
  */
 
 import React, { useState } from 'react';
@@ -29,7 +28,7 @@ import { acceptTerms, getAdminToken } from '../utils/typingApi';
 import { TermsModal } from './TermsConsent';
 import { TERMS_VERSION } from './termsContent';
 
-export default function TermsUpdateGate({ currentUser, suspended = false }) {
+export default function TermsUpdateGate({ currentUser }) {
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +40,7 @@ export default function TermsUpdateGate({ currentUser, suspended = false }) {
     !currentUser.isAdmin &&
     !impersonating;
 
-  if (!needsAcceptance || dismissed || suspended) return null;
+  if (!needsAcceptance || dismissed) return null;
 
   const handleAgree = async () => {
     setBusy(true);

@@ -111,7 +111,7 @@ export const TERMS_DOCS = [
     id: 'refunds',
     tab: 'Refunds & Disputes',
     title: 'TypeArena Refund & Dispute Policy',
-    effective: '10 September 2026',
+    effective: '12 October 2026',
     intro: [
       p(`We want you to feel safe putting money into TypeArena. This policy explains when you get money back and how to raise a problem. It works together with our Terms of Service.`),
     ],
@@ -160,7 +160,7 @@ export const TERMS_DOCS = [
     id: 'complaints',
     tab: 'Complaints',
     title: 'TypeArena Complaints Policy',
-    effective: '10 September 2026',
+    effective: '12 October 2026',
     intro: [
       p(`If something is wrong, we want to hear about it and fix it. This policy explains how to complain and what you can expect from us. Complaints are free and will not affect how we treat your account.`),
     ],
@@ -193,8 +193,8 @@ export const TERMS_DOCS = [
     id: 'privacy',
     tab: 'Privacy',
     title: 'TypeArena Privacy Policy',
-    effective: '10 September 2026',
-    updated: '10 September 2026',
+    effective: '12 October 2026',
+    updated: '12 October 2026',
     intro: [
       p(`This policy explains what personal information TypeArena collects, why we collect it, who can see it, and the choices you have. It applies to everyone who uses TypeArena and is part of our Terms of Service. We handle your information in line with the Data Protection Act, 2019 of Kenya.`),
     ],

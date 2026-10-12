@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 const IOS_HINT_KEY = 'typearena:ios-hint-dismissed';
+const INSTALL_COMPLETED_KEY = 'typearena:install-completed';
 
 function isStandalone() {
   const mediaQuery = window.matchMedia ? window.matchMedia('(display-mode: standalone)') : null;
@@ -26,6 +27,22 @@ function readDismissed() {
   }
 }
 
+function readInstallCompleted() {
+  try {
+    return window.localStorage.getItem(INSTALL_COMPLETED_KEY) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+function rememberInstallCompleted() {
+  try {
+    window.localStorage.setItem(INSTALL_COMPLETED_KEY, '1');
+  } catch (e) {
+    // The installed state still applies for this session when storage is unavailable.
+  }
+}
+
 const buttonStyle = {
   background: '#22c55e',
   color: '#04130a',
@@ -44,13 +61,12 @@ const buttonStyle = {
  *  - iPhone/iPad Safari: shows a short "Share, then Add to Home Screen" tip.
  *  - Shows nothing when the app is already installed / opened as an app, or
  *    when the browser doesn't offer installing.
- *  - Pass `forceHidden` to keep it out of the way while something else (the
- *    onboarding tour, say) is on screen. It reappears on its own once
- *    `forceHidden` goes back to false.
+ *  - A completed installation is remembered in localStorage, so the button
+ *    does not return on later dashboard visits in that browser.
  */
 export function InstallButton({ className = '', forceHidden = false }) {
   const [installEvent, setInstallEvent] = useState(null);
-  const [installed, setInstalled] = useState(() => isStandalone());
+  const [installed, setInstalled] = useState(() => isStandalone() || readInstallCompleted());
   const [hidden, setHidden] = useState(false); // hidden with the x, until the page is reloaded
   const [iosHintDismissed, setIosHintDismissed] = useState(() => readDismissed());
 
@@ -60,6 +76,7 @@ export function InstallButton({ className = '', forceHidden = false }) {
       setInstallEvent(event);
     };
     const onInstalled = () => {
+      rememberInstallCompleted();
       setInstalled(true);
       setInstallEvent(null);
     };
@@ -89,7 +106,10 @@ export function InstallButton({ className = '', forceHidden = false }) {
       installEvent.prompt();
       const choice = await installEvent.userChoice;
       setInstallEvent(null); // the event can only be used once
-      if (choice && choice.outcome === 'accepted') setInstalled(true);
+      if (choice && choice.outcome === 'accepted') {
+        rememberInstallCompleted();
+        setInstalled(true);
+      }
     };
     return (
       <div className={className} style={floatingStyle}>
